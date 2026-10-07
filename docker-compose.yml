@@ -1,0 +1,22 @@
+# 家庭部署最小模板。ARM64 与 x86_64 同一份文件，镜像按本机架构自动拉取。
+services:
+  mosaic:
+    image: ghcr.io/mosaic-media/mosaic:latest
+    container_name: mosaic
+    restart: unless-stopped
+    ports:
+      - "8080:8080"
+    environment:
+      MOSAIC_LOG_LEVEL: info
+      MOSAIC_LOG_FORMAT: json
+      MOSAIC_DATABASE_URL: sqlite:/config/mosaic.db?mode=rwc
+    volumes:
+      - ./config:/config
+      - ./data:/data
+      - ./cache:/cache
+      - ./logs:/logs
+      # 媒体目录按需挂载，只读更安全
+      - /path/to/media:/media:ro
+    # P6 硬件加速阶段按需开启（x86 为 /dev/dri，Rockchip 另需 mpp/rga）
+    # devices:
+    #   - /dev/dri:/dev/dri

@@ -1,0 +1,7 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "default",
+  "description": "P0 最小权限集。P4 每加一个能力都要在此显式声明。",
+  "windows": ["main"],
+  "permissions": ["core:default", "core:app:default", "core:window:default"]
+}

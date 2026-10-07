@@ -1,0 +1,21 @@
+[package]
+name = "mosaic-api"
+description = "Axum 路由层，唯一对外出口（REST + SSE + WebSocket）"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+mosaic-core = { workspace = true }
+mosaic-config = { workspace = true }
+mosaic-diagnostics = { workspace = true }
+axum = { workspace = true }
+tower-http = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+tokio = { workspace = true }
+tracing = { workspace = true }
+chrono = { workspace = true }
+
+[dev-dependencies]
+tower = { workspace = true, features = ["util"] }

@@ -1,0 +1,12 @@
+/target
+**/target
+/client/node_modules
+/client/dist
+/client/src-tauri/gen
+/config
+/data
+/cache
+/logs
+*.db
+*.db-journal
+.DS_Store

@@ -1,0 +1,12 @@
+[package]
+name = "mosaic-diagnostics"
+description = "健康检查与系统诊断（§95）"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+mosaic-core = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+chrono = { workspace = true }

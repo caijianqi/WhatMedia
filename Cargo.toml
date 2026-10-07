@@ -1,0 +1,46 @@
+[workspace]
+resolver = "2"
+members = [
+    "crates/*",
+    "apps/*",
+]
+# client / plugins 是 Tauri 工程，有各自的 workspace，不参与本 workspace
+exclude = ["client", "plugins", "runtime", "test-media"]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2021"
+rust-version = "1.98"
+license = "MIT OR Apache-2.0"
+repository = "https://github.com/mosaic-media/mosaic"
+
+[workspace.dependencies]
+mosaic-core = { path = "crates/core" }
+mosaic-config = { path = "crates/config" }
+mosaic-database = { path = "crates/database" }
+mosaic-task = { path = "crates/task" }
+mosaic-diagnostics = { path = "crates/diagnostics" }
+mosaic-api = { path = "crates/api" }
+
+tokio = { version = "1", features = ["rt-multi-thread", "macros", "signal", "time", "sync", "fs", "net"] }
+axum = { version = "0.8", features = ["macros"] }
+tower = "0.5"
+tower-http = { version = "0.6", features = ["trace", "cors", "compression-gzip"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+toml = "0.8"
+thiserror = "2"
+anyhow = "1"
+async-trait = "0.1"
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter", "json"] }
+uuid = { version = "1", features = ["v4", "serde"] }
+chrono = { version = "0.4", features = ["serde"] }
+clap = { version = "4", features = ["derive"] }
+
+[profile.release]
+opt-level = 3
+lto = "thin"
+codegen-units = 1
+panic = "abort"
+strip = true

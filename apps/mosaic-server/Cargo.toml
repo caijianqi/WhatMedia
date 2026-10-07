@@ -1,0 +1,18 @@
+[package]
+name = "mosaic-server"
+description = "Mosaic 服务端入口"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+mosaic-api = { workspace = true }
+mosaic-config = { workspace = true }
+mosaic-database = { workspace = true }
+mosaic-diagnostics = { workspace = true }
+mosaic-task = { workspace = true }
+anyhow = { workspace = true }
+axum = { workspace = true }
+tokio = { workspace = true }
+tracing = { workspace = true }
+tracing-subscriber = { workspace = true }

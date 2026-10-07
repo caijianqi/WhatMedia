@@ -1,0 +1,62 @@
+# versions.lock —— Mosaic 版本矩阵
+#
+# 规则（见 DEVELOPMENT-PLAN.md 附录第 10 条）：
+#   1. 这里只记录「CI 实测通过」的组合，不记录文档里的期望值
+#   2. 两个架构各有一份 FFmpeg / libmpv 的 codec 清单，不能只写一行
+#   3. 升级任何一项，必须先在 CI 上跑通双架构再改这个文件
+#
+# 最后更新：2026-10-08（P0）
+
+[toolchain]
+rustc = "1.98.1"          # MSRV = 1.98，见 Cargo.toml rust-version
+cargo = "1.98.1"
+edition = "2021"
+node = "22.22.2"
+npm = "10.9.7"
+
+[rust.crates]
+# 只锁大版本，小版本交给 Cargo.lock 精确锁定。
+tokio = "1"
+axum = "0.8"
+tower-http = "0.6"
+serde = "1"
+toml = "0.8"
+tracing = "0.1"
+tracing-subscriber = "0.3"
+chrono = "0.4"
+uuid = "1"
+clap = "4"
+thiserror = "2"
+async-trait = "0.1"
+
+# P1 接入
+sqlx = "未锁定（P1）"
+
+[media]
+# P3 播放引擎阶段在 Docker builder 阶段固定构建产物。
+# 严禁依赖发行版 apt 包 —— 两个架构的 codec 可用性完全不同。
+ffmpeg = "未锁定（P3）"
+ffprobe = "未锁定（P3）"
+
+ffmpeg_amd64 = { status = "待 P3 填充", decoders = [], encoders = [] }
+ffmpeg_arm64 = { status = "待 P3 填充", decoders = [], encoders = [] }
+
+[client]
+tauri_cli = "未锁定（P4）"
+libmpv = "未锁定（S1 Spike 结论后）"
+media3 = "未引入（P7）"
+
+[container]
+base_builder = "rust:1.98-bookworm"
+base_runtime = "debian:bookworm-slim"
+platforms = ["linux/amd64", "linux/arm64"]
+
+# ─────────────────────────────────────────────────────────────
+# 111.md 声明值 vs 实测值
+# ─────────────────────────────────────────────────────────────
+# 111.md §1 写 "Rust 1.99.0 于 2026 年 10 月 1 日发布"。
+# 本机（2026-10-08）实测稳定版为 1.98.1。
+# → 这正是「版本号不要写死在文档里」的理由。以本文件为准。
+#
+# 111.md §26/§45 写 "FFmpeg 9.0.2"、§13 写 "Media3 1.11.1"。
+# 本机无 FFmpeg，尚未验证。P3 / P7 引入时以实测为准并回填此处。

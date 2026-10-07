@@ -1,0 +1,12 @@
+[package]
+name = "mosaic-database"
+description = "SQLx 数据访问与 migration（P1 接入）"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+mosaic-core = { workspace = true }
+mosaic-config = { workspace = true }
+anyhow = { workspace = true }
+tracing = { workspace = true }

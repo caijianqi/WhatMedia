@@ -1,0 +1,10 @@
+target/
+client/
+docs/
+tests/
+test-media/
+scripts/
+.git/
+.github/
+*.md
+!migrations/

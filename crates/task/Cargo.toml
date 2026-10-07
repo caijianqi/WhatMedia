@@ -1,0 +1,14 @@
+[package]
+name = "mosaic-task"
+description = "优先级任务队列：扫描 / 刮削 / 转码 / AI 四条链路的共同地基"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+mosaic-core = { workspace = true }
+async-trait = { workspace = true }
+tokio = { workspace = true }
+chrono = { workspace = true }
+tracing = { workspace = true }
+thiserror = { workspace = true }
