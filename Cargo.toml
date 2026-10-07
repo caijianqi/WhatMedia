@@ -20,9 +20,13 @@ mosaic-config = { path = "crates/config" }
 mosaic-database = { path = "crates/database" }
 mosaic-task = { path = "crates/task" }
 mosaic-diagnostics = { path = "crates/diagnostics" }
+mosaic-media = { path = "crates/media" }
+mosaic-storage = { path = "crates/storage" }
+mosaic-library = { path = "crates/library" }
+mosaic-scanner = { path = "crates/scanner" }
 mosaic-api = { path = "crates/api" }
 
-tokio = { version = "1", features = ["rt-multi-thread", "macros", "signal", "time", "sync", "fs", "net"] }
+tokio = { version = "1", features = ["rt-multi-thread", "macros", "signal", "time", "sync", "fs", "net", "process", "rt"] }
 axum = { version = "0.8", features = ["macros"] }
 tower = "0.5"
 tower-http = { version = "0.6", features = ["trace", "cors", "compression-gzip"] }
@@ -34,9 +38,31 @@ anyhow = "1"
 async-trait = "0.1"
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter", "json"] }
-uuid = { version = "1", features = ["v4", "serde"] }
+uuid = { version = "1", features = ["v4", "v5", "serde"] }
 chrono = { version = "0.4", features = ["serde"] }
 clap = { version = "4", features = ["derive"] }
+
+# ── 数据层 ──────────────────────────────────────────────
+# sqlite-bundled：自带 sqlite3 C 源码，避免依赖目标机上的系统库。
+# 这对 arm64 交叉构建是必需的（Docker buildx 里没有 pkg-config）。
+sqlx = { version = "0.9", default-features = false, features = [
+    "runtime-tokio",
+    "sqlite",
+    "sqlite-bundled",
+    "migrate",
+    "derive",
+    "chrono",
+    "uuid",
+    "json",
+] }
+
+# ── 文本处理 ────────────────────────────────────────────
+regex = "1"
+roxmltree = "0.21"
+
+# ── 并发控制 ────────────────────────────────────────────
+tokio-util = "0.7"
+tempfile = "3"
 
 [profile.release]
 opt-level = 3

@@ -40,7 +40,8 @@ USER mosaic
 WORKDIR /config
 EXPOSE 8080
 
-ENV MOSAIC_CONFIG_DIR=/config \
+ENV MOSAIC_MIGRATIONS_DIR=/usr/local/share/mosaic/migrations \
+    MOSAIC_CONFIG_DIR=/config \
     MOSAIC_DATA_DIR=/data \
     MOSAIC_CACHE_DIR=/cache \
     MOSAIC_LOG_DIR=/logs \

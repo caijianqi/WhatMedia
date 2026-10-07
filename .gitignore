@@ -9,4 +9,6 @@
 /logs
 *.db
 *.db-journal
+.tmp-smoke/
+.tmp/
 .DS_Store

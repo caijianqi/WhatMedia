@@ -1,6 +1,6 @@
 [package]
 name = "mosaic-database"
-description = "SQLx 数据访问与 migration（P1 接入）"
+description = "SQLx 数据访问与 migration（唯一允许写 SQL 的 crate）"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
@@ -8,5 +8,13 @@ rust-version.workspace = true
 [dependencies]
 mosaic-core = { workspace = true }
 mosaic-config = { workspace = true }
+sqlx = { workspace = true }
 anyhow = { workspace = true }
+thiserror = { workspace = true }
 tracing = { workspace = true }
+chrono = { workspace = true }
+uuid = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+async-trait = { workspace = true }
+tokio = { workspace = true }

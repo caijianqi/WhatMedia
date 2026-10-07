@@ -16,7 +16,24 @@ AI 原生、自托管、多来源、跨平台的家庭影音平台。
 
 ## 当前状态
 
-**P0：工程地基（进行中）**
+**P1：媒体内核（已完成）** · P0 已交付
+
+### P1 交付物
+
+| 交付物 | 状态 |
+|---|---|
+| `storage` Local 实现 + 路径安全四件套 | ✅ |
+| `media` 文件名解析器（52 条语料 100% 通过） | ✅ [语料](./test-media/naming/cases.jsonl) |
+| `media` FFprobe 封装（超时 / 离线可测 / HDR 判定） | ✅ |
+| `media` NFO 读取（movie / tvshow / episodedetails） | ✅ |
+| `library` 入库编排（**确定性 UUIDv5**，重扫不产生重复） | ✅ |
+| `scanner` 遍历 / 增量指纹 / 并发 / 可取消可暂停 | ✅ |
+| `database` SQLx + SQLite（WAL），唯一允许写 SQL 的 crate | ✅ |
+| API：`/libraries` `/media` `/movies` `/series` `/episodes` `/items/{id}` `/search` `/tasks` `/scan` | ✅ |
+| `mosaic-cli scan` —— 扫一个目录变成可查询的库 | ✅ |
+| 中文检索（FTS5 trigram + 短词降级 LIKE） | ✅ |
+
+### P0 交付物
 
 | P0 交付物 | 状态 |
 |---|---|
@@ -65,6 +82,29 @@ make docker
 | `MOSAIC_DATABASE_URL` | `sqlite:/config/mosaic.db?mode=rwc` | 数据库连接 |
 | `MOSAIC_LOG_LEVEL` | `info` | 日志级别 |
 | `MOSAIC_LOG_FORMAT` | `pretty` | `pretty` 或 `json` |
+| `MOSAIC_MIGRATIONS_DIR` | 仓库内 `migrations/` | 容器里是 `/usr/local/share/mosaic/migrations` |
+
+### 端到端跑一遍
+
+```bash
+# 1) 建库并扫描一个目录
+export MOSAIC_DATABASE_URL="sqlite:./mosaic.db?mode=rwc"
+cargo run --bin mosaic-cli -- scan --path /path/to/media --name "电影库"
+
+# 加了 FFmpeg 就带上 --probe，能拿到时长 / 码率 / 视频音频字幕轨
+cargo run --bin mosaic-cli -- scan --path /path/to/media --probe
+
+# 2) 查
+cargo run --bin mosaic-cli -- list
+cargo run --bin mosaic-cli -- search --q " Matrix"
+cargo run --bin mosaic-cli -- libraries
+
+# 3) 起服务
+cargo run --bin mosaic-server
+curl -s "http://127.0.0.1:8080/api/v1/media?page_size=20"
+curl -s "http://127.0.0.1:8080/api/v1/series"
+curl -s "http://127.0.0.1:8080/api/v1/search?q=Frieren"
+```
 
 冒烟：
 
@@ -72,6 +112,24 @@ make docker
 cargo run --bin mosaic-server
 curl -s http://127.0.0.1:8080/healthz
 # {"status":"ok","version":"0.1.0","arch":"x86_64","os":"linux","..."}
+```
+
+### 命名解析语料
+
+P1 的验收标准之一是"季/集解析在语料上准确率 ≥ 99%"，语料在
+[`test-media/naming/cases.jsonl`](./test-media/naming/cases.jsonl)，回归测试消费它：
+
+```bash
+cargo test -p mosaic-media --test naming_corpus
+```
+
+新加语料时请在那个文件的头部规则下补充：**必须是真实世界里出现过的命名**。
+
+### 性能基线
+
+```bash
+# 生成 10,000 个文件并测全量 / 增量扫描耗时（默认不跑，耗时几分钟）
+cargo test -p mosaic-scanner -- --ignored --nocapture scan_10k_baseline
 ```
 
 ## 仓库结构

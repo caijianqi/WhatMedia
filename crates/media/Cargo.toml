@@ -1,7 +1,16 @@
 [package]
 name = "mosaic-media"
-version = "0.1.0"
-edition = "2021"
+description = "文件名解析 / ffprobe 探测 / NFO 读取"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
 
 [dependencies]
-mosaic-core = { path = "../core" }
+mosaic-core = { workspace = true }
+regex = { workspace = true }
+roxmltree = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+chrono = { workspace = true }
+uuid = { workspace = true }
+tokio = { workspace = true }

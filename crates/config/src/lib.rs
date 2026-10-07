@@ -29,6 +29,11 @@ pub struct PathsConfig {
     pub data_dir: PathBuf,
     pub cache_dir: PathBuf,
     pub log_dir: PathBuf,
+    /// SQL 迁移文件目录。
+    ///
+    /// 容器里是 `/usr/local/share/mosaic/migrations`，进程 CWD 却是 `/config`，
+    /// 所以必须可配置 —— 这也是 `Db::migrate` 用运行时路径而非编译期常量的原因。
+    pub migrations_dir: PathBuf,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -58,6 +63,10 @@ impl Default for AppConfig {
                 data_dir: PathBuf::from("/data"),
                 cache_dir: PathBuf::from("/cache"),
                 log_dir: PathBuf::from("/logs"),
+                // 开发默认指向仓库里的 migrations；容器里由 MOSAIC_MIGRATIONS_DIR 覆盖。
+                migrations_dir: PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+                    .join("../..")
+                    .join("migrations"),
             },
             database: DatabaseConfig {
                 kind: "sqlite".into(),
@@ -106,6 +115,9 @@ impl AppConfig {
         }
         if let Ok(v) = std::env::var("MOSAIC_LOG_DIR") {
             self.paths.log_dir = PathBuf::from(v);
+        }
+        if let Ok(v) = std::env::var("MOSAIC_MIGRATIONS_DIR") {
+            self.paths.migrations_dir = PathBuf::from(v);
         }
         if let Ok(v) = std::env::var("MOSAIC_DATABASE_URL") {
             if v.starts_with("postgres") {

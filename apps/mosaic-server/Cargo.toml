@@ -1,6 +1,6 @@
 [package]
 name = "mosaic-server"
-description = "Mosaic 服务端入口"
+description = "Mosaic 服务端：HTTP API + 扫描调度"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
@@ -10,7 +10,7 @@ mosaic-api = { workspace = true }
 mosaic-config = { workspace = true }
 mosaic-database = { workspace = true }
 mosaic-diagnostics = { workspace = true }
-mosaic-task = { workspace = true }
+mosaic-media = { workspace = true }
 anyhow = { workspace = true }
 axum = { workspace = true }
 tokio = { workspace = true }

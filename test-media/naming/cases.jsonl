@@ -1,0 +1,63 @@
+# Mosaic 文件名解析语料库
+#
+# 这是 P1 DoD「季/集解析准确率 ≥ 99%」的判定依据，由 crates/media/tests/naming_corpus.rs 消费。
+# 每行一个 JSON 对象；只写需要断言的字段，省略的字段不做校验。
+#
+# 字段：name（输入文件名）、title、year、season、episode、episode_end、resolution
+#
+# 加语料的规则：
+#   1. 必须是真实世界里出现过的命名，不要为了让解析器好看而编造
+#   2. 改解析器导致某条失败时，先判断是解析器错还是语料错 —— 在 commit message 里写清楚
+
+{"name": "The.Matrix.1999.1080p.BluRay.x264.DTS-HD.MA.5.1-FGT.mkv", "title": "The Matrix", "year": 1999, "resolution": "1080p"}
+{"name": "Inception.2010.1080p.BluRay.x264-AMIABLE.mkv", "title": "Inception", "year": 2010, "resolution": "1080p"}
+{"name": "Interstellar.2014.2160p.UHD.BluRay.x265.10bit.HDR.TrueHD.7.1-SWTYBLZ.mkv", "title": "Interstellar", "year": 2014, "resolution": "2160p"}
+{"name": "Parasite.2019.1080p.WEB-DL.DDP5.1.H.264-NTG.mkv", "title": "Parasite", "year": 2019, "resolution": "1080p"}
+{"name": "Spirited.Away.2001.1080p.BluRay.x264-EXCELLENCE.mkv", "title": "Spirited Away", "year": 2001}
+{"name": "The.Dark.Knight.2008.1080p.BluRay.x264.DTS-WiKi.mkv", "title": "The Dark Knight", "year": 2008}
+{"name": "1917.2019.1080p.BluRay.x264.mkv", "title": "1917", "year": 2019}
+{"name": "Blade.Runner.2049.2017.2160p.BluRay.x265.mkv", "title": "Blade Runner 2049", "year": 2017}
+{"name": "Se7en.1995.1080p.BluRay.FLAC.x264-DECIBEL.mkv", "title": "Se7en", "year": 1995}
+{"name": "WALL.E.2008.1080p.BluRay.x264-CiNEFiLE.mkv", "title": "WALL E", "year": 2008}
+{"name": "Amelie.2001.1080p.BluRay.x264-CiNEFiLE.mkv", "title": "Amelie", "year": 2001}
+{"name": "Cidade.de.Deus.2002.1080p.BluRay.x264.mkv", "title": "Cidade de Deus", "year": 2002}
+{"name": "Avengers.Endgame.2019.2160p.WEB-DL.DDP5.1.Atmos.HDR.HEVC-CMRG.mkv", "title": "Avengers Endgame", "year": 2019}
+{"name": "Dune.2021.1080p.HDRip.X264-EVO.mkv", "title": "Dune", "year": 2021}
+{"name": "Tenet.2020.2160p.UHD.BluRay.REMUX.HDR10+.TrueHD.Atmos.7.1-DON.mkv", "title": "Tenet", "year": 2020, "resolution": "2160p"}
+{"name": "The.Batman.2022.2160p.BluRay.x265.10bit.HDR.DTS-HD.MA.5.1-SWTYBLZ.mkv", "title": "The Batman", "year": 2022}
+{"name": "Everything.Everywhere.All.at.Once.2022.1080p.WEB-DL.x264.mkv", "title": "Everything Everywhere All at Once", "year": 2022}
+{"name": "No.Country.for.Old.Men.2007.1080p.BluRay.x264.mkv", "title": "No Country for Old Men", "year": 2007}
+{"name": "Mad.Max.Fury.Road.2015.1080p.BluRay.x265-RARBG.mkv", "title": "Mad Max Fury Road", "year": 2015}
+{"name": "Shawshank.Redemption.1994.1080p.BluRay.x264.mkv", "title": "Shawshank Redemption", "year": 1994}
+{"name": "Breaking.Bad.S01E01.1080p.BluRay.x265-RARBG.mkv", "title": "Breaking Bad", "season": 1, "episode": 1}
+{"name": "Breaking.Bad.S05E14.1080p.BluRay.x265-RARBG.mkv", "title": "Breaking Bad", "season": 5, "episode": 14}
+{"name": "The.Wire.S02.E03.1080p.WEB-DL.mkv", "title": "The Wire", "season": 2, "episode": 3}
+{"name": "Friends.S10E17E18.720p.HDTV.x264.mkv", "title": "Friends", "season": 10, "episode": 17, "episode_end": 18}
+{"name": "Chernobyl.1x01.1080p.WEB-DL.mkv", "title": "Chernobyl", "season": 1, "episode": 1}
+{"name": "Band.of.Brothers.S01E02.Day.of.Days.1080p.BluRay.x264.mkv", "dir": "Band.of.Brothers", "title": "Band of Brothers", "season": 1, "episode": 2, "episode_title": "Day of Days"}
+{"name": "Planet.Earth.II.S01E01.2160p.UHD.BluRay.x265.mkv", "title": "Planet Earth II", "season": 1, "episode": 1}
+{"name": "Sherlock.S03E01.The.Empty.Hearse.1080p.BluRay.x264.mkv", "dir": "Sherlock", "title": "Sherlock", "season": 3, "episode": 1, "episode_title": "The Empty Hearse"}
+{"name": "Game.of.Thrones.S08E03.1080p.WEB-DL.DDP5.1.H.264.mkv", "title": "Game of Thrones", "season": 8, "episode": 3}
+{"name": "Rick.and.Morty.S06E01.1080p.WEB-DL.x264.mkv", "title": "Rick and Morty", "season": 6, "episode": 1}
+{"name": "The.Sopranos.S02E13.Funhouse.1080p.WEB-DL.mkv", "dir": "The.Sopranos", "title": "The Sopranos", "season": 2, "episode": 13, "episode_title": "Funhouse"}
+{"name": "Better.Call.Saul.S06E13.1080p.WEB-DL.mkv", "title": "Better Call Saul", "season": 6, "episode": 13}
+{"name": "Cosmos.A.Space.Time.Odyssey.S01E01.1080p.BluRay.x264.mkv", "title": "Cosmos A Space Time Odyssey", "season": 1, "episode": 1}
+{"name": "Our.Planet.S01E05.Forests.2160p.WEB-DL.mkv", "dir": "Our.Planet", "title": "Our Planet", "season": 1, "episode": 5, "episode_title": "Forests"}
+{"name": "Dark.S03E01.Deja-vu.1080p.WEB-DL.mkv", "dir": "Dark", "title": "Dark", "season": 3, "episode": 1, "episode_title": "Deja-vu"}
+{"name": "The.Mandalorian.S02E01.1080p.WEB-DL.DDP5.1.mkv", "title": "The Mandalorian", "season": 2, "episode": 1}
+{"name": "Succession.S04E01.1080p.WEB-DL.x265.mkv", "title": "Succession", "season": 4, "episode": 1}
+{"name": "Attack.on.Titan.S04E28.1080p.WEB-DL.mkv", "title": "Attack on Titan", "season": 4, "episode": 28}
+{"name": "Fullmetal.Alchemist.Brotherhood.S01E02.1080p.BluRay.x264.mkv", "title": "Fullmetal Alchemist Brotherhood", "season": 1, "episode": 2}
+{"name": "[SubsPlease] Frieren - 01 (1080p) [HEVC x265 10bit].mkv", "title": "Frieren", "episode": 1, "resolution": "1080p"}
+{"name": "[SubsPlease] Bocchi the Rock - 05 (1080p) [HEVC x265 10bit].mkv", "title": "Bocchi the Rock", "episode": 5}
+{"name": "[Judas] Spy x Family - 12 (1080p) [HEVC x265 10bit].mkv", "title": "Spy x Family", "episode": 12}
+{"name": "One.Piece.1080.mkv", "episode": 1080}
+{"name": "我的团长我的团.第01集.mp4", "episode": 1}
+{"name": "明朝那些事 第12集.mp4", "episode": 12}
+{"name": "琅琊榜.第05集.HDTV.1080p.mp4", "episode": 5}
+{"name": "The.Great.Season.2.Episode.5.1080p.mkv", "title": "The Great", "season": 2, "episode": 5}
+{"name": "Some.Movie.(2020).1080p.WEB-DL.mkv", "title": "Some Movie", "year": 2020}
+{"name": "Another Movie 2018 720p BluRay x264.mkv", "title": "Another Movie", "year": 2018, "resolution": "720p"}
+{"name": "A.Movie.4K.2160p.BluRay.mkv", "year": null, "resolution": "2160p"}
+{"name": "Sample.Movie.2021.1080p-sample.mkv", "year": 2021}
+{"name": "Just.A.Title.mkv", "title": "Just A Title"}

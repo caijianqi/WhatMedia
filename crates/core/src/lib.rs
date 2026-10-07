@@ -6,6 +6,7 @@
 
 pub mod error;
 pub mod model;
+pub mod page;
 pub mod provider;
 
 pub use error::{MosaicError, Result};
@@ -15,6 +16,7 @@ pub use model::{
     Season, Series, StreamType, SubtitleCodec, Task, TaskKind, TaskPriority, TaskState,
     TranscodeJob, TranscodeState, VideoCodec,
 };
+pub use page::{Page, PageInfo};
 pub use provider::{
     AiTool, HardwareAccelerationProvider, HardwareKind, HardwareProfile, MediaPlayer,
     MetadataProvider, MetadataQuery, MetadataRecord, ModelProvider, PlayerEvent, PlayerState,

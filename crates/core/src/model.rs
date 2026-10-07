@@ -27,6 +27,13 @@ pub enum MediaKind {
     Mixed,
 }
 
+/// 未知流一律归为 `Data`，不要因为没有 Default 就让解析失败。
+impl Default for StreamType {
+    fn default() -> Self {
+        StreamType::Data
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum StreamType {
@@ -82,6 +89,13 @@ pub enum SubtitleCodec {
     DvdSub,
     #[serde(untagged)]
     Other(String),
+}
+
+/// 默认 SDR —— 绝大多数片源都不是 HDR，缺省不该是"未知"。
+impl Default for HdrType {
+    fn default() -> Self {
+        HdrType::Sdr
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]

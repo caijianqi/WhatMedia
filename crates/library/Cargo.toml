@@ -1,7 +1,15 @@
 [package]
 name = "mosaic-library"
-version = "0.1.0"
-edition = "2021"
+description = "入库编排：一个文件 → item/version/file/stream 四层结构"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
 
 [dependencies]
-mosaic-core = { path = "../core" }
+mosaic-core = { workspace = true }
+mosaic-database = { workspace = true }
+mosaic-media = { workspace = true }
+anyhow = { workspace = true }
+chrono = { workspace = true }
+uuid = { workspace = true }
+serde = { workspace = true }

@@ -1,7 +1,25 @@
 [package]
 name = "mosaic-scanner"
-version = "0.1.0"
-edition = "2021"
+description = "媒体库扫描：遍历 / 增量指纹 / 并发入库 / 可取消"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
 
 [dependencies]
-mosaic-core = { path = "../core" }
+mosaic-core = { workspace = true }
+tracing-subscriber = { workspace = true }
+mosaic-database = { workspace = true }
+mosaic-library = { workspace = true }
+mosaic-media = { workspace = true }
+mosaic-storage = { workspace = true }
+anyhow = { workspace = true }
+serde = { workspace = true }
+tokio = { workspace = true }
+tracing = { workspace = true }
+
+[dev-dependencies]
+tempfile = { workspace = true }
+anyhow = { workspace = true }
+tokio = { workspace = true }
+mosaic-core = { workspace = true }
+tracing-subscriber = { workspace = true }

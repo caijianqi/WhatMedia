@@ -1,6 +1,6 @@
 [package]
 name = "mosaic-api"
-description = "Axum 路由层，唯一对外出口（REST + SSE + WebSocket）"
+description = "Axum 路由层，唯一对外出口"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
@@ -8,7 +8,11 @@ rust-version.workspace = true
 [dependencies]
 mosaic-core = { workspace = true }
 mosaic-config = { workspace = true }
+mosaic-database = { workspace = true }
 mosaic-diagnostics = { workspace = true }
+mosaic-media = { workspace = true }
+mosaic-scanner = { workspace = true }
+mosaic-storage = { workspace = true }
 axum = { workspace = true }
 tower-http = { workspace = true }
 serde = { workspace = true }
@@ -16,6 +20,7 @@ serde_json = { workspace = true }
 tokio = { workspace = true }
 tracing = { workspace = true }
 chrono = { workspace = true }
+uuid = { workspace = true }
 
 [dev-dependencies]
 tower = { workspace = true, features = ["util"] }
