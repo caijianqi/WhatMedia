@@ -21,6 +21,7 @@ mosaic-database = { path = "crates/database" }
 mosaic-task = { path = "crates/task" }
 mosaic-diagnostics = { path = "crates/diagnostics" }
 mosaic-media = { path = "crates/media" }
+mosaic-metadata = { path = "crates/metadata" }
 mosaic-storage = { path = "crates/storage" }
 mosaic-library = { path = "crates/library" }
 mosaic-scanner = { path = "crates/scanner" }
@@ -62,6 +63,14 @@ roxmltree = "0.21"
 
 # ── 并发控制 ────────────────────────────────────────────
 tokio-util = "0.7"
+
+# ── HTTP（元数据 Provider 用）────────────────────────────────
+# default-features = false + rustls：不依赖目标机上的 OpenSSL，
+# 这对 arm64 交叉构建和 slim 镜像是必需的。
+reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls", "gzip"] }
+
+# ── 图片缓存键 / 指纹 ────────────────────────────────────────
+sha2 = "0.10"
 tempfile = "3"
 
 [profile.release]

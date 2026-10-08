@@ -3,17 +3,21 @@
 //! 调用方拿到的都是 `mosaic_core` 的领域模型，不是 Row。
 //! 这样"SQLite → PostgreSQL"的切换只需要重写本目录。
 
+pub mod image;
 pub mod library;
 pub mod media;
+pub mod metadata;
 pub mod scan;
 pub mod search;
 pub mod tv;
 
+pub use image::ItemImage;
 pub use library::{find_library_by_root, get_library, insert_library, list_libraries};
 pub use media::{
     count_items, get_item, list_items, replace_streams, upsert_file, upsert_item, upsert_version,
     FileWithStreams, ItemDetail, VersionWithFiles,
 };
+pub use metadata::{job_stats, CreditRow, JobStats, ScrapeTarget};
 pub use scan::{file_index_for_library, mark_files_missing};
 pub use search::search_items;
 pub use tv::{list_episodes, list_series, EpisodeSummary, SeriesSummary};

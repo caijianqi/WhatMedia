@@ -51,28 +51,55 @@ pub struct MetadataQuery {
     pub title: String,
     pub year: Option<i32>,
     pub language: Option<String>,
+    /// 集标题。动漫里 `Frieren - 07` 的目录提示有时比剧名更准。
+    #[serde(default)]
+    pub episode_title: Option<String>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+/// 一次刮削能拿到的全部信息。
+///
+/// 字段只会增加不会删除（见 ADR-0000：模型定稿后只允许加字段）。
+/// 所有 `Option` 都是"Provider 没给"而不是"没有"，合并时据此跳过。
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct MetadataRecord {
     pub provider: String,
     pub provider_id: String,
     pub title: String,
     pub original_title: Option<String>,
+    /// 排序用的标题。TMDB 会给 `The Matrix` 一个 `Matrix, The` 之类的形式。
+    pub sort_title: Option<String>,
     pub year: Option<i32>,
+    pub tagline: Option<String>,
     pub overview: Option<String>,
     pub runtime_ms: Option<i64>,
     pub rating: Option<f64>,
     pub genres: Vec<String>,
     pub images: Vec<MetadataImage>,
+    pub credits: Vec<MetadataCredit>,
+}
+
+/// 演职员。P2 的"人物 / 演职员表关系"就落在这张表上。
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct MetadataCredit {
+    pub name: String,
+    /// `actor` / `director` / `writer`。存小写，查询时不要再做大小写转换。
+    pub role: String,
+    pub character: Option<String>,
+    pub sort_order: i32,
+    /// Provider 侧的人物 id，用于以后抓人物头像。
+    pub provider_id: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct MetadataImage {
+    /// `poster` / `backdrop` / `still` / `logo` / `profile`
     pub kind: String,
     pub url: String,
     pub width: Option<i32>,
     pub height: Option<i32>,
+    /// 评分用的偏好值：同一 kind 多张图时挑最高的。
+    #[serde(default)]
+    pub vote: Option<f64>,
 }
 
 #[async_trait]

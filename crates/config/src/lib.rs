@@ -15,6 +15,21 @@ pub struct AppConfig {
     pub paths: PathsConfig,
     pub database: DatabaseConfig,
     pub logging: LoggingConfig,
+    pub metadata: MetadataConfig,
+    pub images: ImagesConfig,
+}
+
+impl AppConfig {
+    /// 图片缓存目录。未显式配置时落在 `<cache_dir>/images`。
+    ///
+    /// 做成方法而不是字段，是因为它依赖另一个字段的值 ——
+    /// 若存成字段，改了 `cache_dir` 之后这里就过期了。
+    pub fn images_dir(&self) -> PathBuf {
+        self.images
+            .dir
+            .clone()
+            .unwrap_or_else(|| self.paths.cache_dir.join("images"))
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -42,6 +57,35 @@ pub struct DatabaseConfig {
     pub kind: String,
     pub url: String,
     pub max_connections: u32,
+}
+
+/// 元数据刮削（P2）。
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct MetadataConfig {
+    /// TMDB v3 API Key。
+    pub tmdb_api_key: Option<String>,
+    /// TMDB v4 Bearer Token。两个都配时用它。
+    pub tmdb_bearer: Option<String>,
+    /// 启用 Bangumi（动漫）。中文日番在 Bangumi 上命中率更高。
+    pub bangumi_enabled: bool,
+    pub language: String,
+    /// 每秒请求上限。默认 4 —— 保守一点换不被封。
+    pub requests_per_second: f64,
+    /// 关掉后所有结果都进人工确认队列。新库第一次刮建议关掉。
+    pub auto_accept: bool,
+    pub concurrency: usize,
+    pub fetch_images: bool,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ImagesConfig {
+    /// 缓存根目录。默认 `<cache_dir>/images`。
+    pub dir: Option<PathBuf>,
+    /// 字节上限。超出后按 LRU 清理。
+    pub max_bytes: u64,
+    pub max_entries: u64,
+    /// 多少天没访问就清掉。
+    pub max_age_days: i64,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -76,6 +120,22 @@ impl Default for AppConfig {
             logging: LoggingConfig {
                 level: "info".into(),
                 format: "pretty".into(),
+            },
+            metadata: MetadataConfig {
+                tmdb_api_key: None,
+                tmdb_bearer: None,
+                bangumi_enabled: false,
+                language: "zh-CN".into(),
+                requests_per_second: 4.0,
+                auto_accept: true,
+                concurrency: 4,
+                fetch_images: true,
+            },
+            images: ImagesConfig {
+                dir: None,
+                max_bytes: 1024 * 1024 * 1024,
+                max_entries: 50_000,
+                max_age_days: 90,
             },
         }
     }
@@ -127,6 +187,38 @@ impl AppConfig {
         }
         if let Ok(v) = std::env::var("MOSAIC_LOG_LEVEL") {
             self.logging.level = v;
+        }
+        // ── 元数据 ────────────────────────────────────────────
+        // API Key 走环境变量而不是写进 TOML：TOML 常被误提交到仓库。
+        if let Ok(v) = std::env::var("MOSAIC_METADATA_TMDB_API_KEY") {
+            self.metadata.tmdb_api_key = Some(v);
+        }
+        if let Ok(v) = std::env::var("MOSAIC_METADATA_TMDB_BEARER") {
+            self.metadata.tmdb_bearer = Some(v);
+        }
+        if let Ok(v) = std::env::var("MOSAIC_METADATA_BANGUMI") {
+            self.metadata.bangumi_enabled =
+                matches!(v.to_lowercase().as_str(), "1" | "true" | "yes" | "on");
+        }
+        if let Ok(v) = std::env::var("MOSAIC_METADATA_LANGUAGE") {
+            self.metadata.language = v;
+        }
+        if let Ok(v) = std::env::var("MOSAIC_METADATA_RPS") {
+            if let Ok(n) = v.parse() {
+                self.metadata.requests_per_second = n;
+            }
+        }
+        if let Ok(v) = std::env::var("MOSAIC_METADATA_AUTO_ACCEPT") {
+            self.metadata.auto_accept =
+                matches!(v.to_lowercase().as_str(), "1" | "true" | "yes" | "on");
+        }
+        if let Ok(v) = std::env::var("MOSAIC_IMAGES_DIR") {
+            self.images.dir = Some(PathBuf::from(v));
+        }
+        if let Ok(v) = std::env::var("MOSAIC_IMAGES_MAX_MB") {
+            if let Ok(n) = v.parse::<u64>() {
+                self.images.max_bytes = n * 1024 * 1024;
+            }
         }
         if let Ok(v) = std::env::var("MOSAIC_LOG_FORMAT") {
             self.logging.format = v;

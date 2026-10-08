@@ -11,6 +11,7 @@ mosaic-config = { workspace = true }
 mosaic-database = { workspace = true }
 mosaic-diagnostics = { workspace = true }
 mosaic-media = { workspace = true }
+mosaic-metadata = { workspace = true }
 mosaic-scanner = { workspace = true }
 mosaic-storage = { workspace = true }
 axum = { workspace = true }

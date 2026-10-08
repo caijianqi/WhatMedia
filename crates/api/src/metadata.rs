@@ -1,0 +1,544 @@
+//! 元数据相关端点。
+//!
+//! 三条设计约束：
+//!   · 刮削是异步的，POST 立即返回 202，进度靠 `/scrape/stats` 轮询
+//!   · 人工确认入口必须存在 —— 自动刮削永远有认不准的时候
+//!   · 图片取不到要返回占位图，不能 404（海报墙会变成一片破图）
+
+use axum::{
+    extract::{Path as AxumPath, Query, State},
+    http::{header, StatusCode},
+    response::{IntoResponse, Response},
+    Json,
+};
+use serde::{Deserialize, Serialize};
+use std::sync::{Arc, Mutex};
+use uuid::Uuid;
+
+use mosaic_core::Id;
+use mosaic_metadata::{
+    placeholder_svg, HttpTransport, ImageCache, Outcome, ScrapeConfig, ScrapeStats, Scraper,
+};
+
+use crate::{bad_request, error_response, internal, AppState};
+
+// ─────────────────────────────────────────────────────────────
+// 刮削运行状态
+// ─────────────────────────────────────────────────────────────
+
+#[derive(Clone, Default)]
+pub struct ScrapeRegistry {
+    inner: Arc<Mutex<std::collections::HashMap<Uuid, ScrapeRunView>>>,
+}
+
+#[derive(Clone, Serialize)]
+pub struct ScrapeRunView {
+    pub id: Uuid,
+    pub library_id: Option<String>,
+    pub running: bool,
+    pub stats: Option<ScrapeStats>,
+}
+
+impl ScrapeRegistry {
+    fn insert(&self, v: ScrapeRunView) {
+        self.inner.lock().unwrap().insert(v.id, v);
+    }
+
+    fn finish(&self, id: Uuid, stats: ScrapeStats) {
+        if let Some(v) = self.inner.lock().unwrap().get_mut(&id) {
+            v.running = false;
+            v.stats = Some(stats);
+        }
+    }
+
+    pub fn list(&self) -> Vec<ScrapeRunView> {
+        self.inner.lock().unwrap().values().cloned().collect()
+    }
+}
+
+// ─────────────────────────────────────────────────────────────
+// 请求 / 响应
+// ─────────────────────────────────────────────────────────────
+
+#[derive(Debug, Deserialize)]
+pub struct ScrapeRequest {
+    pub library_id: Option<Id>,
+    /// 只重跑失败项。
+    #[serde(default)]
+    pub retry_failed: bool,
+}
+
+#[derive(Debug, Serialize)]
+pub struct ScrapeAccepted {
+    pub run_id: Uuid,
+    pub queued: u64,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct IdentifyRequest {
+    pub provider: String,
+    pub provider_id: String,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct LockRequest {
+    /// 要锁定或解锁的字段名。
+    pub fields: Vec<String>,
+    #[serde(default = "default_true")]
+    pub locked: bool,
+}
+
+fn default_true() -> bool {
+    true
+}
+
+#[derive(Debug, Serialize)]
+pub struct LockResult {
+    pub locked_fields: Vec<String>,
+    /// 被拒绝的字段名（不在白名单里）。UI 应当提示用户。
+    pub rejected: Vec<String>,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct CandidatesQuery {
+    pub item_id: Id,
+    pub title: Option<String>,
+    pub year: Option<i32>,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct StatsQuery {
+    pub library_id: Option<Id>,
+}
+
+// ─────────────────────────────────────────────────────────────
+// 处理器
+// ─────────────────────────────────────────────────────────────
+
+/// 启动一轮刮削。
+///
+/// 1,000 部片要跑几十分钟，绝不能让 HTTP 请求挂在那儿等。
+pub async fn start_scrape(
+    State(state): State<AppState>,
+    Json(body): Json<ScrapeRequest>,
+) -> Response {
+    let scraper = match &state.scraper {
+        Some(s) => s.clone(),
+        None => {
+            return error_response(
+                StatusCode::NOT_IMPLEMENTED,
+                "NO_METADATA_PROVIDER",
+                "未配置任何元数据 Provider（需要 TMDB API Key 或启用 Bangumi）",
+            )
+        }
+    };
+
+    let library_id = body.library_id;
+    let queued = match library_id {
+        Some(l) if body.retry_failed => match scraper.requeue_failed(l).await {
+            Ok(n) => n,
+            Err(e) => return internal(e),
+        },
+        Some(l) => match scraper.enqueue(l).await {
+            Ok(n) => n,
+            Err(e) => return internal(e),
+        },
+        None => 0,
+    };
+
+    // 先把崩溃遗留的 running 捞回来，再开跑
+    if let Err(e) = scraper.reap_running().await {
+        tracing::warn!("回收 running 任务失败：{e:#}");
+    }
+
+    let run_id = Uuid::new_v4();
+    state.scrapes.insert(ScrapeRunView {
+        id: run_id,
+        library_id: library_id.map(|i| i.to_string()),
+        running: true,
+        stats: None,
+    });
+
+    let registry = state.scrapes.clone();
+    tokio::spawn(async move {
+        let result = scraper.run(library_id, Default::default()).await;
+        match result {
+            Ok(stats) => registry.finish(run_id, stats),
+            Err(e) => {
+                tracing::error!("刮削失败：{e:#}");
+                registry.finish(run_id, ScrapeStats::default());
+            }
+        }
+    });
+
+    (
+        StatusCode::ACCEPTED,
+        Json(ScrapeAccepted { run_id, queued }),
+    )
+        .into_response()
+}
+
+pub async fn scrape_runs(State(state): State<AppState>) -> Response {
+    Json(state.scrapes.list()).into_response()
+}
+
+pub async fn scrape_stats(State(state): State<AppState>, Query(q): Query<StatsQuery>) -> Response {
+    let db = match state.db_or_503() {
+        Ok(d) => d,
+        Err(r) => return *r,
+    };
+    match mosaic_database::repo::metadata::job_stats(&db, q.library_id).await {
+        Ok(s) => Json(s).into_response(),
+        Err(e) => internal(e),
+    }
+}
+
+/// 待人工确认列表。
+pub async fn review_queue(State(state): State<AppState>, Query(q): Query<StatsQuery>) -> Response {
+    let db = match state.db_or_503() {
+        Ok(d) => d,
+        Err(r) => return *r,
+    };
+    match mosaic_database::repo::metadata::list_review(&db, q.library_id, 200).await {
+        Ok(list) => {
+            let view: Vec<ReviewItem> = list
+                .into_iter()
+                .map(|t| ReviewItem {
+                    item_id: t.id,
+                    kind: t.kind,
+                    title: t.title,
+                    match_title: t.match_title,
+                    year: t.year,
+                })
+                .collect();
+            Json(view).into_response()
+        }
+        Err(e) => internal(e),
+    }
+}
+
+#[derive(Debug, Serialize)]
+pub struct ReviewItem {
+    pub item_id: Id,
+    pub kind: String,
+    pub title: String,
+    /// 实际用于搜索的标题。UI 要显示它 —— 用户常常不知道"改了名就搜不到了"。
+    pub match_title: String,
+    pub year: Option<i32>,
+}
+
+/// 候选列表。人工确认界面靠它。
+pub async fn candidates(
+    State(state): State<AppState>,
+    Query(q): Query<CandidatesQuery>,
+) -> Response {
+    let scraper = match &state.scraper {
+        Some(s) => s,
+        None => {
+            return error_response(
+                StatusCode::NOT_IMPLEMENTED,
+                "NO_METADATA_PROVIDER",
+                "未配置任何元数据 Provider",
+            )
+        }
+    };
+    match scraper.candidates(q.item_id, q.title.clone(), q.year).await {
+        Ok(list) => Json(list).into_response(),
+        Err(e) => match e.to_string() {
+            m if m.contains("条目不存在") => {
+                error_response(StatusCode::NOT_FOUND, "NOT_FOUND", m)
+            }
+            m => internal(m),
+        },
+    }
+}
+
+/// 人工确认：直接采用指定 Provider 的指定 id。
+pub async fn identify(
+    State(state): State<AppState>,
+    AxumPath(id): AxumPath<Id>,
+    Json(body): Json<IdentifyRequest>,
+) -> Response {
+    let scraper = match &state.scraper {
+        Some(s) => s,
+        None => {
+            return error_response(
+                StatusCode::NOT_IMPLEMENTED,
+                "NO_METADATA_PROVIDER",
+                "未配置任何元数据 Provider",
+            )
+        }
+    };
+    match scraper
+        .identify(id, &body.provider, &body.provider_id)
+        .await
+    {
+        Ok(()) => (StatusCode::OK, Json(serde_json::json!({ "status": "ok" }))).into_response(),
+        Err(e) => match e.to_string() {
+            m if m.contains("条目不存在") => {
+                error_response(StatusCode::NOT_FOUND, "NOT_FOUND", m)
+            }
+            m if m.contains("未配置") => bad_request(m),
+            m => internal(m),
+        },
+    }
+}
+
+/// 锁定 / 解锁字段。
+///
+/// 拒绝白名单外的字段，而不是静默忽略 —— 否则用户以为锁上了，其实没有。
+pub async fn set_locks(
+    State(state): State<AppState>,
+    AxumPath(id): AxumPath<Id>,
+    Json(body): Json<LockRequest>,
+) -> Response {
+    let db = match state.db_or_503() {
+        Ok(d) => d,
+        Err(r) => return *r,
+    };
+
+    let current = match mosaic_database::repo::metadata::locked_fields_of_item(&db, id).await {
+        Ok(s) => s,
+        Err(e) => return internal(e),
+    };
+    let mut locked = mosaic_metadata::parse_locked(&current);
+    let mut rejected = Vec::new();
+
+    for f in &body.fields {
+        if !mosaic_metadata::set_locked(&mut locked, f, body.locked) {
+            rejected.push(f.clone());
+        }
+    }
+
+    let json = mosaic_metadata::serialize_locked(&locked);
+    if let Err(e) = mosaic_database::repo::metadata::update_item_meta(
+        &db,
+        id,
+        &mosaic_database::repo::metadata::ItemMetaUpdate {
+            locked_fields: Some(json),
+            ..Default::default()
+        },
+    )
+    .await
+    {
+        return internal(e);
+    }
+
+    let mut out: Vec<String> = locked.into_iter().collect();
+    out.sort();
+    Json(LockResult {
+        locked_fields: out,
+        rejected,
+    })
+    .into_response()
+}
+
+/// 某条目的图片清单。
+pub async fn item_images(State(state): State<AppState>, AxumPath(id): AxumPath<Id>) -> Response {
+    let db = match state.db_or_503() {
+        Ok(d) => d,
+        Err(r) => return *r,
+    };
+    match mosaic_database::repo::image::list_for_item(&db, id).await {
+        Ok(list) => Json(list).into_response(),
+        Err(e) => internal(e),
+    }
+}
+
+/// 取一张图。缓存里有就直出，没有就给占位图 —— 绝不 404。
+pub async fn item_image(
+    State(state): State<AppState>,
+    AxumPath((id, kind)): AxumPath<(Id, String)>,
+) -> Response {
+    let db = match state.db_or_503() {
+        Ok(d) => d,
+        Err(r) => return *r,
+    };
+
+    let images = match mosaic_database::repo::image::list_for_item(&db, id).await {
+        Ok(v) => v,
+        Err(e) => return internal(e),
+    };
+    let wanted = images.iter().find(|i| i.kind == kind);
+
+    // ① 已缓存：直出文件
+    if let Some(p) = wanted.and_then(|i| i.cached_path.as_ref()) {
+        if let Ok(bytes) = tokio::fs::read(p).await {
+            let ct = content_type_of(p);
+            return (
+                StatusCode::OK,
+                [
+                    (header::CONTENT_TYPE, ct),
+                    (header::CACHE_CONTROL, "public, max-age=86400"),
+                ],
+                bytes,
+            )
+                .into_response();
+        }
+    }
+
+    // ② 有 URL 且有缓存：按需下载一次再直出
+    if let (Some(img), Some(cache)) = (wanted, &state.images) {
+        if let Some(url) = &img.url {
+            if let Some(p) = download_into(cache, url, &kind).await {
+                if let Ok(bytes) = tokio::fs::read(&p).await {
+                    return (
+                        StatusCode::OK,
+                        [
+                            (header::CONTENT_TYPE, content_type_of(&p.to_string_lossy())),
+                            (header::CACHE_CONTROL, "public, max-age=86400"),
+                        ],
+                        bytes,
+                    )
+                        .into_response();
+                }
+            }
+        }
+    }
+
+    // ③ 兜底：占位图。海报墙不能出现破图。
+    let title = mosaic_database::repo::get_item(&db, id)
+        .await
+        .ok()
+        .flatten()
+        .map(|d| d.item.title)
+        .unwrap_or_default();
+    let svg = placeholder_svg(&title, 300, 450);
+    (
+        StatusCode::OK,
+        [(header::CONTENT_TYPE, "image/svg+xml")],
+        svg,
+    )
+        .into_response()
+}
+
+async fn download_into(cache: &ImageCache, url: &str, kind: &str) -> Option<std::path::PathBuf> {
+    let transport = mosaic_metadata::ReqwestTransport::new();
+    let key = ImageCache::key_for(url, kind);
+    if let Some(p) = cache.get(&key).await {
+        return Some(p);
+    }
+    let res = transport.get(url, None).await.ok()?;
+    if res.body.is_empty() {
+        return None;
+    }
+    let ext = extension_of(url);
+    cache
+        .put(kind, url, kind, ext, &res.body)
+        .await
+        .ok()
+}
+
+fn extension_of(url: &str) -> &'static str {
+    let lower = url.to_lowercase();
+    let p = lower.split('?').next().unwrap_or(&lower);
+    match p.rsplit('.').next().unwrap_or("") {
+        "png" => "png",
+        "webp" => "webp",
+        "gif" => "gif",
+        _ => "jpg",
+    }
+}
+
+fn content_type_of(path: &str) -> &'static str {
+    match path
+        .rsplit('.')
+        .next()
+        .unwrap_or("")
+        .to_lowercase()
+        .as_str()
+    {
+        "png" => "image/png",
+        "webp" => "image/webp",
+        "gif" => "image/gif",
+        "svg" => "image/svg+xml",
+        _ => "image/jpeg",
+    }
+}
+
+/// 缓存统计。用于验证 DoD 的"命中率 ≥ 90%"。
+pub async fn cache_stats(State(state): State<AppState>) -> Response {
+    match &state.images {
+        Some(c) => match c.stats().await {
+            Ok(s) => Json(s).into_response(),
+            Err(e) => internal(e),
+        },
+        None => error_response(
+            StatusCode::NOT_IMPLEMENTED,
+            "NO_IMAGE_CACHE",
+            "图片缓存未启用",
+        ),
+    }
+}
+
+/// 手动触发一次缓存清理。
+pub async fn cache_evict(State(state): State<AppState>) -> Response {
+    match &state.images {
+        Some(c) => match c.evict().await {
+            Ok(r) => Json(r).into_response(),
+            Err(e) => internal(e),
+        },
+        None => error_response(
+            StatusCode::NOT_IMPLEMENTED,
+            "NO_IMAGE_CACHE",
+            "图片缓存未启用",
+        ),
+    }
+}
+
+/// 判定结果字符串转枚举，便于日志与统计。
+pub fn outcome_label(o: Outcome) -> &'static str {
+    match o {
+        Outcome::Matched => "matched",
+        Outcome::Review => "review",
+        Outcome::Skipped => "skipped",
+        Outcome::Failed => "failed",
+    }
+}
+
+/// 从配置构造 Scraper。Provider 为空时返回 None —— 此时元数据端点返回 501。
+pub fn build_scraper(
+    db: mosaic_database::Db,
+    cfg: &mosaic_config::AppConfig,
+) -> Option<Arc<Scraper>> {
+    let chain = mosaic_metadata::ProviderChainConfig {
+        tmdb_api_key: cfg.metadata.tmdb_api_key.clone(),
+        tmdb_bearer: cfg.metadata.tmdb_bearer.clone(),
+        bangumi_enabled: cfg.metadata.bangumi_enabled,
+        language: cfg.metadata.language.clone(),
+        requests_per_second: cfg.metadata.requests_per_second,
+    };
+    let providers = mosaic_metadata::build_providers(&chain);
+    if providers.is_empty() {
+        return None;
+    }
+    Some(Arc::new(Scraper::new(
+        db,
+        providers,
+        ScrapeConfig {
+            concurrency: cfg.metadata.concurrency,
+            auto_accept: cfg.metadata.auto_accept,
+            fetch_images: cfg.metadata.fetch_images,
+            ..Default::default()
+        },
+    )))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn content_type_mapping() {
+        assert_eq!(content_type_of("/a/b.jpg"), "image/jpeg");
+        assert_eq!(content_type_of("/a/b.PNG"), "image/png");
+        assert_eq!(content_type_of("/a/b.webp"), "image/webp");
+        assert_eq!(content_type_of("/a/b"), "image/jpeg");
+    }
+
+    #[test]
+    fn outcome_labels_are_stable() {
+        assert_eq!(outcome_label(Outcome::Matched), "matched");
+        assert_eq!(outcome_label(Outcome::Review), "review");
+    }
+}

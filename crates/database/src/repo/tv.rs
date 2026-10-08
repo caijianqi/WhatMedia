@@ -86,12 +86,14 @@ pub async fn upsert_series(db: &Db, title: &str, year: Option<i32>) -> Result<Se
     }
     let id = Uuid::new_v4();
     sqlx::query(
-        "INSERT INTO series (id, title, original_title, year, overview) VALUES (?,?,NULL,?,NULL)
+        "INSERT INTO series (id, title, original_title, year, overview, match_title)
+         VALUES (?,?,NULL,?,NULL,?)
          ON CONFLICT DO NOTHING",
     )
     .bind(id.to_string())
     .bind(title)
     .bind(year)
+    .bind(title)
     .execute(db.pool())
     .await?;
 

@@ -8,6 +8,8 @@
 //! 未接数据库时（例如只做健康检查的容器探针），数据类端点返回 503 而不是 501，
 //! 这样前端能区分"功能没做"和"后端没准备好"。
 
+pub mod metadata;
+
 use axum::{
     extract::{Path as AxumPath, Query, State},
     http::StatusCode,
@@ -21,6 +23,7 @@ use mosaic_core::{Id, MediaKind};
 use mosaic_database::repo::tv::EpisodeQuery;
 use mosaic_database::repo::ItemQuery;
 use mosaic_database::Db;
+use mosaic_metadata::{ImageCache, Scraper};
 use mosaic_scanner::{ScanConfig, ScanControl, ScanProgress, Scanner};
 use mosaic_storage::LocalStorage;
 use serde::{Deserialize, Serialize};
@@ -66,7 +69,11 @@ pub struct AppState {
     pub config: Arc<AppConfig>,
     pub db: Option<Db>,
     pub ffprobe: Option<Arc<mosaic_media::FfprobeRunner>>,
+    /// 刮削器。没有配置任何 Provider 时是 None，元数据端点返回 501。
+    pub scraper: Option<Arc<Scraper>>,
+    pub images: Option<Arc<ImageCache>>,
     pub scans: ScanRegistry,
+    pub scrapes: metadata::ScrapeRegistry,
     pub started_at: chrono::DateTime<Utc>,
 }
 
@@ -76,7 +83,10 @@ impl AppState {
             config: Arc::new(config),
             db: None,
             ffprobe: None,
+            scraper: None,
+            images: None,
             scans: ScanRegistry::default(),
+            scrapes: metadata::ScrapeRegistry::default(),
             started_at: Utc::now(),
         }
     }
@@ -88,6 +98,16 @@ impl AppState {
 
     pub fn with_ffprobe(mut self, runner: Option<Arc<mosaic_media::FfprobeRunner>>) -> Self {
         self.ffprobe = runner;
+        self
+    }
+
+    pub fn with_scraper(mut self, scraper: Option<Arc<Scraper>>) -> Self {
+        self.scraper = scraper;
+        self
+    }
+
+    pub fn with_images(mut self, cache: Option<Arc<ImageCache>>) -> Self {
+        self.images = cache;
         self
     }
 
@@ -353,26 +373,28 @@ async fn start_scan(State(state): State<AppState>, Json(body): Json<ScanRequest>
         Err(e) => return bad_request(format!("目录不可访问 {}：{e}", body.path)),
     };
 
-    let library = match mosaic_database::repo::find_library_by_root(&db, "local", &root.to_string_lossy()).await
-    {
-        Ok(Some(l)) => l,
-        Ok(None) => {
-            match mosaic_database::repo::insert_library(
-                &db,
-                &name,
-                MediaKind::Mixed,
-                "local",
-                &body.path,
-                &[],
-            )
+    let library =
+        match mosaic_database::repo::find_library_by_root(&db, "local", &root.to_string_lossy())
             .await
-            {
-                Ok(l) => l,
-                Err(e) => return internal(e),
+        {
+            Ok(Some(l)) => l,
+            Ok(None) => {
+                match mosaic_database::repo::insert_library(
+                    &db,
+                    &name,
+                    MediaKind::Mixed,
+                    "local",
+                    &body.path,
+                    &[],
+                )
+                .await
+                {
+                    Ok(l) => l,
+                    Err(e) => return internal(e),
+                }
             }
-        }
-        Err(e) => return internal(e),
-    };
+            Err(e) => return internal(e),
+        };
 
     let storage = match LocalStorage::new("local", &root) {
         Ok(s) => Arc::new(s),
@@ -448,6 +470,21 @@ pub fn build_router(state: AppState) -> Router {
         // 任务与扫描
         .route("/api/v1/tasks", get(list_tasks))
         .route("/api/v1/scan", post(start_scan))
+        // 元数据与图片（P2）
+        .route("/api/v1/scrape", post(metadata::start_scrape))
+        .route("/api/v1/scrape/stats", get(metadata::scrape_stats))
+        .route("/api/v1/scrape/runs", get(metadata::scrape_runs))
+        .route("/api/v1/metadata/review", get(metadata::review_queue))
+        .route("/api/v1/metadata/candidates", get(metadata::candidates))
+        .route("/api/v1/metadata/cache/stats", get(metadata::cache_stats))
+        .route("/api/v1/metadata/cache/evict", post(metadata::cache_evict))
+        .route("/api/v1/items/{id}/identify", post(metadata::identify))
+        .route("/api/v1/items/{id}/locks", post(metadata::set_locks))
+        .route("/api/v1/items/{id}/images", get(metadata::item_images))
+        .route(
+            "/api/v1/items/{id}/images/{kind}",
+            get(metadata::item_image),
+        )
         .with_state(state)
         .layer(TraceLayer::new_for_http())
         .fallback(fallback)

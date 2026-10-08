@@ -30,6 +30,16 @@ async fn main() -> Result<()> {
 
     let ffprobe = detect_ffprobe().await;
 
+    // 图片缓存。缓存目录建不出来不算致命 —— 大不了每张图都回源。
+    let images = init_image_cache(&config, db.clone());
+    let scraper = mosaic_api::metadata::build_scraper(db.clone(), &config);
+    if scraper.is_none() {
+        warn!(
+            "未配置任何元数据 Provider（TMDB API Key / Bangumi 均未启用），\
+             刮削端点将返回 501"
+        );
+    }
+
     info!(
         version = env!("CARGO_PKG_VERSION"),
         arch = std::env::consts::ARCH,
@@ -38,7 +48,18 @@ async fn main() -> Result<()> {
 
     let state = AppState::new(config.clone())
         .with_db(db)
-        .with_ffprobe(ffprobe);
+        .with_ffprobe(ffprobe)
+        .with_scraper(scraper)
+        .with_images(images);
+
+    // 重启后把上次崩溃遗留的 running 任务捞回来，否则它们会永久卡住。
+    if let Some(s) = &state.scraper {
+        match s.reap_running().await {
+            Ok(0) => {}
+            Ok(n) => info!("已回收 {n} 个中断的刮削任务"),
+            Err(e) => warn!("回收刮削任务失败：{e:#}"),
+        }
+    }
 
     let addr = config.bind_addr();
     let router = build_router(state);
@@ -91,6 +112,33 @@ async fn shutdown_signal() {
         _ = terminate => {}
     }
     info!("收到退出信号，开始优雅关闭");
+}
+
+/// 初始化图片缓存。
+///
+/// 缓存目录建不出来只降级不失败：没有缓存只是每张图都回源，
+/// 而启动失败是"整个服务不可用"。这两者的严重程度差着一个数量级。
+fn init_image_cache(
+    config: &AppConfig,
+    db: mosaic_database::Db,
+) -> Option<Arc<mosaic_metadata::ImageCache>> {
+    let dir = config.images_dir();
+    let cfg = mosaic_metadata::ImageCacheConfig {
+        dir: dir.clone(),
+        max_bytes: config.images.max_bytes,
+        max_entries: config.images.max_entries,
+        max_age: chrono::Duration::days(config.images.max_age_days),
+    };
+    match mosaic_metadata::ImageCache::new(db, cfg) {
+        Ok(c) => {
+            info!(dir = %dir.display(), "图片缓存已就绪");
+            Some(Arc::new(c))
+        }
+        Err(e) => {
+            warn!("图片缓存不可用（{}）：{e:#}", dir.display());
+            None
+        }
+    }
 }
 
 /// 探测 ffprobe 是否可用。

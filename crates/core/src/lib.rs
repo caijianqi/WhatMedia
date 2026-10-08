@@ -5,11 +5,13 @@
 //! 之后只允许新增带默认实现的方法或新增类型，不允许修改既有签名。
 
 pub mod error;
+pub mod ids;
 pub mod model;
 pub mod page;
 pub mod provider;
 
 pub use error::{MosaicError, Result};
+pub use ids::deterministic_id;
 pub use model::{
     AudioCodec, ByteRange, Container, Episode, HdrType, Id, Library, MediaFile, MediaItem,
     MediaKind, MediaStream, MediaVersion, PlaybackSession, PlaybackSource, PlaybackStrategy,
@@ -19,6 +21,6 @@ pub use model::{
 pub use page::{Page, PageInfo};
 pub use provider::{
     AiTool, HardwareAccelerationProvider, HardwareKind, HardwareProfile, MediaPlayer,
-    MetadataProvider, MetadataQuery, MetadataRecord, ModelProvider, PlayerEvent, PlayerState,
-    StorageEntry, StorageProvider, ToolContext, ToolRisk,
+    MetadataCredit, MetadataImage, MetadataProvider, MetadataQuery, MetadataRecord, ModelProvider,
+    PlayerEvent, PlayerState, StorageEntry, StorageProvider, ToolContext, ToolRisk,
 };

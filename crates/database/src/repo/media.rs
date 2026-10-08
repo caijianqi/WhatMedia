@@ -20,9 +20,11 @@ pub async fn upsert_item(db: &Db, item: &MediaItem) -> Result<()> {
     sqlx::query(
         "INSERT INTO media_item (
             id, library_id, kind, title, original_title, sort_title, year, overview,
-            runtime_ms, rating, locked_fields, provider, provider_id, added_at
-         ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+            runtime_ms, rating, locked_fields, provider, provider_id, added_at, match_title
+         ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
          ON CONFLICT(id) DO UPDATE SET
+            -- match_title 永远跟随文件名，不受用户改名影响
+            match_title = excluded.match_title,
             title = excluded.title,
             original_title = excluded.original_title,
             sort_title = excluded.sort_title,
@@ -48,6 +50,7 @@ pub async fn upsert_item(db: &Db, item: &MediaItem) -> Result<()> {
     .bind(&item.provider)
     .bind(&item.provider_id)
     .bind(item.added_at.to_rfc3339())
+    .bind(&item.title)
     .execute(db.pool())
     .await?;
     Ok(())

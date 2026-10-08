@@ -16,7 +16,23 @@ AI 原生、自托管、多来源、跨平台的家庭影音平台。
 
 ## 当前状态
 
-**P1：媒体内核（已完成）** · P0 已交付
+**P2：元数据与图片（已完成）** · P1 / P0 已交付
+
+### P2 交付物
+
+| 交付物 | 状态 |
+|---|---|
+| `metadata` MetadataProvider 链：**TMDB + Bangumi**（可插拔、可注入 fixture） | ✅ |
+| 本地 NFO 作为独立优先级源（NFO > 手动锁定 > Provider） | ✅ |
+| 候选打分与自动确认判定（标题编辑距离 × 年份，分差不足则转人工） | ✅ |
+| **字段级锁定**：用户改过的字段任何自动来源都不覆盖 | ✅ |
+| 刮削任务队列：**可断点续跑**、崩溃任务自动回收、可重试失败项 | ✅ |
+| 图片缓存：LRU + 按时间 / 体积 / 类型清理（still 先于 poster 牺牲） | ✅ |
+| 缺图占位 SVG（零依赖生成，不产生破图） | ✅ |
+| FFmpeg 缩略图与多尺寸变体（参数构造 + 进程生命周期，离线可测） | ✅ |
+| 类型 / 演职员 / 人物关系入库 | ✅ |
+| API：`/scrape` `/scrape/stats` `/metadata/candidates` `/metadata/review` `/items/{id}/identify` `/items/{id}/locks` `/items/{id}/images/{kind}` | ✅ |
+| `mosaic-cli scrape` / `candidates` / `identify` / `lock` / `review` / `images` | ✅ |
 
 ### P1 交付物
 
@@ -83,6 +99,14 @@ make docker
 | `MOSAIC_LOG_LEVEL` | `info` | 日志级别 |
 | `MOSAIC_LOG_FORMAT` | `pretty` | `pretty` 或 `json` |
 | `MOSAIC_MIGRATIONS_DIR` | 仓库内 `migrations/` | 容器里是 `/usr/local/share/mosaic/migrations` |
+| `MOSAIC_METADATA_TMDB_API_KEY` | 无 | TMDB v3 Key。不配则刮削端点返回 501 |
+| `MOSAIC_METADATA_TMDB_BEARER` | 无 | TMDB v4 Token |
+| `MOSAIC_METADATA_BANGUMI` | `false` | `1`/`true` 启用 Bangumi（动漫） |
+| `MOSAIC_METADATA_LANGUAGE` | `zh-CN` | 刮削语言 |
+| `MOSAIC_METADATA_RPS` | `4` | 每秒请求上限，别打爆 Provider |
+| `MOSAIC_METADATA_AUTO_ACCEPT` | `true` | 关掉则全部进人工确认队列 |
+| `MOSAIC_IMAGES_DIR` | `<cache_dir>/images` | 图片缓存目录 |
+| `MOSAIC_IMAGES_MAX_MB` | `1024` | 缓存上限，超出按 LRU 清理 |
 
 ### 端到端跑一遍
 

@@ -1,7 +1,25 @@
 [package]
 name = "mosaic-metadata"
-version = "0.1.0"
-edition = "2021"
+description = "元数据刮削与图片缓存：Provider 链 / 打分 / 字段级锁定 / LRU 缓存"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
 
 [dependencies]
-mosaic-core = { path = "../core" }
+mosaic-core = { workspace = true }
+mosaic-database = { workspace = true }
+mosaic-media = { workspace = true }
+anyhow = { workspace = true }
+async-trait = { workspace = true }
+chrono = { workspace = true }
+reqwest = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+sha2 = { workspace = true }
+tokio = { workspace = true }
+tracing = { workspace = true }
+
+[dev-dependencies]
+tempfile = { workspace = true }
+mosaic-core = { workspace = true }
+chrono = { workspace = true }
