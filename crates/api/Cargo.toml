@@ -1,27 +1,48 @@
 [package]
-name = "mosaic-api"
+name = "whatmedia-api"
 description = "Axum 路由层，唯一对外出口"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
 
+[features]
+# 打开后才编译 utoipa 的 schema/path 标注与 `openapi.rs`。
+# 默认关闭：常规构建不该为此付出编译时间。
+openapi = [
+  "dep:utoipa",
+  "whatmedia-core/openapi",
+  "whatmedia-database/openapi",
+  "whatmedia-diagnostics/openapi",
+  "whatmedia-metadata/openapi",
+  "whatmedia-scanner/openapi",
+]
+
 [dependencies]
-mosaic-core = { workspace = true }
-mosaic-config = { workspace = true }
-mosaic-database = { workspace = true }
-mosaic-diagnostics = { workspace = true }
-mosaic-media = { workspace = true }
-mosaic-metadata = { workspace = true }
-mosaic-scanner = { workspace = true }
-mosaic-storage = { workspace = true }
+utoipa = { workspace = true, optional = true }
+whatmedia-core = { workspace = true }
+anyhow = { workspace = true }
+whatmedia-config = { workspace = true }
+whatmedia-database = { workspace = true }
+whatmedia-diagnostics = { workspace = true }
+whatmedia-media = { workspace = true }
+whatmedia-metadata = { workspace = true }
+whatmedia-playback = { path = "../playback" }
+whatmedia-storage = { workspace = true }
+whatmedia-transcoder = { path = "../transcoder" }
+whatmedia-subtitle = { path = "../subtitle" }
+whatmedia-scanner = { workspace = true }
 axum = { workspace = true }
 tower-http = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
 tokio = { workspace = true }
+tokio-util = { workspace = true }
 tracing = { workspace = true }
 chrono = { workspace = true }
 uuid = { workspace = true }
 
 [dev-dependencies]
 tower = { workspace = true, features = ["util"] }
+tempfile = { workspace = true }
+sqlx = { workspace = true }
+serde_json = { workspace = true }

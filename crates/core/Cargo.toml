@@ -1,11 +1,17 @@
 [package]
-name = "mosaic-core"
-description = "Mosaic 领域模型与核心抽象契约（最稳定，改动需 ADR）"
+name = "whatmedia-core"
+description = "WhatMedia 领域模型与核心抽象契约（最稳定，改动需 ADR）"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
 
+[features]
+# OpenAPI schema 导出。默认关闭 —— core 是依赖图的根，
+# 不能为了"生成契约"给所有下游强加一个依赖。
+openapi = ["dep:utoipa"]
+
 [dependencies]
+utoipa = { workspace = true, optional = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
 tokio = { workspace = true }

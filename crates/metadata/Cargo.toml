@@ -1,14 +1,18 @@
 [package]
-name = "mosaic-metadata"
+name = "whatmedia-metadata"
 description = "元数据刮削与图片缓存：Provider 链 / 打分 / 字段级锁定 / LRU 缓存"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
 
+[features]
+openapi = ["dep:utoipa", "whatmedia-core/openapi", "whatmedia-database/openapi"]
+
 [dependencies]
-mosaic-core = { workspace = true }
-mosaic-database = { workspace = true }
-mosaic-media = { workspace = true }
+utoipa = { workspace = true, optional = true }
+whatmedia-core = { workspace = true }
+whatmedia-database = { workspace = true }
+whatmedia-media = { workspace = true }
 anyhow = { workspace = true }
 async-trait = { workspace = true }
 chrono = { workspace = true }
@@ -21,5 +25,5 @@ tracing = { workspace = true }
 
 [dev-dependencies]
 tempfile = { workspace = true }
-mosaic-core = { workspace = true }
+whatmedia-core = { workspace = true }
 chrono = { workspace = true }

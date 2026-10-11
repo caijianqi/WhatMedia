@@ -1,7 +1,20 @@
 [package]
-name = "mosaic-playback"
-version = "0.1.0"
-edition = "2021"
+name = "whatmedia-playback"
+description = "播放决策引擎与会话管理：Client+Media+Server+Network → Direct/Remux/Transcode"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
 
 [dependencies]
-mosaic-core = { path = "../core" }
+whatmedia-core = { workspace = true }
+whatmedia-database = { workspace = true }
+whatmedia-subtitle = { path = "../subtitle" }
+whatmedia-transcoder = { path = "../transcoder" }
+anyhow = { workspace = true }
+chrono = { workspace = true }
+serde = { workspace = true }
+sqlx = { workspace = true }
+
+[dev-dependencies]
+tokio = { workspace = true }
+serde_json = { workspace = true }

@@ -1,4 +1,4 @@
-# versions.lock —— Mosaic 版本矩阵
+# versions.lock —— WhatMedia 版本矩阵
 #
 # 规则（见 DEVELOPMENT-PLAN.md 附录第 10 条）：
 #   1. 这里只记录「CI 实测通过」的组合，不记录文档里的期望值

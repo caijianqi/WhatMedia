@@ -1,0 +1,10 @@
+[package]
+name = "whatmedia-agent"
+description = "WhatMedia AI 进程（P8 启用，当前占位）"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+whatmedia-core = { workspace = true }
+anyhow = { workspace = true }

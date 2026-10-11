@@ -1,0 +1,39 @@
+# WhatMedia 播放兼容性矩阵语料库
+#
+# 这是 P3 DoD「常见家庭格式覆盖率」的判定依据，由 crates/playback/tests/compat_matrix.rs 消费。
+# 每行一个 JSON 对象。
+#
+# 字段：
+#   name      —— 这条语料代表什么片源（只用于输出，不参与判定）
+#   weight    —— 这类片源在家庭库里的相对出现频率。**覆盖率按权重算，不按条数算**
+#   container —— mp4 / mkv / ts / m2ts / webm / avi
+#   video     —— h264 / hevc / av1 / vp9 / mpeg4 ...
+#   depth     —— 8 / 10
+#   hdr       —— sdr / hdr10 / hlg / dolby_vision
+#   width, height
+#   audio     —— aac / ac3 / eac3 / dts / truehd / flac / opus / mp3
+#   channels
+#   subtitle  —— srt / ass / pgs / ...，没有字幕就写 null 或省略
+#   kbps      —— 总码率
+#
+# 加语料的规则：
+#   1. **模拟真实家庭片源的组合，不穷举笛卡尔积。**
+#      现实里「AVI + AV1 + TrueHD」这种组合根本不存在，穷举只会稀释覆盖率数字，
+#      让指标变成一个好看但没有意义的东西。
+#   2. weight 要反映真实频率。1080p H264 占了家庭库的大半，4K HDR 原盘是少数。
+#      不加权的话「4K 原盘」和「1080p H264」被当成同等重要，指标会失真。
+#   3. 改决策逻辑导致覆盖率下降时，先判断是逻辑退步还是语料该更新 —— 在 commit message 里写清楚。
+
+{"name": "Web-DL 1080p MP4/H264/AAC", "weight": 20, "container": "mp4", "video": "h264", "depth": 8, "hdr": "sdr", "width": 1920, "height": 1080, "audio": "aac", "channels": 2, "kbps": 8000}
+{"name": "WEB-DL 1080p MKV/H264/AAC/SRT", "weight": 20, "container": "mkv", "video": "h264", "depth": 8, "hdr": "sdr", "width": 1920, "height": 1080, "audio": "aac", "channels": 2, "subtitle": "srt", "kbps": 8000}
+{"name": "BluRay 1080p MKV/H264/DTS", "weight": 12, "container": "mkv", "video": "h264", "depth": 8, "hdr": "sdr", "width": 1920, "height": 1080, "audio": "dts", "channels": 6, "subtitle": "srt", "kbps": 18000}
+{"name": "HEVC 1080p MKV/AAC/ASS", "weight": 15, "container": "mkv", "video": "hevc", "depth": 8, "hdr": "sdr", "width": 1920, "height": 1080, "audio": "aac", "channels": 2, "subtitle": "ass", "kbps": 5000}
+{"name": "HEVC 10bit HDR 4K MKV/TrueHD/PGS", "weight": 5, "container": "mkv", "video": "hevc", "depth": 10, "hdr": "hdr10", "width": 3840, "height": 2160, "audio": "true_hd", "channels": 8, "subtitle": "pgs", "kbps": 60000}
+{"name": "HEVC 10bit SDR 4K MKV/EAC3", "weight": 6, "container": "mkv", "video": "hevc", "depth": 10, "hdr": "sdr", "width": 3840, "height": 2160, "audio": "eac3", "channels": 6, "subtitle": "srt", "kbps": 25000}
+{"name": "VP9 4K WebM/Opus", "weight": 3, "container": "webm", "video": "vp9", "depth": 8, "hdr": "sdr", "width": 3840, "height": 2160, "audio": "opus", "channels": 2, "kbps": 15000}
+{"name": "AV1 1080p MKV/Opus", "weight": 4, "container": "mkv", "video": "av1", "depth": 8, "hdr": "sdr", "width": 1920, "height": 1080, "audio": "opus", "channels": 2, "subtitle": "srt", "kbps": 4000}
+{"name": "HDTV 录制 TS/H264/AC3", "weight": 5, "container": "ts", "video": "h264", "depth": 8, "hdr": "sdr", "width": 1280, "height": 720, "audio": "ac3", "channels": 6, "kbps": 6000}
+{"name": "DVDRip AVI/MPEG4/MP3", "weight": 3, "container": "avi", "video": "mpeg4", "depth": 8, "hdr": "sdr", "width": 720, "height": 480, "audio": "mp3", "channels": 2, "kbps": 1500}
+{"name": "老动画 MKV/H264/FLAC/ASS", "weight": 4, "container": "mkv", "video": "h264", "depth": 8, "hdr": "sdr", "width": 1280, "height": 720, "audio": "flac", "channels": 2, "subtitle": "ass", "kbps": 3000}
+{"name": "REMUX 1080p M2TS/H264/TrueHD/PGS", "weight": 4, "container": "m2ts", "video": "h264", "depth": 8, "hdr": "sdr", "width": 1920, "height": 1080, "audio": "true_hd", "channels": 8, "subtitle": "pgs", "kbps": 35000}
+{"name": "DV 4K MKV/HEVC/EAC3/PGS", "weight": 2, "container": "mkv", "video": "hevc", "depth": 10, "hdr": "dolby_vision", "width": 3840, "height": 2160, "audio": "eac3", "channels": 6, "subtitle": "pgs", "kbps": 50000}

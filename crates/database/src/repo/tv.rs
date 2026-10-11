@@ -2,7 +2,7 @@
 
 use anyhow::Result;
 use chrono::Utc;
-use mosaic_core::{Id, Page, Season, Series};
+use whatmedia_core::{Id, Page, Season, Series};
 use serde::Serialize;
 use sqlx::QueryBuilder;
 use uuid::Uuid;
@@ -10,7 +10,9 @@ use uuid::Uuid;
 use crate::db::Db;
 
 #[derive(Debug, Clone, Serialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 pub struct SeriesSummary {
+    #[cfg_attr(feature = "openapi", schema(value_type = uuid::Uuid))]
     pub id: Id,
     pub title: String,
     pub year: Option<i32>,
@@ -19,9 +21,13 @@ pub struct SeriesSummary {
 }
 
 #[derive(Debug, Clone, Serialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 pub struct EpisodeSummary {
+    #[cfg_attr(feature = "openapi", schema(value_type = uuid::Uuid))]
     pub id: Id,
+    #[cfg_attr(feature = "openapi", schema(value_type = uuid::Uuid))]
     pub item_id: Id,
+    #[cfg_attr(feature = "openapi", schema(value_type = uuid::Uuid))]
     pub series_id: Id,
     pub series_title: String,
     pub season_number: i32,

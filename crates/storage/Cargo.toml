@@ -1,12 +1,12 @@
 [package]
-name = "mosaic-storage"
+name = "whatmedia-storage"
 description = "StorageProvider 实现：本地 / SMB / S3 / STRM"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
 
 [dependencies]
-mosaic-core = { workspace = true }
+whatmedia-core = { workspace = true }
 async-trait = { workspace = true }
 tokio = { workspace = true }
 tracing = { workspace = true }

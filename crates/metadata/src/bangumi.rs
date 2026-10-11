@@ -9,7 +9,7 @@ use async_trait::async_trait;
 use serde_json::Value;
 use std::sync::Arc;
 
-use mosaic_core::{MetadataImage, MetadataProvider, MetadataQuery, MetadataRecord, Result};
+use whatmedia_core::{MetadataImage, MetadataProvider, MetadataQuery, MetadataRecord, Result};
 
 use crate::ratelimit::{retry, RateLimiter};
 use crate::transport::{HttpTransport, ReqwestTransport};
@@ -83,7 +83,7 @@ impl BangumiProvider {
             }
         })
         .await
-        .map_err(|e| mosaic_core::MosaicError::Metadata {
+        .map_err(|e| whatmedia_core::WhatMediaError::Metadata {
             provider: "bangumi".into(),
             message: e.to_string(),
         })
@@ -206,7 +206,7 @@ impl MetadataProvider for BangumiProvider {
         episode: i32,
     ) -> Result<MetadataRecord> {
         // Bangumi 的"集"是扁平的（没有季概念，第 25 集就是第 25 集），
-        // 而 Mosaic 的模型是季/集两层。这里不做猜测转换 ——
+        // 而 WhatMedia 的模型是季/集两层。这里不做猜测转换 ——
         // 拿不到就返回一条只带集号的记录，由上层决定要不要用。
         Ok(MetadataRecord {
             provider: "bangumi".into(),

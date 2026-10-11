@@ -12,7 +12,7 @@
 
 use std::collections::HashSet;
 
-use mosaic_core::MetadataRecord;
+use whatmedia_core::MetadataRecord;
 use serde::{Deserialize, Serialize};
 
 use crate::matcher::is_lockable;

@@ -7,6 +7,7 @@
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, Copy, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 pub struct PageInfo {
     pub total: i64,
     pub page: u32,
@@ -31,6 +32,7 @@ impl PageInfo {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 pub struct Page<T> {
     pub data: Vec<T>,
     pub page: PageInfo,

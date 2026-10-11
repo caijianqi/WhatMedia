@@ -1,7 +1,10 @@
 [package]
-name = "mosaic-hardware"
-version = "0.1.0"
-edition = "2021"
+name = "whatmedia-hardware"
+description = "硬件能力探测：CPU/内存/设备节点 → HardwareProfile 与 ffmpeg 加速参数"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
 
 [dependencies]
-mosaic-core = { path = "../core" }
+whatmedia-core = { workspace = true }
+serde = { workspace = true }

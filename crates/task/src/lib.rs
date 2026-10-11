@@ -5,7 +5,7 @@
 //!
 //! 核心不变量：**播放抢占**。用户正在等（Critical）时，扫描/刮削（Low）必须让路。
 
-use mosaic_core::{Id, Task, TaskKind, TaskPriority, TaskState};
+use whatmedia_core::{Id, Task, TaskKind, TaskPriority, TaskState};
 use std::cmp::Ordering;
 use std::collections::BinaryHeap;
 use std::sync::Mutex;

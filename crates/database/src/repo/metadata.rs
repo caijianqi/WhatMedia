@@ -7,7 +7,7 @@ use anyhow::Result;
 use chrono::Utc;
 use sqlx::Row;
 
-use mosaic_core::{deterministic_id, Id, MetadataCredit};
+use whatmedia_core::{deterministic_id, Id, MetadataCredit};
 
 use crate::Db;
 
@@ -107,6 +107,7 @@ pub async fn set_credits(
 }
 
 #[derive(Debug, Clone, serde::Serialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 pub struct CreditRow {
     pub person: String,
     pub role: String,
@@ -227,7 +228,7 @@ pub async fn update_series_meta(db: &Db, series_id: Id, u: &SeriesMetaUpdate) ->
     Ok(())
 }
 
-/// 读回当前值与锁定集合。合并逻辑在 `mosaic-metadata`，这里只负责搬运。
+/// 读回当前值与锁定集合。合并逻辑在 `whatmedia-metadata`，这里只负责搬运。
 pub async fn locked_fields_of_item(db: &Db, item_id: Id) -> Result<String> {
     let row = sqlx::query("SELECT locked_fields FROM media_item WHERE id = ?")
         .bind(item_id.to_string())
@@ -360,6 +361,7 @@ pub async fn finish_job(
 }
 
 #[derive(Debug, Clone, Copy, Default, serde::Serialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 pub struct JobStats {
     pub pending: u64,
     pub running: u64,

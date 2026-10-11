@@ -1,28 +1,49 @@
 <script setup lang="ts">
-import { onMounted, ref } from 'vue'
-import { health } from './api/client'
+/**
+ * 应用外壳：顶栏 + 路由出口。
+ *
+ * 顶栏在播放器页要**完全隐藏** —— 播放器是全屏 fixed 的，
+ * 留一条顶栏会在顶部挤出一条黑边，而且返回按钮也有播放器页自己的。
+ */
+import { computed } from 'vue'
+import { useRoute } from 'vue-router'
 
-const status = ref<string>('连接中…')
+const route = useRoute()
+const isPlayer = computed(() => route.name === 'play')
 
-onMounted(async () => {
-  try {
-    const h = await health()
-    status.value = `已连接 · v${h.version} · ${h.arch}`
-  } catch (e) {
-    status.value = `无法连接服务端：${(e as Error).message}`
-  }
-})
+const nav = [
+  { name: 'home', label: '首页' },
+  { name: 'library', label: '媒体库' },
+  { name: 'settings', label: '设置' },
+] as const
 </script>
 
 <template>
-  <main>
-    <h1>Mosaic</h1>
-    <p>{{ status }}</p>
-  </main>
-</template>
+  <div class="min-h-full">
+    <header
+      v-if="!isPlayer"
+      class="sticky top-0 z-40 border-b border-ink-800 bg-ink-950/90 backdrop-blur"
+    >
+      <div class="mx-auto flex max-w-[1600px] items-center gap-6 px-4 py-3">
+        <RouterLink to="/" class="focus-ring text-lg font-semibold tracking-tight text-white">
+          WhatMedia
+        </RouterLink>
+        <nav class="flex gap-1">
+          <RouterLink
+            v-for="n in nav"
+            :key="n.name"
+            :to="{ name: n.name }"
+            class="focus-ring rounded px-3 py-1.5 text-sm text-slate-300 transition hover:bg-ink-850 hover:text-white"
+            active-class="bg-ink-850 text-white"
+          >
+            {{ n.label }}
+          </RouterLink>
+        </nav>
+      </div>
+    </header>
 
-<style scoped>
-main { padding: 2rem; font-family: system-ui, sans-serif; }
-h1 { font-size: 1.5rem; font-weight: 500; }
-p { color: #5f5e5a; }
-</style>
+    <main class="mx-auto max-w-[1600px] px-4 py-6">
+      <RouterView />
+    </main>
+  </div>
+</template>

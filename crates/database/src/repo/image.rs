@@ -1,13 +1,13 @@
 //! 图片缓存的 SQL 层。
 //!
 //! 正文在磁盘上，这里只管 LRU 元数据。分开的原因：
-//! 缓存策略（谁该被删）属于 `mosaic-metadata`，而"怎么查"属于本 crate。
+//! 缓存策略（谁该被删）属于 `whatmedia-metadata`，而"怎么查"属于本 crate。
 
 use anyhow::Result;
 use chrono::{DateTime, Utc};
 use sqlx::Row;
 
-use mosaic_core::Id;
+use whatmedia_core::Id;
 
 use crate::Db;
 
@@ -151,6 +151,7 @@ pub async fn stats(db: &Db) -> Result<CacheStats> {
 }
 
 #[derive(Debug, Clone, Copy, Default, serde::Serialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 pub struct CacheStats {
     pub entries: u64,
     pub bytes: u64,
@@ -180,7 +181,7 @@ pub struct ImageBind<'a> {
 
 /// 绑定一张图到 item。重刮是 UPDATE 不是 INSERT 堆积（依赖 uq_image_item_kind）。
 pub async fn bind(db: &Db, req: &ImageBind<'_>) -> Result<()> {
-    let id = mosaic_core::deterministic_id("image", &[&req.item_id.to_string(), req.kind]);
+    let id = whatmedia_core::deterministic_id("image", &[&req.item_id.to_string(), req.kind]);
     sqlx::query(
         "INSERT INTO image (id, item_id, kind, url, width, height, cached_path, provider, cache_key)
          VALUES (?,?,?,?,?,?,?,?,?)
@@ -207,6 +208,7 @@ pub async fn bind(db: &Db, req: &ImageBind<'_>) -> Result<()> {
 }
 
 #[derive(Debug, Clone, serde::Serialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 pub struct ItemImage {
     pub kind: String,
     pub url: Option<String>,

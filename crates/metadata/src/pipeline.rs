@@ -11,8 +11,8 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
 use tokio::task::JoinSet;
 
-use mosaic_core::{Id, MetadataProvider, MetadataQuery, MetadataRecord};
-use mosaic_database::{repo, Db};
+use whatmedia_core::{Id, MetadataProvider, MetadataQuery, MetadataRecord};
+use whatmedia_database::{repo, Db};
 
 use crate::images::ImageCache;
 use crate::matcher::{pick_auto, score_candidates, Confidence, MatchThresholds, ScoredCandidate};
@@ -69,6 +69,7 @@ impl Outcome {
 }
 
 #[derive(Debug, Clone, Copy, Default, serde::Serialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 pub struct ScrapeStats {
     pub matched: u64,
     pub review: u64,
@@ -574,6 +575,7 @@ impl Cancel {
 }
 
 #[derive(Debug, Clone, serde::Serialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 pub struct CandidateView {
     pub provider: String,
     pub provider_id: String,

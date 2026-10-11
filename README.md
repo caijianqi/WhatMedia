@@ -1,4 +1,4 @@
-# Mosaic
+# WhatMedia
 
 > 把分散的媒体，拼成一个智能的影音空间。
 
@@ -32,7 +32,7 @@ AI 原生、自托管、多来源、跨平台的家庭影音平台。
 | FFmpeg 缩略图与多尺寸变体（参数构造 + 进程生命周期，离线可测） | ✅ |
 | 类型 / 演职员 / 人物关系入库 | ✅ |
 | API：`/scrape` `/scrape/stats` `/metadata/candidates` `/metadata/review` `/items/{id}/identify` `/items/{id}/locks` `/items/{id}/images/{kind}` | ✅ |
-| `mosaic-cli scrape` / `candidates` / `identify` / `lock` / `review` / `images` | ✅ |
+| `whatmedia-cli scrape` / `candidates` / `identify` / `lock` / `review` / `images` | ✅ |
 
 ### P1 交付物
 
@@ -46,7 +46,7 @@ AI 原生、自托管、多来源、跨平台的家庭影音平台。
 | `scanner` 遍历 / 增量指纹 / 并发 / 可取消可暂停 | ✅ |
 | `database` SQLx + SQLite（WAL），唯一允许写 SQL 的 crate | ✅ |
 | API：`/libraries` `/media` `/movies` `/series` `/episodes` `/items/{id}` `/search` `/tasks` `/scan` | ✅ |
-| `mosaic-cli scan` —— 扫一个目录变成可查询的库 | ✅ |
+| `whatmedia-cli scan` —— 扫一个目录变成可查询的库 | ✅ |
 | 中文检索（FTS5 trigram + 短词降级 LIKE） | ✅ |
 
 ### P0 交付物
@@ -89,42 +89,42 @@ make docker
 
 | 变量 | 默认 | 说明 |
 |---|---|---|
-| `MOSAIC_HOST` | `0.0.0.0` | 监听地址 |
-| `MOSAIC_PORT` | `8080` | 监听端口 |
-| `MOSAIC_CONFIG_DIR` | `/config` | 配置与数据库 |
-| `MOSAIC_DATA_DIR` | `/data` | 运行时数据 |
-| `MOSAIC_CACHE_DIR` | `/cache` | 元数据/图片/转码缓存 |
-| `MOSAIC_LOG_DIR` | `/logs` | 日志 |
-| `MOSAIC_DATABASE_URL` | `sqlite:/config/mosaic.db?mode=rwc` | 数据库连接 |
-| `MOSAIC_LOG_LEVEL` | `info` | 日志级别 |
-| `MOSAIC_LOG_FORMAT` | `pretty` | `pretty` 或 `json` |
-| `MOSAIC_MIGRATIONS_DIR` | 仓库内 `migrations/` | 容器里是 `/usr/local/share/mosaic/migrations` |
-| `MOSAIC_METADATA_TMDB_API_KEY` | 无 | TMDB v3 Key。不配则刮削端点返回 501 |
-| `MOSAIC_METADATA_TMDB_BEARER` | 无 | TMDB v4 Token |
-| `MOSAIC_METADATA_BANGUMI` | `false` | `1`/`true` 启用 Bangumi（动漫） |
-| `MOSAIC_METADATA_LANGUAGE` | `zh-CN` | 刮削语言 |
-| `MOSAIC_METADATA_RPS` | `4` | 每秒请求上限，别打爆 Provider |
-| `MOSAIC_METADATA_AUTO_ACCEPT` | `true` | 关掉则全部进人工确认队列 |
-| `MOSAIC_IMAGES_DIR` | `<cache_dir>/images` | 图片缓存目录 |
-| `MOSAIC_IMAGES_MAX_MB` | `1024` | 缓存上限，超出按 LRU 清理 |
+| `WHATMEDIA_HOST` | `0.0.0.0` | 监听地址 |
+| `WHATMEDIA_PORT` | `8080` | 监听端口 |
+| `WHATMEDIA_CONFIG_DIR` | `/config` | 配置与数据库 |
+| `WHATMEDIA_DATA_DIR` | `/data` | 运行时数据 |
+| `WHATMEDIA_CACHE_DIR` | `/cache` | 元数据/图片/转码缓存 |
+| `WHATMEDIA_LOG_DIR` | `/logs` | 日志 |
+| `WHATMEDIA_DATABASE_URL` | `sqlite:/config/whatmedia.db?mode=rwc` | 数据库连接 |
+| `WHATMEDIA_LOG_LEVEL` | `info` | 日志级别 |
+| `WHATMEDIA_LOG_FORMAT` | `pretty` | `pretty` 或 `json` |
+| `WHATMEDIA_MIGRATIONS_DIR` | 仓库内 `migrations/` | 容器里是 `/usr/local/share/whatmedia/migrations` |
+| `WHATMEDIA_METADATA_TMDB_API_KEY` | 无 | TMDB v3 Key。不配则刮削端点返回 501 |
+| `WHATMEDIA_METADATA_TMDB_BEARER` | 无 | TMDB v4 Token |
+| `WHATMEDIA_METADATA_BANGUMI` | `false` | `1`/`true` 启用 Bangumi（动漫） |
+| `WHATMEDIA_METADATA_LANGUAGE` | `zh-CN` | 刮削语言 |
+| `WHATMEDIA_METADATA_RPS` | `4` | 每秒请求上限，别打爆 Provider |
+| `WHATMEDIA_METADATA_AUTO_ACCEPT` | `true` | 关掉则全部进人工确认队列 |
+| `WHATMEDIA_IMAGES_DIR` | `<cache_dir>/images` | 图片缓存目录 |
+| `WHATMEDIA_IMAGES_MAX_MB` | `1024` | 缓存上限，超出按 LRU 清理 |
 
 ### 端到端跑一遍
 
 ```bash
 # 1) 建库并扫描一个目录
-export MOSAIC_DATABASE_URL="sqlite:./mosaic.db?mode=rwc"
-cargo run --bin mosaic-cli -- scan --path /path/to/media --name "电影库"
+export WHATMEDIA_DATABASE_URL="sqlite:./whatmedia.db?mode=rwc"
+cargo run --bin whatmedia-cli -- scan --path /path/to/media --name "电影库"
 
 # 加了 FFmpeg 就带上 --probe，能拿到时长 / 码率 / 视频音频字幕轨
-cargo run --bin mosaic-cli -- scan --path /path/to/media --probe
+cargo run --bin whatmedia-cli -- scan --path /path/to/media --probe
 
 # 2) 查
-cargo run --bin mosaic-cli -- list
-cargo run --bin mosaic-cli -- search --q " Matrix"
-cargo run --bin mosaic-cli -- libraries
+cargo run --bin whatmedia-cli -- list
+cargo run --bin whatmedia-cli -- search --q " Matrix"
+cargo run --bin whatmedia-cli -- libraries
 
 # 3) 起服务
-cargo run --bin mosaic-server
+cargo run --bin whatmedia-server
 curl -s "http://127.0.0.1:8080/api/v1/media?page_size=20"
 curl -s "http://127.0.0.1:8080/api/v1/series"
 curl -s "http://127.0.0.1:8080/api/v1/search?q=Frieren"
@@ -133,7 +133,7 @@ curl -s "http://127.0.0.1:8080/api/v1/search?q=Frieren"
 冒烟：
 
 ```bash
-cargo run --bin mosaic-server
+cargo run --bin whatmedia-server
 curl -s http://127.0.0.1:8080/healthz
 # {"status":"ok","version":"0.1.0","arch":"x86_64","os":"linux","..."}
 ```
@@ -144,7 +144,7 @@ P1 的验收标准之一是"季/集解析在语料上准确率 ≥ 99%"，语料
 [`test-media/naming/cases.jsonl`](./test-media/naming/cases.jsonl)，回归测试消费它：
 
 ```bash
-cargo test -p mosaic-media --test naming_corpus
+cargo test -p whatmedia-media --test naming_corpus
 ```
 
 新加语料时请在那个文件的头部规则下补充：**必须是真实世界里出现过的命名**。
@@ -153,13 +153,13 @@ cargo test -p mosaic-media --test naming_corpus
 
 ```bash
 # 生成 10,000 个文件并测全量 / 增量扫描耗时（默认不跑，耗时几分钟）
-cargo test -p mosaic-scanner -- --ignored --nocapture scan_10k_baseline
+cargo test -p whatmedia-scanner -- --ignored --nocapture scan_10k_baseline
 ```
 
 ## 仓库结构
 
 ```
-apps/       mosaic-server / mosaic-cli / mosaic-agent
+apps/       whatmedia-server / whatmedia-cli / whatmedia-agent
 crates/     core config database auth media library scanner metadata
             storage playback transcoder subtitle search recommendation
             task ai plugin hardware diagnostics api

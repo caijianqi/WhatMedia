@@ -1006,6 +1006,8 @@ checksum = "cc4e190f5d26ca7051642629da2c52fc03bde85a03197c99408dcd291734c855"
 dependencies = [
  "equivalent",
  "hashbrown 0.17.1",
+ "serde",
+ "serde_core",
 ]
 
 [[package]]
@@ -1149,277 +1151,6 @@ dependencies = [
  "libc",
  "wasi",
  "windows-sys 0.61.2",
-]
-
-[[package]]
-name = "mosaic-agent"
-version = "0.1.0"
-dependencies = [
- "anyhow",
- "mosaic-core",
-]
-
-[[package]]
-name = "mosaic-ai"
-version = "0.1.0"
-dependencies = [
- "mosaic-core",
-]
-
-[[package]]
-name = "mosaic-api"
-version = "0.1.0"
-dependencies = [
- "axum",
- "chrono",
- "mosaic-config",
- "mosaic-core",
- "mosaic-database",
- "mosaic-diagnostics",
- "mosaic-media",
- "mosaic-metadata",
- "mosaic-scanner",
- "mosaic-storage",
- "serde",
- "serde_json",
- "tokio",
- "tower",
- "tower-http",
- "tracing",
- "uuid",
-]
-
-[[package]]
-name = "mosaic-auth"
-version = "0.1.0"
-dependencies = [
- "mosaic-core",
-]
-
-[[package]]
-name = "mosaic-cli"
-version = "0.1.0"
-dependencies = [
- "anyhow",
- "chrono",
- "clap",
- "mosaic-config",
- "mosaic-core",
- "mosaic-database",
- "mosaic-media",
- "mosaic-metadata",
- "mosaic-scanner",
- "mosaic-storage",
- "serde_json",
- "tokio",
- "toml",
- "tracing",
- "tracing-subscriber",
- "uuid",
-]
-
-[[package]]
-name = "mosaic-config"
-version = "0.1.0"
-dependencies = [
- "anyhow",
- "mosaic-core",
- "serde",
- "toml",
-]
-
-[[package]]
-name = "mosaic-core"
-version = "0.1.0"
-dependencies = [
- "async-trait",
- "chrono",
- "serde",
- "serde_json",
- "thiserror",
- "tokio",
- "uuid",
-]
-
-[[package]]
-name = "mosaic-database"
-version = "0.1.0"
-dependencies = [
- "anyhow",
- "async-trait",
- "chrono",
- "mosaic-config",
- "mosaic-core",
- "serde",
- "serde_json",
- "sqlx",
- "thiserror",
- "tokio",
- "tracing",
- "uuid",
-]
-
-[[package]]
-name = "mosaic-diagnostics"
-version = "0.1.0"
-dependencies = [
- "chrono",
- "mosaic-core",
- "serde",
- "serde_json",
-]
-
-[[package]]
-name = "mosaic-hardware"
-version = "0.1.0"
-dependencies = [
- "mosaic-core",
-]
-
-[[package]]
-name = "mosaic-library"
-version = "0.1.0"
-dependencies = [
- "anyhow",
- "chrono",
- "mosaic-core",
- "mosaic-database",
- "mosaic-media",
- "serde",
- "uuid",
-]
-
-[[package]]
-name = "mosaic-media"
-version = "0.1.0"
-dependencies = [
- "chrono",
- "mosaic-core",
- "regex",
- "roxmltree",
- "serde",
- "serde_json",
- "tokio",
- "uuid",
-]
-
-[[package]]
-name = "mosaic-metadata"
-version = "0.1.0"
-dependencies = [
- "anyhow",
- "async-trait",
- "chrono",
- "mosaic-core",
- "mosaic-database",
- "mosaic-media",
- "reqwest",
- "serde",
- "serde_json",
- "sha2 0.10.9",
- "tempfile",
- "tokio",
- "tracing",
-]
-
-[[package]]
-name = "mosaic-playback"
-version = "0.1.0"
-dependencies = [
- "mosaic-core",
-]
-
-[[package]]
-name = "mosaic-plugin"
-version = "0.1.0"
-dependencies = [
- "mosaic-core",
-]
-
-[[package]]
-name = "mosaic-recommendation"
-version = "0.1.0"
-dependencies = [
- "mosaic-core",
-]
-
-[[package]]
-name = "mosaic-scanner"
-version = "0.1.0"
-dependencies = [
- "anyhow",
- "mosaic-core",
- "mosaic-database",
- "mosaic-library",
- "mosaic-media",
- "mosaic-storage",
- "serde",
- "tempfile",
- "tokio",
- "tracing",
- "tracing-subscriber",
-]
-
-[[package]]
-name = "mosaic-search"
-version = "0.1.0"
-dependencies = [
- "mosaic-core",
-]
-
-[[package]]
-name = "mosaic-server"
-version = "0.1.0"
-dependencies = [
- "anyhow",
- "axum",
- "chrono",
- "mosaic-api",
- "mosaic-config",
- "mosaic-database",
- "mosaic-diagnostics",
- "mosaic-media",
- "mosaic-metadata",
- "tokio",
- "tracing",
- "tracing-subscriber",
-]
-
-[[package]]
-name = "mosaic-storage"
-version = "0.1.0"
-dependencies = [
- "async-trait",
- "mosaic-core",
- "tempfile",
- "tokio",
- "tracing",
-]
-
-[[package]]
-name = "mosaic-subtitle"
-version = "0.1.0"
-dependencies = [
- "mosaic-core",
-]
-
-[[package]]
-name = "mosaic-task"
-version = "0.1.0"
-dependencies = [
- "async-trait",
- "chrono",
- "mosaic-core",
- "thiserror",
- "tokio",
- "tracing",
-]
-
-[[package]]
-name = "mosaic-transcoder"
-version = "0.1.0"
-dependencies = [
- "mosaic-core",
 ]
 
 [[package]]
@@ -2570,6 +2301,30 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "06abde3611657adf66d383f00b093d7faecc7fa57071cce2578660c9f1010821"
 
 [[package]]
+name = "utoipa"
+version = "5.5.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "8bde15df68e80b16c7d16b9616e80770ad158988daa56a27dccd1e55558b0160"
+dependencies = [
+ "indexmap",
+ "serde",
+ "serde_json",
+ "utoipa-gen",
+]
+
+[[package]]
+name = "utoipa-gen"
+version = "5.5.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "6ba0b99ee52df3028635d93840c797102da61f8a7bb3cf751032455895b52ef8"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "syn 2.0.119",
+ "uuid",
+]
+
+[[package]]
 name = "uuid"
 version = "1.27.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2698,6 +2453,322 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "7dcd9d09a39985f5344844e66b0c530a33843579125f23e21e9f0f220850f22a"
 dependencies = [
  "rustls-pki-types",
+]
+
+[[package]]
+name = "whatmedia-agent"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "whatmedia-core",
+]
+
+[[package]]
+name = "whatmedia-ai"
+version = "0.1.0"
+dependencies = [
+ "whatmedia-core",
+]
+
+[[package]]
+name = "whatmedia-api"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "axum",
+ "chrono",
+ "serde",
+ "serde_json",
+ "sqlx",
+ "tempfile",
+ "tokio",
+ "tokio-util",
+ "tower",
+ "tower-http",
+ "tracing",
+ "utoipa",
+ "uuid",
+ "whatmedia-config",
+ "whatmedia-core",
+ "whatmedia-database",
+ "whatmedia-diagnostics",
+ "whatmedia-media",
+ "whatmedia-metadata",
+ "whatmedia-playback",
+ "whatmedia-scanner",
+ "whatmedia-storage",
+ "whatmedia-subtitle",
+ "whatmedia-transcoder",
+]
+
+[[package]]
+name = "whatmedia-auth"
+version = "0.1.0"
+dependencies = [
+ "whatmedia-core",
+]
+
+[[package]]
+name = "whatmedia-cli"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "chrono",
+ "clap",
+ "serde_json",
+ "tokio",
+ "toml",
+ "tracing",
+ "tracing-subscriber",
+ "uuid",
+ "whatmedia-api",
+ "whatmedia-config",
+ "whatmedia-core",
+ "whatmedia-database",
+ "whatmedia-hardware",
+ "whatmedia-media",
+ "whatmedia-metadata",
+ "whatmedia-playback",
+ "whatmedia-scanner",
+ "whatmedia-storage",
+ "whatmedia-subtitle",
+ "whatmedia-transcoder",
+]
+
+[[package]]
+name = "whatmedia-config"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "serde",
+ "toml",
+ "whatmedia-core",
+]
+
+[[package]]
+name = "whatmedia-core"
+version = "0.1.0"
+dependencies = [
+ "async-trait",
+ "chrono",
+ "serde",
+ "serde_json",
+ "thiserror",
+ "tokio",
+ "utoipa",
+ "uuid",
+]
+
+[[package]]
+name = "whatmedia-database"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "async-trait",
+ "chrono",
+ "serde",
+ "serde_json",
+ "sqlx",
+ "thiserror",
+ "tokio",
+ "tracing",
+ "utoipa",
+ "uuid",
+ "whatmedia-config",
+ "whatmedia-core",
+]
+
+[[package]]
+name = "whatmedia-diagnostics"
+version = "0.1.0"
+dependencies = [
+ "chrono",
+ "serde",
+ "serde_json",
+ "utoipa",
+ "whatmedia-core",
+]
+
+[[package]]
+name = "whatmedia-hardware"
+version = "0.1.0"
+dependencies = [
+ "serde",
+ "whatmedia-core",
+]
+
+[[package]]
+name = "whatmedia-library"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "chrono",
+ "serde",
+ "uuid",
+ "whatmedia-core",
+ "whatmedia-database",
+ "whatmedia-media",
+]
+
+[[package]]
+name = "whatmedia-media"
+version = "0.1.0"
+dependencies = [
+ "chrono",
+ "regex",
+ "roxmltree",
+ "serde",
+ "serde_json",
+ "tokio",
+ "uuid",
+ "whatmedia-core",
+]
+
+[[package]]
+name = "whatmedia-metadata"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "async-trait",
+ "chrono",
+ "reqwest",
+ "serde",
+ "serde_json",
+ "sha2 0.10.9",
+ "tempfile",
+ "tokio",
+ "tracing",
+ "utoipa",
+ "whatmedia-core",
+ "whatmedia-database",
+ "whatmedia-media",
+]
+
+[[package]]
+name = "whatmedia-mpv"
+version = "0.1.0"
+dependencies = [
+ "serde",
+ "serde_json",
+]
+
+[[package]]
+name = "whatmedia-playback"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "chrono",
+ "serde",
+ "serde_json",
+ "sqlx",
+ "tokio",
+ "whatmedia-core",
+ "whatmedia-database",
+ "whatmedia-subtitle",
+ "whatmedia-transcoder",
+]
+
+[[package]]
+name = "whatmedia-plugin"
+version = "0.1.0"
+dependencies = [
+ "whatmedia-core",
+]
+
+[[package]]
+name = "whatmedia-recommendation"
+version = "0.1.0"
+dependencies = [
+ "whatmedia-core",
+]
+
+[[package]]
+name = "whatmedia-scanner"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "serde",
+ "tempfile",
+ "tokio",
+ "tracing",
+ "tracing-subscriber",
+ "utoipa",
+ "whatmedia-core",
+ "whatmedia-database",
+ "whatmedia-library",
+ "whatmedia-media",
+ "whatmedia-storage",
+]
+
+[[package]]
+name = "whatmedia-search"
+version = "0.1.0"
+dependencies = [
+ "whatmedia-core",
+]
+
+[[package]]
+name = "whatmedia-server"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "axum",
+ "chrono",
+ "tokio",
+ "tracing",
+ "tracing-subscriber",
+ "whatmedia-api",
+ "whatmedia-config",
+ "whatmedia-database",
+ "whatmedia-diagnostics",
+ "whatmedia-hardware",
+ "whatmedia-media",
+ "whatmedia-metadata",
+ "whatmedia-transcoder",
+]
+
+[[package]]
+name = "whatmedia-storage"
+version = "0.1.0"
+dependencies = [
+ "async-trait",
+ "tempfile",
+ "tokio",
+ "tracing",
+ "whatmedia-core",
+]
+
+[[package]]
+name = "whatmedia-subtitle"
+version = "0.1.0"
+dependencies = [
+ "async-trait",
+ "serde",
+ "tokio",
+ "whatmedia-core",
+]
+
+[[package]]
+name = "whatmedia-task"
+version = "0.1.0"
+dependencies = [
+ "async-trait",
+ "chrono",
+ "thiserror",
+ "tokio",
+ "tracing",
+ "whatmedia-core",
+]
+
+[[package]]
+name = "whatmedia-transcoder"
+version = "0.1.0"
+dependencies = [
+ "async-trait",
+ "tempfile",
+ "tokio",
+ "whatmedia-core",
+ "whatmedia-hardware",
 ]
 
 [[package]]

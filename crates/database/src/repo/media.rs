@@ -1,7 +1,7 @@
 //! 媒体资产读写：item / version / file / stream。
 
 use anyhow::Result;
-use mosaic_core::{Id, MediaFile, MediaItem, MediaStream, MediaVersion, Page, StreamType};
+use whatmedia_core::{Id, MediaFile, MediaItem, MediaStream, MediaVersion, Page, StreamType};
 use serde::Serialize;
 use sqlx::QueryBuilder;
 
@@ -224,6 +224,7 @@ fn apply_filters(b: &mut QueryBuilder<sqlx::Sqlite>, q: &ItemQuery) {
 
 /// 详情：item + 所有版本 + 每个版本的文件 + 每个文件的流。
 #[derive(Debug, Clone, Serialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 pub struct ItemDetail {
     #[serde(flatten)]
     pub item: ItemSummary,
@@ -232,7 +233,9 @@ pub struct ItemDetail {
 }
 
 #[derive(Debug, Clone, Serialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 pub struct VersionWithFiles {
+    #[cfg_attr(feature = "openapi", schema(value_type = uuid::Uuid))]
     pub id: Id,
     pub name: String,
     pub source: Option<String>,
@@ -243,7 +246,9 @@ pub struct VersionWithFiles {
 }
 
 #[derive(Debug, Clone, Serialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 pub struct FileWithStreams {
+    #[cfg_attr(feature = "openapi", schema(value_type = uuid::Uuid))]
     pub id: Id,
     pub path: String,
     pub storage_provider: String,

@@ -8,4 +8,4 @@ pub mod repo;
 pub mod rows;
 
 pub use db::{migration_files, Db};
-pub use rows::{to_hdr, to_video_codec};
+pub use rows::{to_audio_codec, to_container, to_hdr, to_subtitle_codec, to_video_codec};

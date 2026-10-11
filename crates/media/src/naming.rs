@@ -11,7 +11,7 @@
 //!
 //! 顺序不能随意调换：先抽季集，是因为 `S01E01` 里的数字会干扰年份与分辨率判断。
 
-use mosaic_core::HdrType;
+use whatmedia_core::HdrType;
 use regex::Regex;
 use std::sync::LazyLock;
 

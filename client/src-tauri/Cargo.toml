@@ -1,18 +1,22 @@
 [package]
-name = "mosaic-client"
+name = "whatmedia-client"
 version = "0.1.0"
-description = "Mosaic 跨平台客户端外壳"
+description = "WhatMedia 跨平台客户端外壳"
 edition = "2021"
 rust-version = "1.98"
 
 [lib]
-name = "mosaic_client_lib"
+name = "whatmedia_client_lib"
 crate-type = ["staticlib", "cdylib", "rlib"]
 
 [build-dependencies]
 tauri-build = { version = "2", features = [] }
 
 [dependencies]
-tauri = { version = "2", features = [] }
+# tray-icon / single-instance 是桌面端外壳的两个硬需求，显式打开而不是靠默认值。
+tauri = { version = "2", features = ["tray-icon"] }
+tauri-plugin-single-instance = "2"
+# mpv 后端的核心逻辑（参数构造 / 协议编解码）在主 workspace 里，那边有测试。
+whatmedia-mpv = { path = "../../crates/mpv" }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"

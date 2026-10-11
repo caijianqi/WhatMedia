@@ -8,7 +8,7 @@
 //! 超过 5 万条后评估切换 Tantivy（§75）。
 
 use anyhow::Result;
-use mosaic_core::Page;
+use whatmedia_core::Page;
 use sqlx::QueryBuilder;
 
 use crate::db::Db;

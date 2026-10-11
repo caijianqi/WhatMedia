@@ -1,7 +1,14 @@
 [package]
-name = "mosaic-subtitle"
-version = "0.1.0"
-edition = "2021"
+name = "whatmedia-subtitle"
+description = "字幕：外挂发现 / SRT·ASS·VTT 互转 / 投递降级策略"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
 
 [dependencies]
-mosaic-core = { path = "../core" }
+whatmedia-core = { workspace = true }
+async-trait = { workspace = true }
+serde = { workspace = true }
+
+[dev-dependencies]
+tokio = { workspace = true }

@@ -1,0 +1,10 @@
+[package]
+name = "whatmedia-mpv"
+description = "mpv 后端：外部进程 + JSON IPC（桌面端播放器，110 §53 的底层）"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+serde = { workspace = true }
+serde_json = { workspace = true }

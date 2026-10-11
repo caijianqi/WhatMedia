@@ -1,7 +1,15 @@
 [package]
-name = "mosaic-transcoder"
-version = "0.1.0"
-edition = "2021"
+name = "whatmedia-transcoder"
+description = "FFmpeg 参数构造 / 进程生命周期 / 并发池 / 临时目录守卫"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
 
 [dependencies]
-mosaic-core = { path = "../core" }
+whatmedia-core = { workspace = true }
+whatmedia-hardware = { path = "../hardware" }
+async-trait = { workspace = true }
+tokio = { workspace = true }
+
+[dev-dependencies]
+tempfile = { workspace = true }

@@ -11,7 +11,7 @@
 //!        └─ transport  HTTP 抽象（可注入 fixture，离线可测）
 //! ```
 //!
-//! 一条铁律：**本 crate 不写 SQL**。所有持久化走 `mosaic-database::repo`。
+//! 一条铁律：**本 crate 不写 SQL**。所有持久化走 `whatmedia-database::repo`。
 
 pub mod bangumi;
 pub mod images;
@@ -36,7 +36,7 @@ pub use transport::{FixtureTransport, HttpTransport, ReqwestTransport};
 
 use std::sync::Arc;
 
-use mosaic_core::MetadataProvider;
+use whatmedia_core::MetadataProvider;
 
 /// 按配置装配 Provider 链。顺序即优先级：前面的先试，分数高的胜出。
 ///

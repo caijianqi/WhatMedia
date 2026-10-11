@@ -15,8 +15,8 @@ use serde::{Deserialize, Serialize};
 use std::sync::{Arc, Mutex};
 use uuid::Uuid;
 
-use mosaic_core::Id;
-use mosaic_metadata::{
+use whatmedia_core::Id;
+use whatmedia_metadata::{
     placeholder_svg, HttpTransport, ImageCache, Outcome, ScrapeConfig, ScrapeStats, Scraper,
 };
 
@@ -32,6 +32,7 @@ pub struct ScrapeRegistry {
 }
 
 #[derive(Clone, Serialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 pub struct ScrapeRunView {
     pub id: Uuid,
     pub library_id: Option<String>,
@@ -61,7 +62,9 @@ impl ScrapeRegistry {
 // ─────────────────────────────────────────────────────────────
 
 #[derive(Debug, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 pub struct ScrapeRequest {
+    #[cfg_attr(feature = "openapi", schema(value_type = Option<uuid::Uuid>))]
     pub library_id: Option<Id>,
     /// 只重跑失败项。
     #[serde(default)]
@@ -69,18 +72,21 @@ pub struct ScrapeRequest {
 }
 
 #[derive(Debug, Serialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 pub struct ScrapeAccepted {
     pub run_id: Uuid,
     pub queued: u64,
 }
 
 #[derive(Debug, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 pub struct IdentifyRequest {
     pub provider: String,
     pub provider_id: String,
 }
 
 #[derive(Debug, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 pub struct LockRequest {
     /// 要锁定或解锁的字段名。
     pub fields: Vec<String>,
@@ -93,6 +99,7 @@ fn default_true() -> bool {
 }
 
 #[derive(Debug, Serialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 pub struct LockResult {
     pub locked_fields: Vec<String>,
     /// 被拒绝的字段名（不在白名单里）。UI 应当提示用户。
@@ -100,14 +107,18 @@ pub struct LockResult {
 }
 
 #[derive(Debug, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 pub struct CandidatesQuery {
+    #[cfg_attr(feature = "openapi", schema(value_type = uuid::Uuid))]
     pub item_id: Id,
     pub title: Option<String>,
     pub year: Option<i32>,
 }
 
 #[derive(Debug, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 pub struct StatsQuery {
+    #[cfg_attr(feature = "openapi", schema(value_type = Option<uuid::Uuid>))]
     pub library_id: Option<Id>,
 }
 
@@ -118,6 +129,19 @@ pub struct StatsQuery {
 /// 启动一轮刮削。
 ///
 /// 1,000 部片要跑几十分钟，绝不能让 HTTP 请求挂在那儿等。
+#[cfg_attr(
+    feature = "openapi",
+    utoipa::path(
+        post,
+        path = "/api/v1/scrape",
+        request_body = ScrapeRequest,
+        responses(
+            (status = 202, description = "已受理", body = ScrapeAccepted),
+            (status = 501, description = "未配置元数据 Provider", body = crate::ErrorBody),
+        ),
+        tag = "metadata"
+    )
+)]
 pub async fn start_scrape(
     State(state): State<AppState>,
     Json(body): Json<ScrapeRequest>,
@@ -178,28 +202,69 @@ pub async fn start_scrape(
         .into_response()
 }
 
+#[cfg_attr(
+    feature = "openapi",
+    utoipa::path(
+        get,
+        path = "/api/v1/scrape/runs",
+        responses(
+            (status = 200, description = "成功", body = Vec<ScrapeRunView>),
+        ),
+        tag = "metadata"
+    )
+)]
 pub async fn scrape_runs(State(state): State<AppState>) -> Response {
     Json(state.scrapes.list()).into_response()
 }
 
+#[cfg_attr(
+    feature = "openapi",
+    utoipa::path(
+        get,
+        path = "/api/v1/scrape/stats",
+        params(
+        ("library_id" = Option<String>, Query, description = "不传则统计全部"),
+        ),
+        responses(
+            (status = 200, description = "成功", body = whatmedia_database::repo::JobStats),
+            (status = 503, description = "数据库未就绪", body = crate::ErrorBody),
+        ),
+        tag = "metadata"
+    )
+)]
 pub async fn scrape_stats(State(state): State<AppState>, Query(q): Query<StatsQuery>) -> Response {
     let db = match state.db_or_503() {
         Ok(d) => d,
         Err(r) => return *r,
     };
-    match mosaic_database::repo::metadata::job_stats(&db, q.library_id).await {
+    match whatmedia_database::repo::metadata::job_stats(&db, q.library_id).await {
         Ok(s) => Json(s).into_response(),
         Err(e) => internal(e),
     }
 }
 
 /// 待人工确认列表。
+#[cfg_attr(
+    feature = "openapi",
+    utoipa::path(
+        get,
+        path = "/api/v1/metadata/review",
+        params(
+        ("library_id" = Option<String>, Query),
+        ),
+        responses(
+            (status = 200, description = "待人工确认", body = Vec<ReviewItem>),
+            (status = 503, description = "数据库未就绪", body = crate::ErrorBody),
+        ),
+        tag = "metadata"
+    )
+)]
 pub async fn review_queue(State(state): State<AppState>, Query(q): Query<StatsQuery>) -> Response {
     let db = match state.db_or_503() {
         Ok(d) => d,
         Err(r) => return *r,
     };
-    match mosaic_database::repo::metadata::list_review(&db, q.library_id, 200).await {
+    match whatmedia_database::repo::metadata::list_review(&db, q.library_id, 200).await {
         Ok(list) => {
             let view: Vec<ReviewItem> = list
                 .into_iter()
@@ -218,7 +283,9 @@ pub async fn review_queue(State(state): State<AppState>, Query(q): Query<StatsQu
 }
 
 #[derive(Debug, Serialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 pub struct ReviewItem {
+    #[cfg_attr(feature = "openapi", schema(value_type = uuid::Uuid))]
     pub item_id: Id,
     pub kind: String,
     pub title: String,
@@ -228,6 +295,32 @@ pub struct ReviewItem {
 }
 
 /// 候选列表。人工确认界面靠它。
+/// 只有一个状态字段的确认信封。与 `AckView` 的区别是语义：
+/// 这个表示"事情做完了"，那个表示"收到了"。
+#[derive(Debug, Serialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
+pub struct StatusView {
+    pub status: String,
+}
+
+#[cfg_attr(
+    feature = "openapi",
+    utoipa::path(
+        get,
+        path = "/api/v1/metadata/candidates",
+        params(
+        ("item_id" = String, Query),
+        ("title" = Option<String>, Query, description = "覆盖标题"),
+        ("year" = Option<i32>, Query),
+        ),
+        responses(
+            (status = 200, description = "候选列表", body = Vec<whatmedia_metadata::CandidateView>),
+            (status = 404, description = "条目不存在", body = crate::ErrorBody),
+            (status = 501, description = "未配置元数据 Provider", body = crate::ErrorBody),
+        ),
+        tag = "metadata"
+    )
+)]
 pub async fn candidates(
     State(state): State<AppState>,
     Query(q): Query<CandidatesQuery>,
@@ -254,6 +347,23 @@ pub async fn candidates(
 }
 
 /// 人工确认：直接采用指定 Provider 的指定 id。
+#[cfg_attr(
+    feature = "openapi",
+    utoipa::path(
+        post,
+        path = "/api/v1/items/{id}/identify",
+        params(
+        ("id" = String, Path, description = "条目 id"),
+        ),
+        request_body = IdentifyRequest,
+        responses(
+            (status = 200, description = "成功", body = StatusView),
+            (status = 404, description = "条目不存在", body = crate::ErrorBody),
+            (status = 501, description = "未配置元数据 Provider", body = crate::ErrorBody),
+        ),
+        tag = "metadata"
+    )
+)]
 pub async fn identify(
     State(state): State<AppState>,
     AxumPath(id): AxumPath<Id>,
@@ -287,6 +397,22 @@ pub async fn identify(
 /// 锁定 / 解锁字段。
 ///
 /// 拒绝白名单外的字段，而不是静默忽略 —— 否则用户以为锁上了，其实没有。
+#[cfg_attr(
+    feature = "openapi",
+    utoipa::path(
+        post,
+        path = "/api/v1/items/{id}/locks",
+        params(
+        ("id" = String, Path, description = "条目 id"),
+        ),
+        request_body = LockRequest,
+        responses(
+            (status = 200, description = "成功", body = LockResult),
+            (status = 503, description = "数据库未就绪", body = crate::ErrorBody),
+        ),
+        tag = "metadata"
+    )
+)]
 pub async fn set_locks(
     State(state): State<AppState>,
     AxumPath(id): AxumPath<Id>,
@@ -297,24 +423,24 @@ pub async fn set_locks(
         Err(r) => return *r,
     };
 
-    let current = match mosaic_database::repo::metadata::locked_fields_of_item(&db, id).await {
+    let current = match whatmedia_database::repo::metadata::locked_fields_of_item(&db, id).await {
         Ok(s) => s,
         Err(e) => return internal(e),
     };
-    let mut locked = mosaic_metadata::parse_locked(&current);
+    let mut locked = whatmedia_metadata::parse_locked(&current);
     let mut rejected = Vec::new();
 
     for f in &body.fields {
-        if !mosaic_metadata::set_locked(&mut locked, f, body.locked) {
+        if !whatmedia_metadata::set_locked(&mut locked, f, body.locked) {
             rejected.push(f.clone());
         }
     }
 
-    let json = mosaic_metadata::serialize_locked(&locked);
-    if let Err(e) = mosaic_database::repo::metadata::update_item_meta(
+    let json = whatmedia_metadata::serialize_locked(&locked);
+    if let Err(e) = whatmedia_database::repo::metadata::update_item_meta(
         &db,
         id,
-        &mosaic_database::repo::metadata::ItemMetaUpdate {
+        &whatmedia_database::repo::metadata::ItemMetaUpdate {
             locked_fields: Some(json),
             ..Default::default()
         },
@@ -334,18 +460,48 @@ pub async fn set_locks(
 }
 
 /// 某条目的图片清单。
+#[cfg_attr(
+    feature = "openapi",
+    utoipa::path(
+        get,
+        path = "/api/v1/items/{id}/images",
+        params(
+        ("id" = String, Path, description = "条目 id"),
+        ),
+        responses(
+            (status = 200, description = "成功", body = Vec<whatmedia_database::repo::ItemImage>),
+            (status = 503, description = "数据库未就绪", body = crate::ErrorBody),
+        ),
+        tag = "metadata"
+    )
+)]
 pub async fn item_images(State(state): State<AppState>, AxumPath(id): AxumPath<Id>) -> Response {
     let db = match state.db_or_503() {
         Ok(d) => d,
         Err(r) => return *r,
     };
-    match mosaic_database::repo::image::list_for_item(&db, id).await {
+    match whatmedia_database::repo::image::list_for_item(&db, id).await {
         Ok(list) => Json(list).into_response(),
         Err(e) => internal(e),
     }
 }
 
 /// 取一张图。缓存里有就直出，没有就给占位图 —— 绝不 404。
+#[cfg_attr(
+    feature = "openapi",
+    utoipa::path(
+        get,
+        path = "/api/v1/items/{id}/images/{kind}",
+        params(
+        ("id" = String, Path, description = "条目 id"),
+        ("kind" = String, Path, description = "poster | backdrop | ..."),
+        ),
+        responses(
+            (status = 200, description = "图片二进制；缓存缺失时给占位图，绝不 404", content_type = "image/*", body = Vec<u8>),
+        ),
+        tag = "metadata"
+    )
+)]
 pub async fn item_image(
     State(state): State<AppState>,
     AxumPath((id, kind)): AxumPath<(Id, String)>,
@@ -355,7 +511,7 @@ pub async fn item_image(
         Err(r) => return *r,
     };
 
-    let images = match mosaic_database::repo::image::list_for_item(&db, id).await {
+    let images = match whatmedia_database::repo::image::list_for_item(&db, id).await {
         Ok(v) => v,
         Err(e) => return internal(e),
     };
@@ -397,7 +553,7 @@ pub async fn item_image(
     }
 
     // ③ 兜底：占位图。海报墙不能出现破图。
-    let title = mosaic_database::repo::get_item(&db, id)
+    let title = whatmedia_database::repo::get_item(&db, id)
         .await
         .ok()
         .flatten()
@@ -413,7 +569,7 @@ pub async fn item_image(
 }
 
 async fn download_into(cache: &ImageCache, url: &str, kind: &str) -> Option<std::path::PathBuf> {
-    let transport = mosaic_metadata::ReqwestTransport::new();
+    let transport = whatmedia_metadata::ReqwestTransport::new();
     let key = ImageCache::key_for(url, kind);
     if let Some(p) = cache.get(&key).await {
         return Some(p);
@@ -423,10 +579,7 @@ async fn download_into(cache: &ImageCache, url: &str, kind: &str) -> Option<std:
         return None;
     }
     let ext = extension_of(url);
-    cache
-        .put(kind, url, kind, ext, &res.body)
-        .await
-        .ok()
+    cache.put(kind, url, kind, ext, &res.body).await.ok()
 }
 
 fn extension_of(url: &str) -> &'static str {
@@ -457,6 +610,18 @@ fn content_type_of(path: &str) -> &'static str {
 }
 
 /// 缓存统计。用于验证 DoD 的"命中率 ≥ 90%"。
+#[cfg_attr(
+    feature = "openapi",
+    utoipa::path(
+        get,
+        path = "/api/v1/metadata/cache/stats",
+        responses(
+            (status = 200, description = "成功", body = whatmedia_database::repo::image::CacheStats),
+            (status = 501, description = "图片缓存未启用", body = crate::ErrorBody),
+        ),
+        tag = "metadata"
+    )
+)]
 pub async fn cache_stats(State(state): State<AppState>) -> Response {
     match &state.images {
         Some(c) => match c.stats().await {
@@ -472,6 +637,18 @@ pub async fn cache_stats(State(state): State<AppState>) -> Response {
 }
 
 /// 手动触发一次缓存清理。
+#[cfg_attr(
+    feature = "openapi",
+    utoipa::path(
+        post,
+        path = "/api/v1/metadata/cache/evict",
+        responses(
+            (status = 200, description = "清理结果", body = whatmedia_metadata::EvictReport),
+            (status = 501, description = "图片缓存未启用", body = crate::ErrorBody),
+        ),
+        tag = "metadata"
+    )
+)]
 pub async fn cache_evict(State(state): State<AppState>) -> Response {
     match &state.images {
         Some(c) => match c.evict().await {
@@ -498,17 +675,17 @@ pub fn outcome_label(o: Outcome) -> &'static str {
 
 /// 从配置构造 Scraper。Provider 为空时返回 None —— 此时元数据端点返回 501。
 pub fn build_scraper(
-    db: mosaic_database::Db,
-    cfg: &mosaic_config::AppConfig,
+    db: whatmedia_database::Db,
+    cfg: &whatmedia_config::AppConfig,
 ) -> Option<Arc<Scraper>> {
-    let chain = mosaic_metadata::ProviderChainConfig {
+    let chain = whatmedia_metadata::ProviderChainConfig {
         tmdb_api_key: cfg.metadata.tmdb_api_key.clone(),
         tmdb_bearer: cfg.metadata.tmdb_bearer.clone(),
         bangumi_enabled: cfg.metadata.bangumi_enabled,
         language: cfg.metadata.language.clone(),
         requests_per_second: cfg.metadata.requests_per_second,
     };
-    let providers = mosaic_metadata::build_providers(&chain);
+    let providers = whatmedia_metadata::build_providers(&chain);
     if providers.is_empty() {
         return None;
     }

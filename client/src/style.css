@@ -1,0 +1,48 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/*
+ * 全局基调。
+ *
+ * 深色为主不是审美偏好，是影音应用的**功能需求**：
+ * 用户在暗房间里看片，一个白底界面在暂停时会把整个房间照亮。
+ */
+
+@layer base {
+  html,
+  body,
+  #app {
+    height: 100%;
+  }
+
+  body {
+    @apply bg-ink-950 text-slate-200 antialiased;
+  }
+
+  /* 滚动条在深色背景下默认是浅色的，非常刺眼。 */
+  ::-webkit-scrollbar {
+    width: 10px;
+    height: 10px;
+  }
+  ::-webkit-scrollbar-track {
+    @apply bg-ink-900;
+  }
+  ::-webkit-scrollbar-thumb {
+    @apply bg-ink-700 rounded-full;
+  }
+  ::-webkit-scrollbar-thumb:hover {
+    @apply bg-ink-600;
+  }
+}
+
+@layer components {
+  /* 焦点环统一：键盘用户需要看得见，鼠标用户不需要被干扰。 */
+  .focus-ring {
+    @apply focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand focus-visible:ring-offset-2 focus-visible:ring-offset-ink-950;
+  }
+
+  .card {
+    @apply rounded-lg bg-ink-900 border border-ink-800;
+  }
+}

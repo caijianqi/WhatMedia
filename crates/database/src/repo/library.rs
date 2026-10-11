@@ -2,7 +2,7 @@
 
 use anyhow::Result;
 use chrono::Utc;
-use mosaic_core::{Id, Library, MediaKind};
+use whatmedia_core::{Id, Library, MediaKind};
 use uuid::Uuid;
 
 use crate::db::Db;

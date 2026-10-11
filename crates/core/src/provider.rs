@@ -17,6 +17,7 @@ use crate::model::{ByteRange, HdrType, Id, VideoCodec};
 // ─────────────────────────────────────────────────────────────
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 pub struct StorageEntry {
     pub path: String,
     pub name: String,
@@ -47,6 +48,7 @@ pub trait StorageProvider: Send + Sync {
 // ─────────────────────────────────────────────────────────────
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 pub struct MetadataQuery {
     pub title: String,
     pub year: Option<i32>,
@@ -61,6 +63,7 @@ pub struct MetadataQuery {
 /// 字段只会增加不会删除（见 ADR-0000：模型定稿后只允许加字段）。
 /// 所有 `Option` 都是"Provider 没给"而不是"没有"，合并时据此跳过。
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 pub struct MetadataRecord {
     pub provider: String,
     pub provider_id: String,
@@ -80,6 +83,7 @@ pub struct MetadataRecord {
 
 /// 演职员。P2 的"人物 / 演职员表关系"就落在这张表上。
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 pub struct MetadataCredit {
     pub name: String,
     /// `actor` / `director` / `writer`。存小写，查询时不要再做大小写转换。
@@ -91,6 +95,7 @@ pub struct MetadataCredit {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 pub struct MetadataImage {
     /// `poster` / `backdrop` / `still` / `logo` / `profile`
     pub kind: String,
@@ -123,6 +128,7 @@ pub trait MetadataProvider: Send + Sync {
 // ─────────────────────────────────────────────────────────────
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 #[serde(rename_all = "snake_case")]
 pub enum HardwareKind {
     /// 软件兜底。任何环境都必须可用。
@@ -137,6 +143,7 @@ pub enum HardwareKind {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 pub struct HardwareProfile {
     pub kind: HardwareKind,
     pub decoders: Vec<VideoCodec>,
@@ -166,6 +173,7 @@ pub trait HardwareAccelerationProvider: Send + Sync {
 // ─────────────────────────────────────────────────────────────
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 pub struct CompletionRequest {
     pub system: Option<String>,
     pub messages: Vec<ChatMessage>,
@@ -175,18 +183,21 @@ pub struct CompletionRequest {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 pub struct ChatMessage {
     pub role: String,
     pub content: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 pub struct CompletionResponse {
     pub content: Option<String>,
     pub tool_calls: Vec<ToolCall>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 pub struct ToolCall {
     pub id: String,
     pub name: String,
@@ -205,6 +216,7 @@ pub trait ModelProvider: Send + Sync {
 // ─────────────────────────────────────────────────────────────
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 #[serde(rename_all = "snake_case")]
 pub enum PlayerState {
     Idle,
@@ -217,6 +229,7 @@ pub enum PlayerState {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum PlayerEvent {
     StateChanged { state: PlayerState },
@@ -251,6 +264,7 @@ pub trait MediaPlayer: Send + Sync {
 // ─────────────────────────────────────────────────────────────
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 #[serde(rename_all = "snake_case")]
 pub enum ToolRisk {
     /// 查询 / 搜索 / 分析 / 推荐 / 诊断 —— 可自动执行。
@@ -276,6 +290,6 @@ pub trait AiTool: Send + Sync {
     /// JSON Schema，供模型做 function calling。
     fn schema(&self) -> JsonValue;
 
-    /// Dangerous 工具在 ctx.confirmation 为空时必须返回 MosaicError::AiDenied。
+    /// Dangerous 工具在 ctx.confirmation 为空时必须返回 WhatMediaError::AiDenied。
     async fn invoke(&self, ctx: ToolContext, args: JsonValue) -> Result<JsonValue>;
 }

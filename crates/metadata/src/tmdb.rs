@@ -7,7 +7,7 @@ use async_trait::async_trait;
 use serde_json::Value;
 use std::sync::Arc;
 
-use mosaic_core::{
+use whatmedia_core::{
     MetadataCredit, MetadataImage, MetadataProvider, MetadataQuery, MetadataRecord, Result,
 };
 
@@ -127,7 +127,7 @@ impl TmdbProvider {
             }
         })
         .await
-        .map_err(|e| mosaic_core::MosaicError::Metadata {
+        .map_err(|e| whatmedia_core::WhatMediaError::Metadata {
             provider: "tmdb".into(),
             message: e.to_string(),
         })?;
@@ -273,10 +273,7 @@ fn credits_of(v: &Value, max_cast: usize) -> Vec<MetadataCredit> {
 fn record_from_movie(v: &Value, p: &TmdbProvider) -> MetadataRecord {
     MetadataRecord {
         provider: "tmdb".into(),
-        provider_id: v
-            .get("id")
-            .map(|i| i.to_string())
-            .unwrap_or_default(),
+        provider_id: v.get("id").map(|i| i.to_string()).unwrap_or_default(),
         title: str_of(v, "title").unwrap_or_default(),
         original_title: str_of(v, "original_title"),
         sort_title: None,

@@ -1,7 +1,7 @@
 //! 媒体文件"读懂"层：文件名解析 / ffprobe 探测 / NFO 读取。
 //!
 //! 本 crate 不碰数据库，只把"一个文件"变成"结构化信息"。
-//! 入库是 `mosaic-library` 的事。
+//! 入库是 `whatmedia-library` 的事。
 
 pub mod naming;
 pub mod nfo;

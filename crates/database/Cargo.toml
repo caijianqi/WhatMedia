@@ -1,13 +1,17 @@
 [package]
-name = "mosaic-database"
+name = "whatmedia-database"
 description = "SQLx 数据访问与 migration（唯一允许写 SQL 的 crate）"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
 
+[features]
+openapi = ["dep:utoipa", "whatmedia-core/openapi"]
+
 [dependencies]
-mosaic-core = { workspace = true }
-mosaic-config = { workspace = true }
+utoipa = { workspace = true, optional = true }
+whatmedia-core = { workspace = true }
+whatmedia-config = { workspace = true }
 sqlx = { workspace = true }
 anyhow = { workspace = true }
 thiserror = { workspace = true }

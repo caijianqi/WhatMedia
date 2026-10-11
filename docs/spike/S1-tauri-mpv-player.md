@@ -7,7 +7,7 @@
 
 ## 为什么必须在 P0 做
 
-桌面端播放器是 Mosaic 唯一**可能导致架构重估**的技术点。111.md §18 建议用 mpv/libmpv，但没有验证过它在 Tauri 2 窗口里到底能不能用。
+桌面端播放器是 WhatMedia 唯一**可能导致架构重估**的技术点。111.md §18 建议用 mpv/libmpv，但没有验证过它在 Tauri 2 窗口里到底能不能用。
 
 早两周知道答案，比第 43 周（P4）才知道便宜一百倍。
 
@@ -34,7 +34,7 @@
 
 ### Q4：许可证影响
 
-mpv 是 GPLv2+，libmpv 是 LGPLv2.1+。动态链接 LGPL 库对 MIT/Apache 双许可的 Mosaic 可接受，但**静态链接会触发 GPL 传染**。需要确认分发方式。
+mpv 是 GPLv2+，libmpv 是 LGPLv2.1+。动态链接 LGPL 库对 MIT/Apache 双许可的 WhatMedia 可接受，但**静态链接会触发 GPL 传染**。需要确认分发方式。
 
 ## 产出
 

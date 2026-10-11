@@ -1,6 +1,6 @@
 //! 图片缓存策略：LRU + 按大小 / 时间 / 类型清理。
 //!
-//! SQL 在 `mosaic-database::repo::image`，正文在磁盘上，这里只管"谁该活着"。
+//! SQL 在 `whatmedia-database::repo::image`，正文在磁盘上，这里只管"谁该活着"。
 //!
 //! 缓存为什么值得单独做一层：海报墙一次要出 200 张图，每张都回源的话
 //! 首屏要十几秒，而且会被 TMDB 限流。二次访问命中率必须 ≥ 90%（P2 DoD）。
@@ -49,6 +49,7 @@ impl Default for ImageCacheConfig {
 }
 
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, serde::Serialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 pub struct EvictReport {
     pub removed: u64,
     pub bytes_freed: u64,
@@ -57,12 +58,12 @@ pub struct EvictReport {
 }
 
 pub struct ImageCache {
-    db: mosaic_database::Db,
+    db: whatmedia_database::Db,
     cfg: ImageCacheConfig,
 }
 
 impl ImageCache {
-    pub fn new(db: mosaic_database::Db, cfg: ImageCacheConfig) -> Result<Self> {
+    pub fn new(db: whatmedia_database::Db, cfg: ImageCacheConfig) -> Result<Self> {
         std::fs::create_dir_all(&cfg.dir)
             .with_context(|| format!("创建图片缓存目录失败 {}", cfg.dir.display()))?;
         Ok(Self { db, cfg })
@@ -97,15 +98,15 @@ impl ImageCache {
     /// 文件被外部删了要当未命中 —— 否则返回一条指向空气的路径，
     /// UI 拿到 404 却不知道该重新下载。
     pub async fn get(&self, key: &str) -> Option<PathBuf> {
-        let row = mosaic_database::repo::image::get(&self.db, key)
+        let row = whatmedia_database::repo::image::get(&self.db, key)
             .await
             .ok()??;
         let path = PathBuf::from(&row.path);
         if !path.exists() {
-            let _ = mosaic_database::repo::image::delete(&self.db, key).await;
+            let _ = whatmedia_database::repo::image::delete(&self.db, key).await;
             return None;
         }
-        let _ = mosaic_database::repo::image::touch(&self.db, key).await;
+        let _ = whatmedia_database::repo::image::touch(&self.db, key).await;
         Some(path)
     }
 
@@ -129,7 +130,7 @@ impl ImageCache {
         std::fs::write(&path, bytes)
             .with_context(|| format!("写图片缓存失败 {}", path.display()))?;
 
-        mosaic_database::repo::image::put(
+        whatmedia_database::repo::image::put(
             &self.db,
             &key,
             kind,
@@ -168,18 +169,18 @@ impl ImageCache {
         self.put(kind, url, variant, ext, &res.body).await.ok()
     }
 
-    pub async fn stats(&self) -> Result<mosaic_database::repo::image::CacheStats> {
-        mosaic_database::repo::image::stats(&self.db).await
+    pub async fn stats(&self) -> Result<whatmedia_database::repo::image::CacheStats> {
+        whatmedia_database::repo::image::stats(&self.db).await
     }
 
     /// 清理。三道闸：过期 → 超量条目 → 超量字节。
     pub async fn evict(&self) -> Result<EvictReport> {
         let mut report = EvictReport::default();
-        let all = mosaic_database::repo::image::all_for_eviction(&self.db).await?;
+        let all = whatmedia_database::repo::image::all_for_eviction(&self.db).await?;
         let cutoff = Utc::now() - self.cfg.max_age;
 
         let mut expired: Vec<String> = Vec::new();
-        let mut live: Vec<mosaic_database::repo::image::ImageCacheRow> = Vec::new();
+        let mut live: Vec<whatmedia_database::repo::image::ImageCacheRow> = Vec::new();
         for r in all {
             if r.accessed_at < cutoff {
                 expired.push(r.key.clone());
@@ -217,19 +218,19 @@ impl ImageCache {
     }
 }
 
-async fn remove_rows(db: &mosaic_database::Db, keys: &[String]) -> Result<u64> {
+async fn remove_rows(db: &whatmedia_database::Db, keys: &[String]) -> Result<u64> {
     if keys.is_empty() {
         return Ok(0);
     }
     let mut freed = 0u64;
     for k in keys {
-        if let Ok(Some(row)) = mosaic_database::repo::image::get(db, k).await {
+        if let Ok(Some(row)) = whatmedia_database::repo::image::get(db, k).await {
             let p = PathBuf::from(&row.path);
             freed += p.metadata().map(|m| m.len()).unwrap_or(0);
             let _ = std::fs::remove_file(p);
         }
     }
-    mosaic_database::repo::image::delete_many(db, keys).await?;
+    whatmedia_database::repo::image::delete_many(db, keys).await?;
     Ok(freed)
 }
 

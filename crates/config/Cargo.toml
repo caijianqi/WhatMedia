@@ -1,5 +1,5 @@
 [package]
-name = "mosaic-config"
+name = "whatmedia-config"
 description = "配置加载：TOML + 环境变量覆盖 + 目录布局"
 version.workspace = true
 edition.workspace = true
@@ -11,4 +11,4 @@ toml = { workspace = true }
 anyhow = { workspace = true }
 
 [dev-dependencies]
-mosaic-core = { workspace = true }
+whatmedia-core = { workspace = true }

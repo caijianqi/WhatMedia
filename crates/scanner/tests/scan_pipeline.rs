@@ -4,10 +4,10 @@
 //! 而是"给一个目录，能不能得到一个能查的媒体库"。
 
 use anyhow::Result;
-use mosaic_core::MediaKind;
-use mosaic_database::{repo, Db};
-use mosaic_scanner::{ScanConfig, ScanControl, Scanner};
-use mosaic_storage::LocalStorage;
+use whatmedia_core::MediaKind;
+use whatmedia_database::{repo, Db};
+use whatmedia_scanner::{ScanConfig, ScanControl, Scanner};
+use whatmedia_storage::LocalStorage;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
@@ -20,7 +20,7 @@ fn migrations_dir() -> PathBuf {
 }
 
 async fn fresh_db(dir: &Path) -> Db {
-    let path = dir.join("mosaic.db");
+    let path = dir.join("whatmedia.db");
     let url = format!("sqlite:{}?mode=rwc", path.display());
     let db = Db::open(&url).await.unwrap();
     db.migrate(&migrations_dir()).await.unwrap();
@@ -59,7 +59,7 @@ fn touch(path: &Path, content: &[u8]) {
     std::fs::write(path, content).unwrap();
 }
 
-async fn scan_once(db: &Db, root: &Path, cfg: ScanConfig) -> mosaic_scanner::ScanStats {
+async fn scan_once(db: &Db, root: &Path, cfg: ScanConfig) -> whatmedia_scanner::ScanStats {
     let library = repo::insert_library(
         db,
         "样本库",
@@ -292,7 +292,7 @@ async fn chinese_search_hits_by_substring() -> Result<()> {
 }
 
 /// 10,000 文件基线。**默认不跑**（需要几分钟），用于建立 P1 DoD 里的性能基线：
-/// `cargo test -p mosaic-scanner -- --ignored --nocapture scan_10k_baseline`
+/// `cargo test -p whatmedia-scanner -- --ignored --nocapture scan_10k_baseline`
 #[tokio::test]
 #[ignore]
 async fn scan_10k_baseline() -> Result<()> {

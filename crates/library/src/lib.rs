@@ -8,11 +8,11 @@
 
 use anyhow::Result;
 use chrono::Utc;
-use mosaic_core::{
+use whatmedia_core::{
     Container, HdrType, Id, Library, MediaFile, MediaItem, MediaKind, MediaVersion, VideoCodec,
 };
-use mosaic_database::{repo, to_video_codec, Db};
-use mosaic_media::{ParsedName, ProbeResult};
+use whatmedia_database::{repo, to_video_codec, Db};
+use whatmedia_media::{ParsedName, ProbeResult};
 use uuid::Uuid;
 
 /// UUIDv5 命名空间。固定常量，改了就等于重建整个库。

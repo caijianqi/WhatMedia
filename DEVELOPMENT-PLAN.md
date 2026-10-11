@@ -1,6 +1,6 @@
-# Mosaic 开发计划（基于 111.md V1.0 分析产出）
+# WhatMedia 开发计划（基于 111.md V1.0 分析产出）
 
-> 配套文档：`111.md — Mosaic 完整需求、功能与技术方案 V1.0`  
+> 配套文档：`111.md — WhatMedia 完整需求、功能与技术方案 V1.0`  
 > 生成日期：2026-10-08  
 > 计划版本：v1（草案，待团队规模确认后校准工时）
 
@@ -25,7 +25,7 @@
 
 | 维度    | 评价                                                                                                                                |
 | ----- | --------------------------------------------------------------------------------------------------------------------------------- |
-| 领域抽象  | **核心资产**。MediaItem / MediaVersion / MediaFile / MediaStream 四层模型（§28）正确解决"一个作品≠一个文件"，是 Mosaic 与 Jellyfin/Emby 拉开差距的地方，必须最先落地、最晚改动 |
+| 领域抽象  | **核心资产**。MediaItem / MediaVersion / MediaFile / MediaStream 四层模型（§28）正确解决"一个作品≠一个文件"，是 WhatMedia 与 Jellyfin/Emby 拉开差距的地方，必须最先落地、最晚改动 |
 | 解耦设计  | 四个 Provider（Storage / Metadata / Hardware / Model）+ MediaPlayer Plugin + AI Tool 边界清晰，是后续所有扩展的支点                                  |
 | 技术栈收敛 | Rust + Vue3 + Tauri2 + FFmpeg + SQLite/PG，一套主栈覆盖 6 个端，避免了"每个端一套业务代码"的灾难                                                           |
 | 客户端策略 | Kotlin/Swift 只做 Tauri Plugin 内部实现、不做独立业务 App（§12/§19）——这是正确的，也是最大的成本节省点                                                           |
@@ -59,7 +59,7 @@
 ## 二、开发策略：垂直切片优先
 
 ```
-                    Mosaic 推进模型
+                    WhatMedia 推进模型
 
    阶段      P0   P1   P2   P3   P4   P5   P6   P7
               │    │    │    │    │    │    │    │
@@ -72,7 +72,7 @@
   移动/TV ─────────────────────────────────███████
   AI ──────────────────────────────────────────███
 
-  ★ P3 结束 = 第一个真正可用的 Mosaic（Docker + Web + 桌面）
+  ★ P3 结束 = 第一个真正可用的 WhatMedia（Docker + Web + 桌面）
   ★ P5 结束 = R5S/ARM64 交付，达到文档 §V1.0 的"低资源/ARM友好"
   ★ P6/P7 = 文档 §V0.8 / §V0.6 的完整形态
 ```
@@ -92,6 +92,9 @@
 | ID     | 攻关项                    | 时间盒 | 关键问题                                                                                                 | 产出与决策点                                                                               |
 | ------ | ---------------------- | --- | ---------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------ |
 | **S1** | Tauri 2 移动端原生播放器插件     | 2 周 | ① Media3 能否作为独立 Surface 层嵌入 Tauri WebView 之下，UI 能否叠加？② PGS/ASS 字幕渲染方案？③ MediaSession/PiP/后台是否稳定？     | 一个可播放本地 MP4 + HLS 的 Android Demo。**决策：Go（原生插件）/ 降级（仅 HLS+fMP4，字幕服务端烧录）**             |
+
+> **S1 只约束移动端。** 桌面端 mpv 走**外部进程 + JSON IPC**（ADR-0003），
+> 绕开了"嵌入 WebView"这个难题，因此不依赖 S1 的结论，可以先落地。
 | **S2** | RK3588 硬件转码链路          | 2 周 | ① mainline FFmpeg vs ffmpeg-rockchip 哪个可用？② MPP 解码 + RGA 缩放 + MPP 编码能否零拷贝？③ HDR→SDR tone mapping 性能？ | 一份实测报告（含 FPS/CPU/温度）。**决策：RKMPP 进主线 / 仅做解码 / 暂时纯软件转码**                               |
 | **S3** | FFmpeg 进程池与资源隔离        | 1 周 | 扫描/刮削/转码并发时如何保证播放不卡？                                                                                 | 任务优先级队列 + `nice`/cgroup/线程亲和 + 限速方案；给出 R5S 上的并发上限数值                                  |
 | **S4** | 中文搜索方案                 | 3 天 | FTS5 无中文分词器                                                                                          | **决策：FTS5 trigram（够用、零依赖）/ jieba 扩展 / 直接上 Tantivy**。建议先 trigram，媒体量级过 5 万再引入 Tantivy |
@@ -150,7 +153,7 @@
 - `api` v1：`/libraries` `/media` `/movies` `/series` `/episodes` `/search`；统一分页 / 排序 / 过滤 / 错误码
 - `task`：扫描任务 + SSE 进度推送
 
-**交付物**：命令行 `mosaic-cli scan --path /media` 能扫出一个可查询的库；Web 端能看到海报墙（图片占位符即可）。
+**交付物**：命令行 `whatmedia-cli scan --path /media` 能扫出一个可查询的库；Web 端能看到海报墙（图片占位符即可）。
 
 **DoD**
 
@@ -183,8 +186,8 @@
 - [ ] **图片缓存命中率 ≥ 90%（二次访问）** —— 同上，需真机二次访问数据
 - [ ] `metadata_job` 与 `image_cache` 在 10 万条量级下的查询性能基线
 
-> 上面三条未勾选项的共同前提都是"有真实 Provider 配额"。
-> 当前所有逻辑用 `FixtureTransport` 离线验证了正确性，
+> 上面三条未勾选项的共同前提都是"有真实 Provider 配额"。  
+> 当前所有逻辑用 `FixtureTransport` 离线验证了正确性，  
 > 但**打分阈值（0.86 / 0.45 / 0.06）是拍脑袋定的**，必须用真实样本回来校准。
 
 ---
@@ -224,16 +227,56 @@
 
 - Vue3 + TS + Vite + Tailwind + Element Plus；API 类型由 OpenAPI 自动生成（避免手写漂移）
 - 页面：首页（继续观看 / 最近添加 / 最近观看 / 我的收藏）、媒体库（网格/列表、筛选/排序/分页）、详情页（版本切换 / 音轨 / 字幕 / 演职员）、播放器页、设置（库管理 / 用户 / 转码 / 存储 / 任务中心）
-- 播放器抽象层 MediaPlayer API：Web（`<video>` + hls.js）↔ Tauri Plugin（mpv/libmpv）——**同一套上层调用接口**
+- 播放器抽象层 MediaPlayer API：Web（`<video>` + hls.js）↔ mpv ——**同一套上层调用接口**
 - Tauri 插件首批：media-player（mpv）、file-access、notification、device、download、storage、pip
+      —— **本轮只落地了 mpv 桥接**；托盘 / 单实例 / 关窗不退出也在壳里做完了。
+      file-access / notification / device / download / storage / pip 未做，随 P5 按需补
 - 桌面能力：系统托盘、全局快捷键、单实例、文件关联
 
 **DoD**
 
+- [x] 播放器抽象层 MediaPlayer：Web（`<video>` + hls.js）实现完成，接口与 111.md §53 对齐（改为订阅式，见 ADR-0002 §2）
+- [x] 页面：首页 / 媒体库 / 详情页 / 播放器页 / 设置
+- [x] 进度上报接线（节流 + 关键节点 + `sendBeacon` 兜底），为"跨端误差 < 5s"铺路
+- [x] 前后端能力声明单一真源 + 一致性测试（注入漂移已验证会红）
+- [x] OpenAPI 契约即单一真源：`whatmedia-cli openapi` 导出 → `openapi-typescript` 生成前端
+      `schema.d.ts`；配套**契约覆盖率守卫**（`crates/api/tests/openapi_coverage.rs`：
+      从 `lib.rs` 抠出所有 `.route()`，断言每条都进了契约 —— 加了路由忘进契约会红）
 - [ ] Windows / macOS / Linux 三端可安装、可直连服务器、完整走通"浏览→播放→续播"
+      —— **未勾**：桌面壳已实现（托盘菜单 / 单实例 / 关窗不退出 / mpv 进程桥接），
+      但三端安装包与真机走通还没做，见下
 - [ ] 桌面端 mpv 播放器支持 MKV + ASS + 多音轨 + 外挂字幕
+      —— **代码已完成，真机未验**：mpv 走**外部进程 + JSON IPC**（ADR-0003），
+      不依赖 S1（S1 问的是移动端 Media3 能否嵌入 Tauri WebView，是另一件事）。
+      协议编解码 / 参数构造 / 事件翻译都有测试覆盖（39 + 28 项），
+      但"真的拉起 mpv 并播通 MKV"需要一台装了 mpv 的机器，见 DoD 最后一条
 - [ ] 播放进度跨端同步（Web ↔ 桌面误差 < 5s）
+      —— **未勾**：上报链路已就绪，但需要两个真实端同时播放才能量出误差，需真机补
 - [ ] 安装包体积与冷启动时间建立基线
+      —— **未勾**：需要先有可安装的桌面端产物
+
+**P4 已做的调整（理由见 `docs/adr/0002-frontend-architecture.md`）**
+
+- 去掉 Element Plus：影音 UI 没有现成组件可用，反要花力气覆盖它的企业后台视觉。改为 Tailwind + 自写基础组件。
+- 能力声明改为单一真源（`client/src/player/capabilities.json`），由
+  `crates/playback/tests/client_capability_parity.rs` 与 Rust 预置档比对 —— 前后端各写一份必然漂移，且不会报错。
+- 能力跟着**播放器后端**走而不是运行环境：桌面端若按 mpv 档拿 Direct Play 会得到 MKV 地址，
+  而 mpv 未就绪时实际在用 Web 播放器，浏览器放不了 MKV。
+
+- 桌面端 mpv 走**外部进程 + JSON IPC**，不做嵌入式 libmpv（ADR-0003）。
+  代价是画面在 mpv 自己的窗口里；收益是 mpv 缺失/崩溃只降级到 Web 播放器，而不是客户端起不来。
+
+**当前实测状态**
+
+- 前端测试 71 项通过（播放器状态机 / 进度策略 / Web 后端 / **mpv 后端 28 项** / 海报降级 / 首页渲染）
+- `vue-tsc --noEmit` 零错误；`vite build` 通过，hls.js 拆为独立 595KB 按需 chunk，主包 98KB
+- Rust 全量测试 ~296 项通过（`--features openapi`，含能力一致性 6 项 + 契约覆盖率守卫）
+  `cargo clippy --workspace --all-targets --features openapi` 零警告（`-D warnings` 门禁口径）
+- 桌面壳 `client/src-tauri`：`cargo check` 通过（`make desktop-check`）。
+  它不在主 workspace 里（Tauri 有自己的 workspace），所以 CI 不会顺带检查它 —— 记得手动跑
+- 真跑冒烟：服务端 + vite dev + API 代理联通，首页标题与真实条目数据均正确返回
+- **下一步（需要真机）**：装 mpv + ffmpeg，验证"拉起 mpv → 播 MKV/ASS → seek 恢复 → 关窗不退出"；
+  以及三端安装包与冷启动基线
 
 ---
 
@@ -303,11 +346,11 @@
 ## 五、仓库结构与工程规范
 
 ```
-mosaic/                          # Monorepo
+whatmedia/                          # Monorepo
 ├── apps/
-│   ├── mosaic-server/           # 服务端二进制入口
-│   ├── mosaic-cli/              # 运维/调试 CLI
-│   └── mosaic-agent/            # 独立 AI 进程（可选，P7）
+│   ├── whatmedia-server/           # 服务端二进制入口
+│   ├── whatmedia-cli/              # 运维/调试 CLI
+│   └── whatmedia-agent/            # 独立 AI 进程（可选，P7）
 ├── crates/
 │   ├── core/                    # 领域模型（最稳定，改动需评审）
 │   ├── config/  database/  auth/

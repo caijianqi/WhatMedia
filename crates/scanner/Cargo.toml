@@ -1,17 +1,21 @@
 [package]
-name = "mosaic-scanner"
+name = "whatmedia-scanner"
 description = "媒体库扫描：遍历 / 增量指纹 / 并发入库 / 可取消"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
 
+[features]
+openapi = ["dep:utoipa", "whatmedia-core/openapi", "whatmedia-database/openapi"]
+
 [dependencies]
-mosaic-core = { workspace = true }
+utoipa = { workspace = true, optional = true }
+whatmedia-core = { workspace = true }
 tracing-subscriber = { workspace = true }
-mosaic-database = { workspace = true }
-mosaic-library = { workspace = true }
-mosaic-media = { workspace = true }
-mosaic-storage = { workspace = true }
+whatmedia-database = { workspace = true }
+whatmedia-library = { workspace = true }
+whatmedia-media = { workspace = true }
+whatmedia-storage = { workspace = true }
 anyhow = { workspace = true }
 serde = { workspace = true }
 tokio = { workspace = true }
@@ -21,5 +25,5 @@ tracing = { workspace = true }
 tempfile = { workspace = true }
 anyhow = { workspace = true }
 tokio = { workspace = true }
-mosaic-core = { workspace = true }
+whatmedia-core = { workspace = true }
 tracing-subscriber = { workspace = true }

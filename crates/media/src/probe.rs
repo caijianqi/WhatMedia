@@ -7,7 +7,7 @@
 //!   · **原始 JSON 入库。** ARM 上 ffprobe 一次要好几百毫秒，重复探测很贵。
 
 use chrono::Utc;
-use mosaic_core::{HdrType, MediaStream, MosaicError, Result, StreamType};
+use whatmedia_core::{HdrType, MediaStream, WhatMediaError, Result, StreamType};
 use serde::Deserialize;
 use std::collections::HashMap;
 use std::time::Duration;
@@ -43,7 +43,7 @@ impl FfprobeRunner {
         &self.bin
     }
 
-    /// 探测一个文件。超时或进程异常都返回 `MosaicError::Ffmpeg`。
+    /// 探测一个文件。超时或进程异常都返回 `WhatMediaError::Ffmpeg`。
     pub async fn probe(&self, path: &str) -> Result<ProbeResult> {
         let mut cmd = tokio::process::Command::new(&self.bin);
         cmd.arg("-v")
@@ -57,15 +57,15 @@ impl FfprobeRunner {
         let fut = cmd.output();
         let output = tokio::time::timeout(self.timeout, fut)
             .await
-            .map_err(|_| MosaicError::Ffmpeg {
+            .map_err(|_| WhatMediaError::Ffmpeg {
                 message: format!("ffprobe 超时（{}s）：{path}", self.timeout.as_secs()),
             })?
-            .map_err(|e| MosaicError::Ffmpeg {
+            .map_err(|e| WhatMediaError::Ffmpeg {
                 message: format!("无法启动 ffprobe（{}）：{e}", self.bin),
             })?;
 
         if !output.status.success() {
-            return Err(MosaicError::Ffmpeg {
+            return Err(WhatMediaError::Ffmpeg {
                 message: format!(
                     "ffprobe 失败：{}",
                     String::from_utf8_lossy(&output.stderr).trim()
@@ -178,7 +178,7 @@ struct FfFormat {
 
 /// 把 ffprobe 的 JSON 解析成 `ProbeResult`。**不启动进程**，可离线测试。
 pub fn parse_probe_json(raw: &str) -> Result<ProbeResult> {
-    let parsed: FfprobeOutput = serde_json::from_str(raw).map_err(|e| MosaicError::Ffmpeg {
+    let parsed: FfprobeOutput = serde_json::from_str(raw).map_err(|e| WhatMediaError::Ffmpeg {
         message: format!("解析 ffprobe 输出失败：{e}"),
     })?;
 

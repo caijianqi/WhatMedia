@@ -24,17 +24,42 @@ jobs:
         run: cargo fmt --all -- --check
       - name: Clippy
         run: cargo clippy --workspace --all-targets -- -D warnings
+      # openapi feature 下的标注只在打开时才编译，必须单独跑一遍，
+      # 否则"契约标注写坏了"要等到有人执行 make openapi 才发现。
+      - name: Clippy (openapi)
+        run: cargo clippy --workspace --all-targets --features openapi -- -D warnings
       - name: Test
         run: cargo test --workspace
+      - name: Test (openapi)
+        run: cargo test --workspace --features openapi
       - name: Smoke (healthz)
         run: |
-          cargo build --bin mosaic-server
-          ./target/debug/mosaic-server & SRV=$$!
+          cargo build --bin whatmedia-server
+          ./target/debug/whatmedia-server & SRV=$$!
           for i in $$(seq 1 30); do
             curl -fsS http://127.0.0.1:8080/healthz && break || sleep 1
           done
           curl -fsS http://127.0.0.1:8080/healthz | grep -q '"status":"ok"'
           kill $$SRV
+
+  # ── 前端契约与类型 ─────────────────────────────────────────
+  # 前后端类型漂移是静默的，所以这条门禁专门守它：
+  # 契约与生成物都得和代码同步，不许只改一边。
+  contract:
+    name: Contract (OpenAPI ↔ 前端类型)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Install client deps
+        working-directory: client
+        run: npm install --ignore-scripts
+      - name: Contract is in sync
+        run: make openapi-check
 
   # ── ARM64：自托管 runner（R5S / RK3588S）─────────────────────
   # 它慢，但它真实 —— 交叉编译发现不了的坑它会发现。
@@ -50,8 +75,8 @@ jobs:
         run: cargo test --workspace
       - name: Smoke (healthz)
         run: |
-          cargo build --bin mosaic-server
-          ./target/debug/mosaic-server & SRV=$$!
+          cargo build --bin whatmedia-server
+          ./target/debug/whatmedia-server & SRV=$$!
           for i in $$(seq 1 60); do
             curl -fsS http://127.0.0.1:8080/healthz && break || sleep 1
           done
@@ -71,6 +96,6 @@ jobs:
         with:
           platforms: linux/amd64,linux/arm64
           push: false
-          tags: ghcr.io/mosaic-media/mosaic:ci
+          tags: ghcr.io/whatmedia/whatmedia:ci
           cache-from: type=gha
           cache-to: type=gha,mode=max

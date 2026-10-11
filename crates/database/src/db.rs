@@ -27,7 +27,7 @@ pub struct Db {
 impl Db {
     /// 打开一个 SQLite 数据库。
     ///
-    /// `url` 形式：`sqlite:/path/to/mosaic.db?mode=rwc` 或 `sqlite::memory:`。
+    /// `url` 形式：`sqlite:/path/to/whatmedia.db?mode=rwc` 或 `sqlite::memory:`。
     pub async fn open(url: &str) -> Result<Self> {
         let is_memory = url.contains(":memory:") || url.contains("mode=memory");
 
@@ -63,7 +63,7 @@ impl Db {
         Ok(Self { pool })
     }
 
-    /// 内存数据库。仅供测试与 `mosaic-cli` 的一次性诊断使用。
+    /// 内存数据库。仅供测试与 `whatmedia-cli` 的一次性诊断使用。
     pub async fn open_in_memory() -> Result<Self> {
         Self::open("sqlite::memory:").await
     }
@@ -75,7 +75,7 @@ impl Db {
     /// 执行 `dir` 下所有未应用的迁移。重复调用是幂等的。
     ///
     /// **为什么运行时读目录而不是 `sqlx::migrate!` 编译期嵌入**：
-    /// 容器里迁移文件位于 `/usr/local/share/mosaic/migrations`，进程 CWD 却在 `/config`，
+    /// 容器里迁移文件位于 `/usr/local/share/whatmedia/migrations`，进程 CWD 却在 `/config`，
     /// 任何相对路径的编译期常量都会在生产环境失效。运行时按配置传入目录才是对的。
     pub async fn migrate(&self, dir: &Path) -> Result<()> {
         let migrator = sqlx::migrate::Migrator::new(dir.to_path_buf())
@@ -129,8 +129,8 @@ mod tests {
     #[test]
     fn parses_db_file_path() {
         assert_eq!(
-            db_file_path("sqlite:/config/mosaic.db?mode=rwc"),
-            Some(PathBuf::from("/config/mosaic.db"))
+            db_file_path("sqlite:/config/whatmedia.db?mode=rwc"),
+            Some(PathBuf::from("/config/whatmedia.db"))
         );
         assert_eq!(db_file_path("sqlite::memory:"), None);
     }

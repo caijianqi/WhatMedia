@@ -7,12 +7,12 @@ use std::sync::Arc;
 
 use anyhow::Result;
 use chrono::Utc;
-use mosaic_core::{
+use whatmedia_core::{
     deterministic_id, MediaItem, MediaKind, MetadataImage, MetadataProvider, MetadataQuery,
-    MetadataRecord, MosaicError, Result as CoreResult,
+    MetadataRecord, WhatMediaError, Result as CoreResult,
 };
-use mosaic_database::{repo, Db};
-use mosaic_metadata::{matcher::MatchThresholds, ScrapeConfig, Scraper};
+use whatmedia_database::{repo, Db};
+use whatmedia_metadata::{matcher::MatchThresholds, ScrapeConfig, Scraper};
 use std::path::Path;
 
 fn migrations_dir() -> std::path::PathBuf {
@@ -26,7 +26,7 @@ fn migrations_dir() -> std::path::PathBuf {
 async fn fresh_db(dir: &Path) -> Db {
     let db = Db::open(&format!(
         "sqlite:{}?mode=rwc",
-        dir.join("mosaic.db").display()
+        dir.join("whatmedia.db").display()
     ))
     .await
     .unwrap();
@@ -36,10 +36,10 @@ async fn fresh_db(dir: &Path) -> Db {
 
 async fn make_movie(
     db: &Db,
-    library_id: mosaic_core::Id,
+    library_id: whatmedia_core::Id,
     title: &str,
     year: Option<i32>,
-) -> mosaic_core::Id {
+) -> whatmedia_core::Id {
     let id = deterministic_id("item", &["test", title, &year.unwrap_or(0).to_string()]);
     let item = MediaItem {
         id,
@@ -88,7 +88,7 @@ impl MetadataProvider for FakeProvider {
             .iter()
             .find(|r| r.provider_id == id)
             .cloned()
-            .ok_or_else(|| MosaicError::Metadata {
+            .ok_or_else(|| WhatMediaError::Metadata {
                 provider: "fake".into(),
                 message: format!("没有 {id}"),
             })
@@ -125,14 +125,14 @@ fn matrix_record() -> MetadataRecord {
             vote: None,
         }],
         credits: vec![
-            mosaic_core::MetadataCredit {
+            whatmedia_core::MetadataCredit {
                 name: "基努·里维斯".into(),
                 role: "actor".into(),
                 character: Some("Neo".into()),
                 sort_order: 0,
                 provider_id: Some("6384".into()),
             },
-            mosaic_core::MetadataCredit {
+            whatmedia_core::MetadataCredit {
                 name: "沃卓斯基".into(),
                 role: "director".into(),
                 character: None,

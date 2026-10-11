@@ -1,7 +1,7 @@
 [package]
-name = "mosaic-search"
+name = "whatmedia-search"
 version = "0.1.0"
 edition = "2021"
 
 [dependencies]
-mosaic-core = { path = "../core" }
+whatmedia-core = { path = "../core" }

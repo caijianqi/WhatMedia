@@ -7,8 +7,8 @@ use std::path::Path;
 
 use anyhow::Result;
 use chrono::Duration;
-use mosaic_database::Db;
-use mosaic_metadata::{ImageCache, ImageCacheConfig};
+use whatmedia_database::Db;
+use whatmedia_metadata::{ImageCache, ImageCacheConfig};
 
 fn migrations_dir() -> std::path::PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR"))
@@ -46,9 +46,7 @@ async fn put_then_get_roundtrips() -> Result<()> {
 
     assert!(cache.get(&key).await.is_none(), "冷缓存不该命中");
 
-    let path = cache
-        .put("poster", url, "w500", "jpg", b"hello")
-        .await?;
+    let path = cache.put("poster", url, "w500", "jpg", b"hello").await?;
     assert!(path.exists());
     assert_eq!(std::fs::read(&path)?, b"hello");
 
@@ -97,7 +95,7 @@ async fn evicts_when_over_budget() -> Result<()> {
                 &format!("https://x/{i}.jpg"),
                 "w500",
                 "jpg",
-                &[b'x'; 200]
+                &[b'x'; 200],
             )
             .await?;
         // 让后写入的访问时间明显更晚，保证 LRU 顺序稳定
@@ -132,18 +130,12 @@ async fn stills_are_evicted_before_posters() -> Result<()> {
             "https://x/poster.jpg",
             "w500",
             "jpg",
-            &[b'p'; 500]
+            &[b'p'; 500],
         )
         .await?;
     tokio::time::sleep(std::time::Duration::from_millis(5)).await;
     cache
-        .put(
-            "still",
-            "https://x/still.jpg",
-            "w1280",
-            "jpg",
-            &[b's'; 600]
-        )
+        .put("still", "https://x/still.jpg", "w1280", "jpg", &[b's'; 600])
         .await?;
 
     cache.evict().await?;
@@ -166,9 +158,7 @@ async fn expired_entries_are_purged() -> Result<()> {
 
     let url = "https://x/old.jpg";
     let key = ImageCache::key_for(url, "w500");
-    cache
-        .put("poster", url, "w500", "jpg", b"x")
-        .await?;
+    cache.put("poster", url, "w500", "jpg", b"x").await?;
 
     // 手动把访问时间推到 10 天前
     let old = (chrono::Utc::now() - Duration::days(10)).to_rfc3339();
@@ -181,7 +171,7 @@ async fn expired_entries_are_purged() -> Result<()> {
 }
 
 async fn sqlx_set_accessed(db: &Db, key: &str, when: &str) -> Result<()> {
-    mosaic_database::repo::image::set_accessed_for_test(db, key, when).await
+    whatmedia_database::repo::image::set_accessed_for_test(db, key, when).await
 }
 
 /// 同一张图的不同尺寸互不顶替。
@@ -192,12 +182,8 @@ async fn variants_do_not_collide() -> Result<()> {
     let cache = ImageCache::new(db.clone(), cfg(tmp.path()))?;
 
     let url = "https://x/p.jpg";
-    let a = cache
-        .put("poster", url, "w185", "jpg", b"small")
-        .await?;
-    let b = cache
-        .put("poster", url, "w500", "jpg", b"large")
-        .await?;
+    let a = cache.put("poster", url, "w185", "jpg", b"small").await?;
+    let b = cache.put("poster", url, "w500", "jpg", b"large").await?;
 
     assert_ne!(a, b);
     assert_eq!(cache.stats().await?.entries, 2);

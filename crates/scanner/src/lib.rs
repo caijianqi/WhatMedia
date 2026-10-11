@@ -7,13 +7,13 @@
 //!   3. **失败不中断** —— 单个文件权限不足/损坏，只记一笔 `failed`，整库继续。
 
 use anyhow::Result;
-use mosaic_core::{Library, StorageEntry, StorageProvider};
-use mosaic_database::{repo, Db};
-use mosaic_library::{ingest_file, IngestRequest};
-use mosaic_media::{
+use whatmedia_core::{Library, StorageEntry, StorageProvider};
+use whatmedia_database::{repo, Db};
+use whatmedia_library::{ingest_file, IngestRequest};
+use whatmedia_media::{
     is_video_file, parse_file_in_dir, FfprobeRunner, NfoKind, ParsedName, ProbeResult,
 };
-use mosaic_storage::fingerprint;
+use whatmedia_storage::fingerprint;
 use std::collections::HashMap;
 use std::path::Path;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
@@ -80,6 +80,7 @@ impl ScanControl {
 
 /// 进度快照。SSE 与 CLI 都消费它。
 #[derive(Debug, Clone, Default, serde::Serialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 pub struct ScanProgress {
     pub total: u64,
     pub done: u64,
@@ -324,7 +325,7 @@ async fn load_nfo(storage: &Arc<dyn StorageProvider>, dir: &str, stem: &str) -> 
     let sibling = Path::new(dir).join(format!("{stem}.nfo"));
     if let Ok(xml) = storage.read(&sibling.to_string_lossy()).await {
         if let Ok(text) = String::from_utf8(xml) {
-            if let Some(kind) = mosaic_media::parse_nfo(&text) {
+            if let Some(kind) = whatmedia_media::parse_nfo(&text) {
                 return Some(kind);
             }
         }
@@ -332,7 +333,7 @@ async fn load_nfo(storage: &Arc<dyn StorageProvider>, dir: &str, stem: &str) -> 
     let tvshow = Path::new(dir).join("tvshow.nfo");
     if let Ok(xml) = storage.read(&tvshow.to_string_lossy()).await {
         if let Ok(text) = String::from_utf8(xml) {
-            return mosaic_media::parse_nfo(&text);
+            return whatmedia_media::parse_nfo(&text);
         }
     }
     None

@@ -1,7 +1,7 @@
 //! 扫描专用查询：增量指纹索引与失效标记。
 
 use anyhow::Result;
-use mosaic_core::Id;
+use whatmedia_core::Id;
 use std::collections::HashMap;
 
 use crate::db::Db;

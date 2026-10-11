@@ -17,6 +17,7 @@ pub struct AppConfig {
     pub logging: LoggingConfig,
     pub metadata: MetadataConfig,
     pub images: ImagesConfig,
+    pub transcode: TranscodeConfig,
 }
 
 impl AppConfig {
@@ -46,7 +47,7 @@ pub struct PathsConfig {
     pub log_dir: PathBuf,
     /// SQL 迁移文件目录。
     ///
-    /// 容器里是 `/usr/local/share/mosaic/migrations`，进程 CWD 却是 `/config`，
+    /// 容器里是 `/usr/local/share/whatmedia/migrations`，进程 CWD 却是 `/config`，
     /// 所以必须可配置 —— 这也是 `Db::migrate` 用运行时路径而非编译期常量的原因。
     pub migrations_dir: PathBuf,
 }
@@ -88,6 +89,20 @@ pub struct ImagesConfig {
     pub max_age_days: i64,
 }
 
+/// 转码（P3）。
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct TranscodeConfig {
+    /// ffmpeg 可执行文件路径。None 时用 PATH 里的 `ffmpeg`，
+    /// 环境变量 `WHATMEDIA_FFMPEG_PATH` 可以覆盖（ffmpeg-rockchip 就靠它切换）。
+    pub ffmpeg_path: Option<String>,
+    /// HLS 分片时长（秒）。太短会让分片数量爆炸，太长会让 Seek 变慢。
+    pub hls_segment_seconds: u32,
+    /// 并发上限。0 表示由硬件能力自动决定。
+    pub max_concurrent: u32,
+    /// 流式输出多久没被访问就算僵尸（秒）。
+    pub stream_idle_timeout_secs: i64,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct LoggingConfig {
     pub level: String,
@@ -107,14 +122,14 @@ impl Default for AppConfig {
                 data_dir: PathBuf::from("/data"),
                 cache_dir: PathBuf::from("/cache"),
                 log_dir: PathBuf::from("/logs"),
-                // 开发默认指向仓库里的 migrations；容器里由 MOSAIC_MIGRATIONS_DIR 覆盖。
+                // 开发默认指向仓库里的 migrations；容器里由 WHATMEDIA_MIGRATIONS_DIR 覆盖。
                 migrations_dir: PathBuf::from(env!("CARGO_MANIFEST_DIR"))
                     .join("../..")
                     .join("migrations"),
             },
             database: DatabaseConfig {
                 kind: "sqlite".into(),
-                url: "sqlite:/config/mosaic.db?mode=rwc".into(),
+                url: "sqlite:/config/whatmedia.db?mode=rwc".into(),
                 max_connections: 8,
             },
             logging: LoggingConfig {
@@ -137,12 +152,18 @@ impl Default for AppConfig {
                 max_entries: 50_000,
                 max_age_days: 90,
             },
+            transcode: TranscodeConfig {
+                ffmpeg_path: None,
+                hls_segment_seconds: 6,
+                max_concurrent: 0,
+                stream_idle_timeout_secs: 300,
+            },
         }
     }
 }
 
 impl AppConfig {
-    /// 从 TOML 加载，随后用 `MOSAIC_*` 环境变量覆盖。
+    /// 从 TOML 加载，随后用 `WHATMEDIA_*` 环境变量覆盖。
     pub fn load(path: Option<PathBuf>) -> anyhow::Result<Self> {
         let mut cfg = match path {
             Some(p) if p.exists() => {
@@ -156,72 +177,86 @@ impl AppConfig {
     }
 
     fn apply_env(&mut self) {
-        if let Ok(v) = std::env::var("MOSAIC_HOST") {
+        if let Ok(v) = std::env::var("WHATMEDIA_HOST") {
             self.server.host = v;
         }
-        if let Ok(v) = std::env::var("MOSAIC_PORT") {
+        if let Ok(v) = std::env::var("WHATMEDIA_PORT") {
             if let Ok(p) = v.parse() {
                 self.server.port = p;
             }
         }
-        if let Ok(v) = std::env::var("MOSAIC_CONFIG_DIR") {
+        if let Ok(v) = std::env::var("WHATMEDIA_CONFIG_DIR") {
             self.paths.config_dir = PathBuf::from(v);
         }
-        if let Ok(v) = std::env::var("MOSAIC_DATA_DIR") {
+        if let Ok(v) = std::env::var("WHATMEDIA_DATA_DIR") {
             self.paths.data_dir = PathBuf::from(v);
         }
-        if let Ok(v) = std::env::var("MOSAIC_CACHE_DIR") {
+        if let Ok(v) = std::env::var("WHATMEDIA_CACHE_DIR") {
             self.paths.cache_dir = PathBuf::from(v);
         }
-        if let Ok(v) = std::env::var("MOSAIC_LOG_DIR") {
+        if let Ok(v) = std::env::var("WHATMEDIA_LOG_DIR") {
             self.paths.log_dir = PathBuf::from(v);
         }
-        if let Ok(v) = std::env::var("MOSAIC_MIGRATIONS_DIR") {
+        if let Ok(v) = std::env::var("WHATMEDIA_MIGRATIONS_DIR") {
             self.paths.migrations_dir = PathBuf::from(v);
         }
-        if let Ok(v) = std::env::var("MOSAIC_DATABASE_URL") {
+        if let Ok(v) = std::env::var("WHATMEDIA_DATABASE_URL") {
             if v.starts_with("postgres") {
                 self.database.kind = "postgres".into();
             }
             self.database.url = v;
         }
-        if let Ok(v) = std::env::var("MOSAIC_LOG_LEVEL") {
+        if let Ok(v) = std::env::var("WHATMEDIA_LOG_LEVEL") {
             self.logging.level = v;
         }
         // ── 元数据 ────────────────────────────────────────────
         // API Key 走环境变量而不是写进 TOML：TOML 常被误提交到仓库。
-        if let Ok(v) = std::env::var("MOSAIC_METADATA_TMDB_API_KEY") {
+        if let Ok(v) = std::env::var("WHATMEDIA_METADATA_TMDB_API_KEY") {
             self.metadata.tmdb_api_key = Some(v);
         }
-        if let Ok(v) = std::env::var("MOSAIC_METADATA_TMDB_BEARER") {
+        if let Ok(v) = std::env::var("WHATMEDIA_METADATA_TMDB_BEARER") {
             self.metadata.tmdb_bearer = Some(v);
         }
-        if let Ok(v) = std::env::var("MOSAIC_METADATA_BANGUMI") {
+        if let Ok(v) = std::env::var("WHATMEDIA_METADATA_BANGUMI") {
             self.metadata.bangumi_enabled =
                 matches!(v.to_lowercase().as_str(), "1" | "true" | "yes" | "on");
         }
-        if let Ok(v) = std::env::var("MOSAIC_METADATA_LANGUAGE") {
+        if let Ok(v) = std::env::var("WHATMEDIA_METADATA_LANGUAGE") {
             self.metadata.language = v;
         }
-        if let Ok(v) = std::env::var("MOSAIC_METADATA_RPS") {
+        if let Ok(v) = std::env::var("WHATMEDIA_METADATA_RPS") {
             if let Ok(n) = v.parse() {
                 self.metadata.requests_per_second = n;
             }
         }
-        if let Ok(v) = std::env::var("MOSAIC_METADATA_AUTO_ACCEPT") {
+        if let Ok(v) = std::env::var("WHATMEDIA_METADATA_AUTO_ACCEPT") {
             self.metadata.auto_accept =
                 matches!(v.to_lowercase().as_str(), "1" | "true" | "yes" | "on");
         }
-        if let Ok(v) = std::env::var("MOSAIC_IMAGES_DIR") {
+        if let Ok(v) = std::env::var("WHATMEDIA_IMAGES_DIR") {
             self.images.dir = Some(PathBuf::from(v));
         }
-        if let Ok(v) = std::env::var("MOSAIC_IMAGES_MAX_MB") {
+        if let Ok(v) = std::env::var("WHATMEDIA_IMAGES_MAX_MB") {
             if let Ok(n) = v.parse::<u64>() {
                 self.images.max_bytes = n * 1024 * 1024;
             }
         }
-        if let Ok(v) = std::env::var("MOSAIC_LOG_FORMAT") {
+        if let Ok(v) = std::env::var("WHATMEDIA_LOG_FORMAT") {
             self.logging.format = v;
+        }
+        // ── 转码 ────────────────────────────────────────────
+        if let Ok(v) = std::env::var("WHATMEDIA_FFMPEG_PATH") {
+            self.transcode.ffmpeg_path = Some(v);
+        }
+        if let Ok(v) = std::env::var("WHATMEDIA_HLS_SEGMENT_SECONDS") {
+            if let Ok(n) = v.parse() {
+                self.transcode.hls_segment_seconds = n;
+            }
+        }
+        if let Ok(v) = std::env::var("WHATMEDIA_TRANSCODE_MAX_CONCURRENT") {
+            if let Ok(n) = v.parse() {
+                self.transcode.max_concurrent = n;
+            }
         }
     }
 
@@ -252,11 +287,14 @@ mod tests {
         let cfg = AppConfig::default();
         assert_eq!(cfg.bind_addr(), "0.0.0.0:8080");
         assert_eq!(cfg.database.kind, "sqlite");
+        // 并发上限默认 0 = 交给硬件能力决定，不要写死一个数字。
+        assert_eq!(cfg.transcode.max_concurrent, 0);
+        assert_eq!(cfg.transcode.hls_segment_seconds, 6);
     }
 
     #[test]
     fn byte_range_len_is_inclusive() {
-        use mosaic_core::ByteRange;
+        use whatmedia_core::ByteRange;
         assert_eq!(ByteRange::new(0, Some(9)).len(100), 10);
         assert_eq!(ByteRange::new(50, None).len(100), 50);
     }

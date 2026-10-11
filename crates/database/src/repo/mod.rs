@@ -1,12 +1,13 @@
 //! 数据访问函数。**全仓库只有这里允许出现 SQL。**
 //!
-//! 调用方拿到的都是 `mosaic_core` 的领域模型，不是 Row。
+//! 调用方拿到的都是 `whatmedia_core` 的领域模型，不是 Row。
 //! 这样"SQLite → PostgreSQL"的切换只需要重写本目录。
 
 pub mod image;
 pub mod library;
 pub mod media;
 pub mod metadata;
+pub mod playback;
 pub mod scan;
 pub mod search;
 pub mod tv;
@@ -18,15 +19,23 @@ pub use media::{
     FileWithStreams, ItemDetail, VersionWithFiles,
 };
 pub use metadata::{job_stats, CreditRow, JobStats, ScrapeTarget};
+pub use playback::{
+    create_session, delete_stream_session, file_target, files_for_item, force_position,
+    get_session, get_stream_session, get_transcode_job, heartbeat, insert_stream_session,
+    insert_transcode_job, list_idle_stream_sessions, resume_points, set_stream_state,
+    set_transcode_state, stop_session, touch_stream_session, FileTarget, NewSession,
+    NewStreamSession, NewTranscodeJob, ResumePoint, StreamSession,
+};
 pub use scan::{file_index_for_library, mark_files_missing};
 pub use search::search_items;
 pub use tv::{list_episodes, list_series, EpisodeSummary, SeriesSummary};
 
-use mosaic_core::{Id, MediaKind, Page};
+use whatmedia_core::{Id, MediaKind, Page};
 use serde::{Deserialize, Serialize};
 
 /// 排序方向。
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Deserialize, Serialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 #[serde(rename_all = "snake_case")]
 pub enum SortOrder {
     #[default]
@@ -46,6 +55,7 @@ impl SortOrder {
 
 /// 允许的排序维度。同样是白名单，杜绝 SQL 注入。
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Deserialize, Serialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 #[serde(rename_all = "snake_case")]
 pub enum ItemSort {
     #[default]
@@ -68,7 +78,9 @@ impl ItemSort {
 
 /// 列表查询参数。分页 / 排序 / 过滤的统一入口。
 #[derive(Debug, Clone, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 pub struct ItemQuery {
+    #[cfg_attr(feature = "openapi", schema(value_type = Option<uuid::Uuid>))]
     pub library_id: Option<Id>,
     pub kind: Option<MediaKind>,
     pub year: Option<i32>,
@@ -120,7 +132,9 @@ impl ItemQuery {
 
 /// 列表项视图：海报墙只需要这些字段，不该把 overview 也拉出来。
 #[derive(Debug, Clone, Serialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 pub struct ItemSummary {
+    #[cfg_attr(feature = "openapi", schema(value_type = uuid::Uuid))]
     pub id: Id,
     pub kind: MediaKind,
     pub title: String,
@@ -132,7 +146,7 @@ pub struct ItemSummary {
 }
 
 impl ItemSummary {
-    pub fn from_row(item: &mosaic_core::MediaItem) -> Self {
+    pub fn from_row(item: &whatmedia_core::MediaItem) -> Self {
         Self {
             id: item.id,
             kind: item.kind,

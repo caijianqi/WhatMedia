@@ -7,6 +7,7 @@ use serde::Serialize;
 use std::time::Instant;
 
 #[derive(Debug, Clone, Serialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 pub struct HealthReport {
     pub status: &'static str,
     pub version: String,

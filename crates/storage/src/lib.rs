@@ -7,10 +7,10 @@
 //!   4. permission check —— 不可读的文件报权限错误，不当成"文件不存在"
 //!
 //! 这四条不是装饰品：媒体库路径来自用户输入，
-//! 而 Mosaic 是一个**长期运行、对外开放 HTTP 端口**的服务。
+//! 而 WhatMedia 是一个**长期运行、对外开放 HTTP 端口**的服务。
 
 use async_trait::async_trait;
-use mosaic_core::{ByteRange, MosaicError, Result, StorageEntry, StorageProvider};
+use whatmedia_core::{ByteRange, WhatMediaError, Result, StorageEntry, StorageProvider};
 use std::io::SeekFrom;
 use std::path::{Component, Path, PathBuf};
 use tokio::io::{AsyncReadExt, AsyncSeekExt};
@@ -41,12 +41,12 @@ impl LocalStorage {
     /// `root` 必须已存在且是目录。
     pub fn new(id: impl Into<String>, root: impl Into<PathBuf>) -> Result<Self> {
         let root = root.into();
-        let canonical = clean_path(&root.canonicalize().map_err(|e| MosaicError::Storage {
+        let canonical = clean_path(&root.canonicalize().map_err(|e| WhatMediaError::Storage {
             provider: "local".into(),
             message: format!("媒体库根目录不可访问 {}: {e}", root.display()),
         })?);
         if !canonical.is_dir() {
-            return Err(MosaicError::Storage {
+            return Err(WhatMediaError::Storage {
                 provider: "local".into(),
                 message: format!("媒体库根不是目录：{}", root.display()),
             });
@@ -59,6 +59,61 @@ impl LocalStorage {
 
     pub fn root(&self) -> &Path {
         &self.root
+    }
+
+    /// 把库内路径解析成**已经过安全检查**的绝对路径。
+    ///
+    /// Direct Play 需要一个真实文件句柄交给 HTTP body 流式输出；
+    /// 但绝不能凭 `media_file.path` 直接开文件 —— 那条路径来自数据库，
+    /// 而数据库内容在极端情况下（手动改库、旧版本遗留）未必可信。
+    /// 走一遍 `resolve` 才能保证仍然落在库内。
+    pub fn resolve_path(&self, path: &str) -> Result<PathBuf> {
+        self.resolve(path)
+    }
+
+    /// 打开一个从 `range.start` 开始的只读流。
+    ///
+    /// 返回 `AsyncRead` 而不是 `Vec<u8>`：一部 4K 电影几十 GB，
+    /// 把整个 Range 读进内存会让 Direct Play 变成内存杀手。
+    pub async fn open_range(
+        &self,
+        path: &str,
+        range: ByteRange,
+    ) -> Result<(impl tokio::io::AsyncRead + Send, u64)> {
+        use tokio::io::AsyncSeekExt;
+        let p = self.resolve(path)?;
+        let mut file = tokio::fs::File::open(&p)
+            .await
+            .map_err(|e| WhatMediaError::Storage {
+                provider: self.id.clone(),
+                message: format!("打开文件失败 {}: {e}", p.display()),
+            })?;
+
+        let total = file
+            .metadata()
+            .await
+            .map_err(|e| WhatMediaError::Storage {
+                provider: self.id.clone(),
+                message: format!("读取文件大小失败: {e}"),
+            })?
+            .len();
+
+        let start = range.start.min(total);
+        file.seek(SeekFrom::Start(start))
+            .await
+            .map_err(|e| WhatMediaError::Storage {
+                provider: self.id.clone(),
+                message: format!("定位失败: {e}"),
+            })?;
+
+        // 用 Take 限制长度：调用方拿到的是"从 start 开始的流"，
+        // 但 HTTP 206 必须严格止于 end，多读一个字节都是协议错误。
+        let remaining = range
+            .end
+            .map(|e| e + 1)
+            .unwrap_or(total)
+            .saturating_sub(start);
+        Ok((tokio::io::AsyncReadExt::take(file, remaining), remaining))
     }
 
     /// 把相对/绝对路径解析成库内安全路径。**所有读写都必须先过这一关。**
@@ -77,13 +132,13 @@ impl LocalStorage {
                 // canonicalize 会加回 `\\?\\` 前缀，比较前必须剥掉，否则所有路径都被判为逃逸。
                 let canonical = clean_path(&raw);
                 if !canonical.starts_with(&self.root) {
-                    return Err(MosaicError::PathRejected {
+                    return Err(WhatMediaError::PathRejected {
                         message: format!("路径逃逸出媒体库根：{}", normalized.display()),
                     });
                 }
                 // ④：存在但读不到元信息 → 明确报权限错误，不伪装成 NotFound。
                 if std::fs::metadata(&canonical).is_err() {
-                    return Err(MosaicError::PathRejected {
+                    return Err(WhatMediaError::PathRejected {
                         message: format!("无权访问：{}", normalized.display()),
                     });
                 }
@@ -93,7 +148,7 @@ impl LocalStorage {
                 if let Some(parent) = normalized.parent() {
                     if let Ok(raw) = parent.canonicalize() {
                         if !clean_path(&raw).starts_with(&self.root) {
-                            return Err(MosaicError::PathRejected {
+                            return Err(WhatMediaError::PathRejected {
                                 message: format!("路径逃逸出媒体库根：{}", normalized.display()),
                             });
                         }
@@ -101,7 +156,7 @@ impl LocalStorage {
                 }
             }
             Err(e) => {
-                return Err(MosaicError::PathRejected {
+                return Err(WhatMediaError::PathRejected {
                     message: format!("无权访问 {}: {e}", normalized.display()),
                 });
             }
@@ -153,12 +208,12 @@ impl StorageProvider for LocalStorage {
         let mut entries = Vec::new();
         let mut rd = tokio::fs::read_dir(&path)
             .await
-            .map_err(|e| MosaicError::Storage {
+            .map_err(|e| WhatMediaError::Storage {
                 provider: self.id.clone(),
                 message: format!("读取目录失败 {}: {e}", path.display()),
             })?;
 
-        while let Some(entry) = rd.next_entry().await.map_err(|e| MosaicError::Storage {
+        while let Some(entry) = rd.next_entry().await.map_err(|e| WhatMediaError::Storage {
             provider: self.id.clone(),
             message: format!("遍历目录失败: {e}"),
         })? {
@@ -186,7 +241,7 @@ impl StorageProvider for LocalStorage {
         let p = self.resolve(path)?;
         let meta = tokio::fs::metadata(&p)
             .await
-            .map_err(|e| MosaicError::Storage {
+            .map_err(|e| WhatMediaError::Storage {
                 provider: self.id.clone(),
                 message: format!("读取元信息失败 {}: {e}", p.display()),
             })?;
@@ -212,7 +267,7 @@ impl StorageProvider for LocalStorage {
         let p = self.resolve(path)?;
         let mut file = tokio::fs::File::open(&p)
             .await
-            .map_err(|e| MosaicError::Storage {
+            .map_err(|e| WhatMediaError::Storage {
                 provider: self.id.clone(),
                 message: format!("打开文件失败 {}: {e}", p.display()),
             })?;
@@ -220,7 +275,7 @@ impl StorageProvider for LocalStorage {
         let total = file
             .metadata()
             .await
-            .map_err(|e| MosaicError::Storage {
+            .map_err(|e| WhatMediaError::Storage {
                 provider: self.id.clone(),
                 message: format!("读取文件大小失败: {e}"),
             })?
@@ -234,14 +289,14 @@ impl StorageProvider for LocalStorage {
         let mut buf = vec![0u8; len as usize];
         file.seek(SeekFrom::Start(range.start))
             .await
-            .map_err(|e| MosaicError::Storage {
+            .map_err(|e| WhatMediaError::Storage {
                 provider: self.id.clone(),
                 message: format!("定位失败: {e}"),
             })?;
         let n = file
             .read_exact(&mut buf)
             .await
-            .map_err(|e| MosaicError::Storage {
+            .map_err(|e| WhatMediaError::Storage {
                 provider: self.id.clone(),
                 message: format!("读取失败: {e}"),
             })?;
@@ -251,7 +306,7 @@ impl StorageProvider for LocalStorage {
 
     async fn read(&self, path: &str) -> Result<Vec<u8>> {
         let p = self.resolve(path)?;
-        tokio::fs::read(&p).await.map_err(|e| MosaicError::Storage {
+        tokio::fs::read(&p).await.map_err(|e| WhatMediaError::Storage {
             provider: self.id.clone(),
             message: format!("读取文件失败 {}: {e}", p.display()),
         })
@@ -262,14 +317,14 @@ impl StorageProvider for LocalStorage {
         if let Some(parent) = p.parent() {
             tokio::fs::create_dir_all(parent)
                 .await
-                .map_err(|e| MosaicError::Storage {
+                .map_err(|e| WhatMediaError::Storage {
                     provider: self.id.clone(),
                     message: format!("创建目录失败: {e}"),
                 })?;
         }
         tokio::fs::write(&p, data)
             .await
-            .map_err(|e| MosaicError::Storage {
+            .map_err(|e| WhatMediaError::Storage {
                 provider: self.id.clone(),
                 message: format!("写入失败 {}: {e}", p.display()),
             })
@@ -280,7 +335,7 @@ impl StorageProvider for LocalStorage {
         let b = self.resolve(to)?;
         tokio::fs::rename(&a, &b)
             .await
-            .map_err(|e| MosaicError::Storage {
+            .map_err(|e| WhatMediaError::Storage {
                 provider: self.id.clone(),
                 message: format!("重命名失败: {e}"),
             })
@@ -290,7 +345,7 @@ impl StorageProvider for LocalStorage {
         let p = self.resolve(path)?;
         tokio::fs::remove_file(&p)
             .await
-            .map_err(|e| MosaicError::Storage {
+            .map_err(|e| WhatMediaError::Storage {
                 provider: self.id.clone(),
                 message: format!("删除失败 {}: {e}", p.display()),
             })
@@ -343,7 +398,7 @@ mod safety_tests {
         let s = LocalStorage::new("local", &root).unwrap();
         let err = s.stat("../outside.mkv").await.unwrap_err();
         assert!(
-            matches!(err, MosaicError::PathRejected { .. }),
+            matches!(err, WhatMediaError::PathRejected { .. }),
             "应是 PathRejected，实际 {err:?}"
         );
     }
@@ -359,7 +414,7 @@ mod safety_tests {
 
         let s = LocalStorage::new("local", &root).unwrap();
         let err = s.stat(&outside.to_string_lossy()).await.unwrap_err();
-        assert!(matches!(err, MosaicError::PathRejected { .. }), "{err:?}");
+        assert!(matches!(err, WhatMediaError::PathRejected { .. }), "{err:?}");
     }
 
     /// 库内路径必须放行，且 Range 读取要正确。
@@ -370,14 +425,14 @@ mod safety_tests {
 
         let s = LocalStorage::new("local", tmp.path()).unwrap();
         let got = s
-            .range_read("a.bin", mosaic_core::ByteRange::new(3, Some(6)))
+            .range_read("a.bin", whatmedia_core::ByteRange::new(3, Some(6)))
             .await
             .unwrap();
         assert_eq!(got, b"3456");
 
         // 越界起点返回空，不报错
         let empty = s
-            .range_read("a.bin", mosaic_core::ByteRange::new(999, None))
+            .range_read("a.bin", whatmedia_core::ByteRange::new(999, None))
             .await
             .unwrap();
         assert!(empty.is_empty());
@@ -396,6 +451,6 @@ mod safety_tests {
 
         let s = LocalStorage::new("local", &root).unwrap();
         let err = s.stat("link.mkv").await.unwrap_err();
-        assert!(matches!(err, MosaicError::PathRejected { .. }), "{err:?}");
+        assert!(matches!(err, WhatMediaError::PathRejected { .. }), "{err:?}");
     }
 }

@@ -12,7 +12,7 @@ use async_trait::async_trait;
 use std::collections::HashMap;
 use std::sync::Mutex;
 
-use mosaic_core::MosaicError;
+use whatmedia_core::WhatMediaError;
 
 /// HTTP 状态码。Provider 要根据它决定重试还是放弃。
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -70,9 +70,9 @@ impl std::fmt::Display for HttpError {
 
 impl std::error::Error for HttpError {}
 
-impl From<HttpError> for MosaicError {
+impl From<HttpError> for WhatMediaError {
     fn from(e: HttpError) -> Self {
-        MosaicError::Metadata {
+        WhatMediaError::Metadata {
             provider: "http".into(),
             message: e.to_string(),
         }
@@ -139,7 +139,7 @@ impl HttpTransport for ReqwestTransport {
             .client
             .get(url)
             .header("accept", "application/json")
-            .header("user-agent", "mosaic-media/0.1");
+            .header("user-agent", "whatmedia-media/0.1");
 
         if let Some(t) = bearer {
             req = req.bearer_auth(t);

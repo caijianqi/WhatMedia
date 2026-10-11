@@ -1,15 +1,15 @@
 # 家庭部署最小模板。ARM64 与 x86_64 同一份文件，镜像按本机架构自动拉取。
 services:
-  mosaic:
-    image: ghcr.io/mosaic-media/mosaic:latest
-    container_name: mosaic
+  whatmedia:
+    image: ghcr.io/whatmedia/whatmedia:latest
+    container_name: whatmedia
     restart: unless-stopped
     ports:
       - "8080:8080"
     environment:
-      MOSAIC_LOG_LEVEL: info
-      MOSAIC_LOG_FORMAT: json
-      MOSAIC_DATABASE_URL: sqlite:/config/mosaic.db?mode=rwc
+      WHATMEDIA_LOG_LEVEL: info
+      WHATMEDIA_LOG_FORMAT: json
+      WHATMEDIA_DATABASE_URL: sqlite:/config/whatmedia.db?mode=rwc
     volumes:
       - ./config:/config
       - ./data:/data

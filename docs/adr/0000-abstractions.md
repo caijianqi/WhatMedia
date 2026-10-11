@@ -6,7 +6,7 @@
 
 ## 背景
 
-Mosaic 是一个人、约两年、126 节全量的项目。范围不砍的前提下，唯一能控制风险的手段是**让后期工作变成"加实现"而不是"改结构"**。
+WhatMedia 是一个人、约两年、126 节全量的项目。范围不砍的前提下，唯一能控制风险的手段是**让后期工作变成"加实现"而不是"改结构"**。
 
 六个 Provider/Plugin 抽象是全部扩展的支点。它们的签名一旦在中期变动，所有已写实现都要跟着改。因此必须在写第一行业务代码之前把签名定死。
 
@@ -49,7 +49,7 @@ Direct Play 与代理播放都依赖 HTTP Range。如果 StorageProvider 只暴�
 播放状态、进度、错误统一走一个事件通道。SSE、WebSocket、UI 三处消费者共用，避免三套状态机。
 
 ### ⑥ `ToolRisk` + `confirmation` 双保险
-`AiTool::risk()` 声明危险等级；`ToolContext::confirmation` 为空时，Dangerous 工具**必须**返回 `MosaicError::AiDenied`。
+`AiTool::risk()` 声明危险等级；`ToolContext::confirmation` 为空时，Dangerous 工具**必须**返回 `WhatMediaError::AiDenied`。
 
 这是 111.md §4.4 / §62 / §92 的"AI 不直连 SQL/Shell/FS"在代码层的强制点。它同时支撑 §62 的 Plan → Preview → Confirm → Execute 流程。
 
@@ -57,7 +57,7 @@ Direct Play 与代理播放都依赖 HTTP Range。如果 StorageProvider 只暴�
 
 - **正面**：P5 加 SMB 时不需要动 media/scanner；P6 加 RKMPP 时不需要动 transcoder；P8 加 AI 时不需要动任何业务 crate。
 - **负面**：P0 阶段这些 trait 只有一个（或零个）实现，看起来像过度设计。**这是有意为之** —— 空实现的成本远低于中期返工。
-- **约束**：`crates/core` 不得依赖任何其他 mosaic crate（CI 用 cargo-deny 强制）。
+- **约束**：`crates/core` 不得依赖任何其他 whatmedia crate（CI 用 cargo-deny 强制）。
 
 ## 复核时点
 

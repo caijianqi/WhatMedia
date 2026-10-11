@@ -3,7 +3,7 @@
 //! 刮削最容易出的事故是"刮错了还自信"——把 `1917 (2019)` 刮成 1917 年的另一部片。
 //! 所以这里的核心不是"能不能匹配上"，而是**什么时候该认怂交给人工确认**。
 
-use mosaic_core::{MetadataQuery, MetadataRecord};
+use whatmedia_core::{MetadataQuery, MetadataRecord};
 
 /// 可锁定的字段白名单。
 ///

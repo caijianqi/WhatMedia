@@ -1,4 +1,4 @@
-# Mosaic 文件名解析语料库
+# WhatMedia 文件名解析语料库
 #
 # 这是 P1 DoD「季/集解析准确率 ≥ 99%」的判定依据，由 crates/media/tests/naming_corpus.rs 消费。
 # 每行一个 JSON 对象；只写需要断言的字段，省略的字段不做校验。

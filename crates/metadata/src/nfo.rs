@@ -8,8 +8,8 @@
 //!
 //! 所以 NFO 在优先级链里是**独立的一环**，由 `pipeline` 在 Provider 之前应用。
 
-use mosaic_core::{MetadataImage, MetadataRecord};
-use mosaic_media::{NfoKind, NfoMovie, NfoSeries};
+use whatmedia_core::{MetadataImage, MetadataRecord};
+use whatmedia_media::{NfoKind, NfoMovie, NfoSeries};
 
 /// 把 NFO 翻译成统一的 `MetadataRecord`，`provider` 标记为 `"nfo"`。
 ///
@@ -95,7 +95,7 @@ pub fn image_from_nfo_thumb(thumb: &str) -> MetadataImage {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use mosaic_media::NfoMovie;
+    use whatmedia_media::NfoMovie;
 
     #[test]
     fn movie_nfo_maps_fields() {

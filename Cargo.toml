@@ -12,22 +12,22 @@ version = "0.1.0"
 edition = "2021"
 rust-version = "1.98"
 license = "MIT OR Apache-2.0"
-repository = "https://github.com/mosaic-media/mosaic"
+repository = "https://github.com/whatmedia/whatmedia"
 
 [workspace.dependencies]
-mosaic-core = { path = "crates/core" }
-mosaic-config = { path = "crates/config" }
-mosaic-database = { path = "crates/database" }
-mosaic-task = { path = "crates/task" }
-mosaic-diagnostics = { path = "crates/diagnostics" }
-mosaic-media = { path = "crates/media" }
-mosaic-metadata = { path = "crates/metadata" }
-mosaic-storage = { path = "crates/storage" }
-mosaic-library = { path = "crates/library" }
-mosaic-scanner = { path = "crates/scanner" }
-mosaic-api = { path = "crates/api" }
+whatmedia-core = { path = "crates/core" }
+whatmedia-config = { path = "crates/config" }
+whatmedia-database = { path = "crates/database" }
+whatmedia-task = { path = "crates/task" }
+whatmedia-diagnostics = { path = "crates/diagnostics" }
+whatmedia-media = { path = "crates/media" }
+whatmedia-metadata = { path = "crates/metadata" }
+whatmedia-storage = { path = "crates/storage" }
+whatmedia-library = { path = "crates/library" }
+whatmedia-scanner = { path = "crates/scanner" }
+whatmedia-api = { path = "crates/api" }
 
-tokio = { version = "1", features = ["rt-multi-thread", "macros", "signal", "time", "sync", "fs", "net", "process", "rt"] }
+tokio = { version = "1", features = ["rt-multi-thread", "macros", "signal", "time", "sync", "fs", "net", "process", "rt", "io-util"] }
 axum = { version = "0.8", features = ["macros"] }
 tower = "0.5"
 tower-http = { version = "0.6", features = ["trace", "cors", "compression-gzip"] }
@@ -58,6 +58,11 @@ sqlx = { version = "0.9", default-features = false, features = [
 ] }
 
 # ── 文本处理 ────────────────────────────────────────────
+# ── OpenAPI（P4-2）────────────────────────────────────────
+# 只在 `openapi` feature 下启用：core 必须保持零依赖，
+# 不能让"生成契约"这件事给所有下游加上一个编译期依赖。
+utoipa = { version = "5", features = ["chrono", "uuid"] }
+
 regex = "1"
 roxmltree = "0.21"
 

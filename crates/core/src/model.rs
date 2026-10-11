@@ -10,6 +10,7 @@ pub type Id = Uuid;
 // ─────────────────────────────────────────────────────────────
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 #[serde(rename_all = "snake_case")]
 pub enum MediaKind {
     Movie,
@@ -35,6 +36,7 @@ impl Default for StreamType {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 #[serde(rename_all = "snake_case")]
 pub enum StreamType {
     Video,
@@ -45,6 +47,7 @@ pub enum StreamType {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 #[serde(rename_all = "snake_case")]
 pub enum VideoCodec {
     H264,
@@ -59,6 +62,7 @@ pub enum VideoCodec {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 #[serde(rename_all = "snake_case")]
 pub enum AudioCodec {
     Aac,
@@ -77,6 +81,7 @@ pub enum AudioCodec {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 #[serde(rename_all = "snake_case")]
 pub enum SubtitleCodec {
     Srt,
@@ -99,6 +104,7 @@ impl Default for HdrType {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 #[serde(rename_all = "snake_case")]
 pub enum HdrType {
     Sdr,
@@ -109,6 +115,7 @@ pub enum HdrType {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 #[serde(rename_all = "snake_case")]
 pub enum Container {
     Mp4,
@@ -125,7 +132,9 @@ pub enum Container {
 
 /// 媒体库。存储、扫描策略、元数据策略的聚合配置点。
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 pub struct Library {
+    #[cfg_attr(feature = "openapi", schema(value_type = uuid::Uuid))]
     pub id: Id,
     pub name: String,
     pub kind: MediaKind,
@@ -138,8 +147,11 @@ pub struct Library {
 
 /// 一部影视作品。**不等于一个文件。**
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 pub struct MediaItem {
+    #[cfg_attr(feature = "openapi", schema(value_type = uuid::Uuid))]
     pub id: Id,
+    #[cfg_attr(feature = "openapi", schema(value_type = uuid::Uuid))]
     pub library_id: Id,
     pub kind: MediaKind,
     pub title: String,
@@ -158,8 +170,11 @@ pub struct MediaItem {
 
 /// 作品的一个清晰度 / 来源 / 编码版本（如 2160P REMUX）。
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 pub struct MediaVersion {
+    #[cfg_attr(feature = "openapi", schema(value_type = uuid::Uuid))]
     pub id: Id,
+    #[cfg_attr(feature = "openapi", schema(value_type = uuid::Uuid))]
     pub item_id: Id,
     pub name: String,
     pub source: Option<String>,
@@ -171,8 +186,11 @@ pub struct MediaVersion {
 
 /// 一个物理文件。可能位于任意 StorageProvider 上。
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 pub struct MediaFile {
+    #[cfg_attr(feature = "openapi", schema(value_type = uuid::Uuid))]
     pub id: Id,
+    #[cfg_attr(feature = "openapi", schema(value_type = uuid::Uuid))]
     pub version_id: Id,
     pub storage_provider: String,
     pub path: String,
@@ -189,8 +207,11 @@ pub struct MediaFile {
 
 /// 文件内的一条流（视频 / 音频 / 字幕 / 附件）。
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 pub struct MediaStream {
+    #[cfg_attr(feature = "openapi", schema(value_type = uuid::Uuid))]
     pub id: Id,
+    #[cfg_attr(feature = "openapi", schema(value_type = uuid::Uuid))]
     pub file_id: Id,
     pub stream_type: StreamType,
     pub index: i32,
@@ -208,7 +229,9 @@ pub struct MediaStream {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 pub struct Series {
+    #[cfg_attr(feature = "openapi", schema(value_type = uuid::Uuid))]
     pub id: Id,
     pub title: String,
     pub original_title: Option<String>,
@@ -217,18 +240,25 @@ pub struct Series {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 pub struct Season {
+    #[cfg_attr(feature = "openapi", schema(value_type = uuid::Uuid))]
     pub id: Id,
+    #[cfg_attr(feature = "openapi", schema(value_type = uuid::Uuid))]
     pub series_id: Id,
     pub season_number: i32,
     pub title: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 pub struct Episode {
+    #[cfg_attr(feature = "openapi", schema(value_type = uuid::Uuid))]
     pub id: Id,
+    #[cfg_attr(feature = "openapi", schema(value_type = uuid::Uuid))]
     pub season_id: Id,
     pub episode_number: i32,
+    #[cfg_attr(feature = "openapi", schema(value_type = uuid::Uuid))]
     pub item_id: Id,
     pub title: Option<String>,
 }
@@ -238,6 +268,7 @@ pub struct Episode {
 // ─────────────────────────────────────────────────────────────
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 #[serde(rename_all = "snake_case")]
 pub enum PlaybackStrategy {
     /// 直接播放原文件，零 CPU。
@@ -252,19 +283,37 @@ pub enum PlaybackStrategy {
 
 /// 播放器数据源。客户端与服务端通过它解耦物理位置。
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum PlaybackSource {
     /// 直出原始文件（HTTP Range）。
-    Direct { file_id: Id, url: String },
+    Direct {
+        #[cfg_attr(feature = "openapi", schema(value_type = uuid::Uuid))]
+        file_id: Id,
+        url: String,
+    },
     /// Remux 后的流。
-    Remux { file_id: Id, url: String },
+    Remux {
+        #[cfg_attr(feature = "openapi", schema(value_type = uuid::Uuid))]
+        file_id: Id,
+        url: String,
+    },
     /// HLS 主播放列表。
-    Hls { file_id: Id, url: String },
+    Hls {
+        #[cfg_attr(feature = "openapi", schema(value_type = uuid::Uuid))]
+        file_id: Id,
+        url: String,
+    },
     /// fMP4 分片流。
-    Dash { file_id: Id, url: String },
+    Dash {
+        #[cfg_attr(feature = "openapi", schema(value_type = uuid::Uuid))]
+        file_id: Id,
+        url: String,
+    },
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 #[serde(rename_all = "snake_case")]
 pub enum TranscodeState {
     Pending,
@@ -277,28 +326,53 @@ pub enum TranscodeState {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 pub struct PlaybackSession {
+    #[cfg_attr(feature = "openapi", schema(value_type = uuid::Uuid))]
     pub id: Id,
+    #[cfg_attr(feature = "openapi", schema(value_type = Option<uuid::Uuid>))]
     pub user_id: Option<Id>,
+    #[cfg_attr(feature = "openapi", schema(value_type = uuid::Uuid))]
     pub item_id: Id,
+    #[cfg_attr(feature = "openapi", schema(value_type = uuid::Uuid))]
     pub file_id: Id,
     pub device_id: Option<String>,
+    /// 客户端能力指纹（如 `web-chrome` / `tauri-mpv`）。
+    /// 决策结果依赖它，回放诊断时也靠它区分"设备不行"和"片源不行"。
+    pub client_id: Option<String>,
     pub strategy: PlaybackStrategy,
+    /// 为什么选了这条路。用户问"为什么我的 4K 片在转码"时要能答得出来。
+    pub strategy_reason: Option<String>,
     pub position_ms: i64,
     pub duration_ms: Option<i64>,
+    pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
+    /// 关闭时间。NULL 表示会话仍在进行（或异常退出，靠回收器收尾）。
+    pub stopped_at: Option<DateTime<Utc>>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 pub struct TranscodeJob {
+    #[cfg_attr(feature = "openapi", schema(value_type = uuid::Uuid))]
     pub id: Id,
+    #[cfg_attr(feature = "openapi", schema(value_type = uuid::Uuid))]
     pub session_id: Id,
+    /// 被转码的文件。NULL 表示这是一条历史遗留记录（0004 之前插入的）。
+    #[cfg_attr(feature = "openapi", schema(value_type = Option<uuid::Uuid>))]
+    pub file_id: Option<Id>,
     pub args: Vec<String>,
     pub hw_accel: Option<String>,
     pub state: TranscodeState,
     pub progress: f32,
+    /// 输出形态：`remux_ts` / `remux_fmp4` / `hls`。
+    pub output_kind: Option<String>,
     pub output_dir: Option<String>,
     pub pid: Option<i32>,
+    pub created_at: DateTime<Utc>,
+    pub started_at: Option<DateTime<Utc>>,
+    pub finished_at: Option<DateTime<Utc>>,
+    pub error: Option<String>,
 }
 
 // ─────────────────────────────────────────────────────────────
@@ -306,6 +380,7 @@ pub struct TranscodeJob {
 // ─────────────────────────────────────────────────────────────
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 #[serde(rename_all = "snake_case")]
 pub enum TaskPriority {
     Low,
@@ -316,6 +391,7 @@ pub enum TaskPriority {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 #[serde(rename_all = "snake_case")]
 pub enum TaskKind {
     Scan,
@@ -328,6 +404,7 @@ pub enum TaskKind {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 #[serde(rename_all = "snake_case")]
 pub enum TaskState {
     Pending,
@@ -339,7 +416,9 @@ pub enum TaskState {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 pub struct Task {
+    #[cfg_attr(feature = "openapi", schema(value_type = uuid::Uuid))]
     pub id: Id,
     pub kind: TaskKind,
     pub priority: TaskPriority,
@@ -351,7 +430,8 @@ pub struct Task {
 }
 
 /// HTTP Range 读取区间。Direct Play 与代理播放都依赖它。
-#[derive(Debug, Clone, Copy, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 pub struct ByteRange {
     pub start: u64,
     /// None 表示读到结尾。

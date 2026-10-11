@@ -1,9 +1,9 @@
 use thiserror::Error;
 
-pub type Result<T> = std::result::Result<T, MosaicError>;
+pub type Result<T> = std::result::Result<T, WhatMediaError>;
 
 #[derive(Debug, Error)]
-pub enum MosaicError {
+pub enum WhatMediaError {
     #[error("storage error [{provider}]: {message}")]
     Storage { provider: String, message: String },
 

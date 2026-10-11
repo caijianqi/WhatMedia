@@ -23,7 +23,7 @@
 
 ### Q2：字幕兼容性（这是最大的已知坑）
 
-| 字幕 | Media3/ExoPlayer 支持情况 | Mosaic 的处理 |
+| 字幕 | Media3/ExoPlayer 支持情况 | WhatMedia 的处理 |
 |---|---|---|
 | SRT / VTT | 支持良好 | 直接传 |
 | SSA / ASS | 部分支持，**复杂特效会退化** | 服务端转 SRT 或 burn-in |

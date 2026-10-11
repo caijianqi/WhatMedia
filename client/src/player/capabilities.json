@@ -1,0 +1,86 @@
+{
+  "_comment": [
+    "客户端能力声明的**单一真源**。",
+    "前端 import 它，Rust 的 crates/playback/tests/client_capability_parity.rs 也读它，",
+    "两端各写一份必然会漂移 —— 漂移的后果是服务端按 A 决策、前端按 B 渲染，",
+    "用户会看到一个点了没反应的按钮，或者一个其实放不出来的 Direct Play。",
+    "codec 字面量与 whatmedia_core 枚举的 serde snake_case 一致（dts_hd / true_hd / m2ts）。"
+  ],
+  "clients": {
+    "web": {
+      "id": "web",
+      "containers": ["mp4", "webm"],
+      "videoCodecs": ["h264", "vp9"],
+      "audioCodecs": ["aac", "opus", "mp3"],
+      "subtitleCodecs": ["vtt"],
+      "bitmapSubtitles": false,
+      "hls": true,
+      "localFile": false,
+      "canSwitchAudioTrack": false,
+      "canSwitchSubtitleTrack": true,
+      "note": "位图字幕一律不支持（PGS/DVBSUB 必须服务端烧录）；播放中无法换音轨。"
+    },
+    "tauri-mpv": {
+      "id": "tauri-mpv",
+      "containers": ["mkv", "mp4", "ts", "webm", "m2ts", "avi"],
+      "videoCodecs": ["h264", "hevc", "av1", "vp9", "mpeg2", "vc1"],
+      "audioCodecs": [
+        "aac",
+        "ac3",
+        "eac3",
+        "dts",
+        "dts_hd",
+        "true_hd",
+        "flac",
+        "opus",
+        "mp3"
+      ],
+      "subtitleCodecs": ["srt", "ass", "ssa", "vtt"],
+      "bitmapSubtitles": true,
+      "hls": true,
+      "localFile": true,
+      "canSwitchAudioTrack": true,
+      "canSwitchSubtitleTrack": true,
+      "note": "mpv 自己渲染位图字幕，不需要服务端烧录。"
+    },
+    "android-exoplayer": {
+      "id": "android-exoplayer",
+      "containers": ["mp4", "mkv", "ts", "webm"],
+      "videoCodecs": ["h264", "hevc", "vp9"],
+      "audioCodecs": ["aac", "ac3", "eac3", "opus"],
+      "subtitleCodecs": ["srt", "vtt", "ass"],
+      "bitmapSubtitles": false,
+      "hls": true,
+      "localFile": false,
+      "canSwitchAudioTrack": true,
+      "canSwitchSubtitleTrack": true,
+      "note": "硬件解码能力随机型差异极大，取的是交集。"
+    },
+    "apple": {
+      "id": "apple",
+      "containers": ["mp4"],
+      "videoCodecs": ["h264", "hevc"],
+      "audioCodecs": ["aac", "ac3", "eac3", "flac"],
+      "subtitleCodecs": ["vtt"],
+      "bitmapSubtitles": false,
+      "hls": true,
+      "localFile": false,
+      "canSwitchAudioTrack": true,
+      "canSwitchSubtitleTrack": true,
+      "note": "AVFoundation。HLS 原生支持，不需要 hls.js。"
+    },
+    "minimal": {
+      "id": "minimal",
+      "containers": ["ts"],
+      "videoCodecs": ["h264"],
+      "audioCodecs": ["aac"],
+      "subtitleCodecs": [],
+      "bitmapSubtitles": false,
+      "hls": true,
+      "localFile": false,
+      "canSwitchAudioTrack": false,
+      "canSwitchSubtitleTrack": false,
+      "note": "兜底档：只认 HLS + H264 + AAC。给未知/老旧设备。"
+    }
+  }
+}
