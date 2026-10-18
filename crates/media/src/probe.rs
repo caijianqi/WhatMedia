@@ -7,11 +7,11 @@
 //!   · **原始 JSON 入库。** ARM 上 ffprobe 一次要好几百毫秒，重复探测很贵。
 
 use chrono::Utc;
-use whatmedia_core::{HdrType, MediaStream, WhatMediaError, Result, StreamType};
 use serde::Deserialize;
 use std::collections::HashMap;
 use std::time::Duration;
 use uuid::Uuid;
+use whatmedia_core::{HdrType, MediaStream, Result, StreamType, WhatMediaError};
 
 /// 默认超时。4K REMUX 在机械盘上探测也会在一分钟内返回。
 pub const DEFAULT_TIMEOUT: Duration = Duration::from_secs(60);

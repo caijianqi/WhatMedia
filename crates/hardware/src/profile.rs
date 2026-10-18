@@ -67,6 +67,31 @@ pub struct MachineProfile {
     pub devices: DeviceNodes,
 }
 
+/// 拼硬件参数所需的机器细节。
+///
+/// `HardwareProfile` 只说"有 VAAPI"，但 `-vaapi_device /dev/dri/renderD128`
+/// 还得知道具体是哪一个节点。这些是探测时顺手就能拿到的，别丢 ——
+/// 丢了下层只能拍脑袋写死设备名，在双显卡机器上就会连错设备。
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+pub struct AccelContext {
+    /// `/dev/dri/renderD*`。VAAPI / QSV 用。
+    /// Windows 与 macOS 上为 None（驱动自己找设备，命令行不需要指定）。
+    pub render_node: Option<String>,
+    pub cpu_cores: usize,
+    pub memory_bytes: u64,
+}
+
+impl MachineProfile {
+    /// 从整机画像里取出拼参数要用的那几个值。
+    pub fn accel_context(&self) -> AccelContext {
+        AccelContext {
+            render_node: self.devices.drm_render_nodes.first().cloned(),
+            cpu_cores: self.cpu.cores,
+            memory_bytes: self.memory.total_bytes,
+        }
+    }
+}
+
 /// 探测 CPU。三家路径完全不同：
 ///   · Linux    /proc/cpuinfo
 ///   · macOS    sysctl

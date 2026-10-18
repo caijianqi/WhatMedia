@@ -1,0 +1,39 @@
+// Tauri 2 Android 工程。
+//
+// 这个文件平常由 `tauri android init` 生成。**本次是手写的**：
+// 开发环境没有装 Android SDK / NDK（`tauri android init` 会直接失败），
+// 但工程结构必须先落地，否则"装完 SDK 就能编"这个前提不成立。
+//
+// 手写版本的代价：将来 `tauri android init` 会认为工程已存在而跳过。
+// 若 Tauri 版本升级带了模板变更，需要自己 diff 模板，不能指望命令合进来。
+// 这个代价记录在 docs/adr/0005，别当作临时方案长期遗忘。
+
+pluginManagement {
+    repositories {
+        google()
+        gradlePluginPortal()
+        mavenCentral()
+    }
+}
+
+dependencyResolutionManagement {
+    repositoriesMode.set(RepositoriesMode.FAIL_ON_PROJECT_REPOS)
+    repositories {
+        google()
+        mavenCentral()
+    }
+}
+
+rootProject.name = "whatmedia"
+
+// 只有一个模块。
+//
+// Media3 播放器插件的 Kotlin 源码**不建独立 Gradle 模块**：
+// 它需要 `app.tauri.plugin.*` 的 Plugin API，而这套 API 由 Tauri 生成的
+// `tauri-api` 模块提供 —— 那个模块的路径与名字随 Tauri 版本变过，
+// 硬编码进去会在升级时炸。
+//
+// 所以插件源码仍放在仓库根的 `plugins/tauri-plugin-media3/android/` （按 §五 的目录约定），
+// 由 app 模块把它作为**额外源码根目录**吃进来（见 app/build.gradle.kts 的 sourceSets）。
+// 这样既守住了目录约定，又不引入跨模块依赖。
+include(":app")

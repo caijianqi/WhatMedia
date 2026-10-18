@@ -8,10 +8,10 @@
 //! 测试里跑 `MockRunner`，进程生命周期逻辑两边共用同一份代码。
 
 use async_trait::async_trait;
-use whatmedia_core::{WhatMediaError, Result};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use tokio::io::{AsyncRead, AsyncReadExt};
+use whatmedia_core::{Result, WhatMediaError};
 
 /// stdout / stderr 的统一形态。
 ///
@@ -106,9 +106,13 @@ impl ChildProc for TokioChild {
     }
 
     async fn wait(&mut self) -> Result<bool> {
-        let st = self.child.wait().await.map_err(|e| WhatMediaError::Ffmpeg {
-            message: format!("等待进程失败：{e}"),
-        })?;
+        let st = self
+            .child
+            .wait()
+            .await
+            .map_err(|e| WhatMediaError::Ffmpeg {
+                message: format!("等待进程失败：{e}"),
+            })?;
         Ok(st.success())
     }
 }
@@ -163,10 +167,6 @@ impl MockChild {
 
     pub fn killed_flag(&self) -> Arc<AtomicBool> {
         self.killed.clone()
-    }
-
-    pub fn started_flag(&self) -> Arc<AtomicBool> {
-        self.started.clone()
     }
 }
 
@@ -247,6 +247,8 @@ impl AsyncRead for Cursor {
 pub struct MockRunner {
     pub calls: std::sync::Mutex<Vec<(String, Vec<String>)>>,
     pub outcome: std::sync::Mutex<Option<Box<dyn FnOnce() -> MockChild + Send>>>,
+    /// 按顺序供进程。降级链要 spawn 多次，靠这个编排"第一次失败、第二次成功"。
+    pub script: std::sync::Mutex<std::collections::VecDeque<MockChild>>,
     pub fail_spawn: bool,
 }
 
@@ -255,12 +257,19 @@ impl MockRunner {
         Self {
             calls: std::sync::Mutex::new(Vec::new()),
             outcome: std::sync::Mutex::new(None),
+            script: std::sync::Mutex::new(std::collections::VecDeque::new()),
             fail_spawn: false,
         }
     }
 
     pub fn with_child(self, child: MockChild) -> Self {
         *self.outcome.lock().unwrap() = Some(Box::new(move || child));
+        self
+    }
+
+    /// 依次给出多个进程。用完后再 spawn 就退回默认（成功、立即退出）。
+    pub fn with_script(self, children: Vec<MockChild>) -> Self {
+        *self.script.lock().unwrap() = children.into();
         self
     }
 
@@ -294,9 +303,12 @@ impl CommandRunner for MockRunner {
                 message: format!("无法启动 {bin}"),
             });
         }
-        let taken = self.outcome.lock().unwrap().take();
-        let child = taken
-            .map(|f| f())
+        let child = self
+            .script
+            .lock()
+            .unwrap()
+            .pop_front()
+            .or_else(|| self.outcome.lock().unwrap().take().map(|f| f()))
             .unwrap_or_else(|| MockChild::ok(Vec::new(), Vec::new()));
         Ok(Box::new(child))
     }

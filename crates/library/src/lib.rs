@@ -8,12 +8,12 @@
 
 use anyhow::Result;
 use chrono::Utc;
+use uuid::Uuid;
 use whatmedia_core::{
     Container, HdrType, Id, Library, MediaFile, MediaItem, MediaKind, MediaVersion, VideoCodec,
 };
 use whatmedia_database::{repo, to_video_codec, Db};
 use whatmedia_media::{ParsedName, ProbeResult};
-use uuid::Uuid;
 
 /// UUIDv5 命名空间。固定常量，改了就等于重建整个库。
 const NS: Uuid = Uuid::from_bytes([

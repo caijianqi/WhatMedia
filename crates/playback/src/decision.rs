@@ -15,10 +15,10 @@
 //! 一条铁律：**决策必须能解释自己。** 每个降级都留下 `Reason`，
 //! 用户问"为什么我的 4K 原盘在转码"时要有据可查，而不是一个黑盒结果。
 
+use serde::Serialize;
 use whatmedia_core::{AudioCodec, PlaybackStrategy, SubtitleCodec, VideoCodec};
 use whatmedia_subtitle::{plan_track, BurnCapability, SubtitleTarget};
 use whatmedia_transcoder::{AudioAction, BurnSource, OutputSpec, StreamRequest, VideoAction};
-use serde::Serialize;
 
 use crate::capability::{ClientCapability, MediaCapability, ServerCapability};
 
@@ -114,6 +114,11 @@ pub struct PlaybackDecision {
     pub subtitle_plans: Vec<whatmedia_subtitle::SubtitlePlan>,
     /// 转码目标高度。缩放用；None 表示保持原始分辨率。
     pub target_height: Option<u32>,
+    /// 硬件后端候选链，索引 0 为首选，**链尾保证是软件档**。
+    ///
+    /// 转码启动后若在首帧窗口内失败，按这个顺序静默换下一个 —— 用户无感知。
+    /// 非转码策略下为空。
+    pub accel_chain: Vec<whatmedia_transcoder::AccelArgs>,
 }
 
 impl PlaybackDecision {
@@ -157,6 +162,7 @@ pub fn decide(input: DecisionInput<'_>) -> PlaybackDecision {
             audio_index: None,
             subtitle_plans: Vec::new(),
             target_height: None,
+            accel_chain: Vec::new(),
         };
     };
 
@@ -294,6 +300,7 @@ pub fn decide(input: DecisionInput<'_>) -> PlaybackDecision {
             audio_index,
             subtitle_plans,
             target_height: None,
+            accel_chain: Vec::new(),
         };
     }
 
@@ -305,6 +312,7 @@ pub fn decide(input: DecisionInput<'_>) -> PlaybackDecision {
             audio_index,
             subtitle_plans,
             target_height: None,
+            accel_chain: Vec::new(),
         };
     }
 
@@ -339,10 +347,13 @@ pub fn decide(input: DecisionInput<'_>) -> PlaybackDecision {
                 burn: None,
                 output,
                 accel: None,
+                // 决策层只产出点播请求。直播不经过 decide()，见 crates/api/src/live.rs。
+                live: false,
             }),
             audio_index,
             subtitle_plans,
             target_height: None,
+            accel_chain: Vec::new(),
         };
     }
 
@@ -355,6 +366,7 @@ pub fn decide(input: DecisionInput<'_>) -> PlaybackDecision {
             audio_index,
             subtitle_plans,
             target_height: None,
+            accel_chain: Vec::new(),
         };
     }
 
@@ -366,6 +378,7 @@ pub fn decide(input: DecisionInput<'_>) -> PlaybackDecision {
             audio_index,
             subtitle_plans,
             target_height: None,
+            accel_chain: Vec::new(),
         };
     };
 
@@ -385,6 +398,21 @@ pub fn decide(input: DecisionInput<'_>) -> PlaybackDecision {
 
     let output = output_for(client, input.hls_dir.clone(), input.seg_seconds);
 
+    // 硬件后端候选链：硬件优先，软件兜底。转码跑不起来时按序静默降级。
+    // tone mapping 的**源**是片源的 HDR 类型；目标是 SDR（决策里只做 HDR→SDR）。
+    let accel_chain = whatmedia_transcoder::accel_chain(
+        &server.encoders,
+        &server.accel_ctx,
+        &target_codec,
+        target_width,
+        target_height,
+        if tonemap_to.is_some() {
+            Some(video.hdr)
+        } else {
+            None
+        },
+    );
+
     PlaybackDecision {
         strategy: PlaybackStrategy::Transcode,
         reasons,
@@ -401,11 +429,13 @@ pub fn decide(input: DecisionInput<'_>) -> PlaybackDecision {
             audio: audio_action,
             burn,
             output,
-            accel: None,
+            accel: accel_chain.first().cloned(),
+            live: false,
         }),
         audio_index,
         subtitle_plans,
         target_height,
+        accel_chain,
     }
 }
 
@@ -533,6 +563,7 @@ mod tests {
                 max_concurrent_sessions: 2,
             }],
             active_transcodes: 0,
+            accel_ctx: whatmedia_transcoder::AccelContext::default(),
         }
     }
 
@@ -758,5 +789,41 @@ mod tests {
             VideoAction::Encode { tonemap_to, .. } => assert_eq!(*tonemap_to, Some(HdrType::Sdr)),
             _ => panic!("应当是转码"),
         }
+    }
+
+    #[test]
+    fn transcode_carries_an_accel_chain_ending_in_software() {
+        // P5 DoD：链尾必须是软件档，否则硬件一挂就没有下一级可退。
+        let mut s = server();
+        s.encoders = vec![whatmedia_core::HardwareProfile {
+            kind: whatmedia_core::HardwareKind::IntelQsv,
+            decoders: vec![VideoCodec::H264],
+            encoders: vec![VideoCodec::H264],
+            supports_zero_copy: true,
+            supports_tone_mapping: true,
+            max_concurrent_sessions: 4,
+        }];
+        s.accel_ctx = whatmedia_transcoder::AccelContext {
+            render_node: Some("/dev/dri/renderD128".into()),
+            cpu_cores: 8,
+            memory_bytes: 8 << 30,
+        };
+
+        let m = media(h264_1080p(), vec![aac()], Some(Container::Mkv));
+        let d = decide(input(&m, &ClientCapability::preset_minimal(), &s));
+        assert_eq!(d.strategy, PlaybackStrategy::Transcode);
+        assert!(!d.accel_chain.is_empty());
+        assert_eq!(d.accel_chain.first().unwrap().id, "qsv");
+        assert_eq!(d.accel_chain.last().unwrap().id, "software");
+        // 首选后端必须已经写进 StreamRequest —— 否则降级机制拿到的是空链。
+        assert_eq!(d.stream.as_ref().unwrap().accel.as_ref().unwrap().id, "qsv");
+    }
+
+    #[test]
+    fn direct_play_needs_no_accel_chain() {
+        let m = media(h264_1080p(), vec![aac()], Some(Container::Mp4));
+        let d = decide(input(&m, &ClientCapability::preset_web(), &server()));
+        assert_eq!(d.strategy, PlaybackStrategy::DirectPlay);
+        assert!(d.accel_chain.is_empty(), "直出不起 ffmpeg，不该有后端链");
     }
 }

@@ -1,4 +1,4 @@
-//! 字段级合并与锁定（111.md §32）。
+//! 字段级合并与锁定（需求稿 §32）。
 //!
 //! 优先级链：**NFO > 手动锁定 > Provider**
 //!
@@ -12,8 +12,8 @@
 
 use std::collections::HashSet;
 
-use whatmedia_core::MetadataRecord;
 use serde::{Deserialize, Serialize};
+use whatmedia_core::MetadataRecord;
 
 use crate::matcher::is_lockable;
 

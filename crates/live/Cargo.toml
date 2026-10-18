@@ -1,0 +1,14 @@
+[package]
+name = "whatmedia-live"
+description = "电视直播：M3U / XMLTV 解析、频道模型、时移与录制计划"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+whatmedia-core = { workspace = true }
+chrono = { workspace = true }
+roxmltree = { workspace = true }
+serde = { workspace = true }
+uuid = { workspace = true }
+thiserror = { workspace = true }

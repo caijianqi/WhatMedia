@@ -4,12 +4,12 @@
 //! 理由见 `db.rs` 模块注释 —— 显式转换让 SQLite/PostgreSQL 差异集中在一处。
 
 use chrono::{DateTime, Utc};
+use sqlx::FromRow;
+use uuid::Uuid;
 use whatmedia_core::{
     AudioCodec, Container, HdrType, Id, Library, MediaFile, MediaItem, MediaKind, MediaStream,
     MediaVersion, Season, Series, StreamType, SubtitleCodec, VideoCodec,
 };
-use sqlx::FromRow;
-use uuid::Uuid;
 
 pub(crate) fn to_id(s: &str) -> Option<Id> {
     Uuid::parse_str(s).ok()

@@ -1,11 +1,10 @@
 //! 剧集结构：series / season / episode。
 
 use anyhow::Result;
-use chrono::Utc;
-use whatmedia_core::{Id, Page, Season, Series};
 use serde::Serialize;
 use sqlx::QueryBuilder;
 use uuid::Uuid;
+use whatmedia_core::{Id, Page, Season, Series};
 
 use crate::db::Db;
 
@@ -17,6 +16,25 @@ pub struct SeriesSummary {
     pub title: String,
     pub year: Option<i32>,
     pub season_count: i64,
+    pub episode_count: i64,
+}
+
+/// 条目所属的剧。只带详情页够用的三个字段。
+#[derive(Debug, Clone, Serialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
+pub struct SeriesRef {
+    #[cfg_attr(feature = "openapi", schema(value_type = uuid::Uuid))]
+    pub id: Id,
+    pub title: String,
+    pub year: Option<i32>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
+pub struct SeasonSummary {
+    #[cfg_attr(feature = "openapi", schema(value_type = uuid::Uuid))]
+    pub id: Id,
+    pub number: i32,
     pub episode_count: i64,
 }
 
@@ -290,6 +308,66 @@ pub async fn list_episodes(db: &Db, q: &EpisodeQuery) -> Result<Page<EpisodeSumm
     Ok(Page::new(data, total.0, params.clamp().0, size))
 }
 
+/// 一个条目属于哪部剧（**反查**，详情页的"同剧其他集"靠它）。
+///
+/// 扫描出来的 `media_item` 是**一集一个**（`kind = episode`），
+/// 没有"整部剧"的条目。所以从条目出发要倒着走 episode → season → series。
+/// 电影之类没挂在任何剧上的条目返回 `None` —— 那时详情页就不渲染季列表。
+pub async fn series_of_item(db: &Db, item_id: Id) -> Result<Option<SeriesRef>> {
+    let row = sqlx::query_as::<_, (String, String, Option<i32>)>(
+        "SELECT sr.id, sr.title, sr.year
+           FROM episode e
+           JOIN season se ON se.id = e.season_id
+           JOIN series sr ON sr.id = se.series_id
+          WHERE e.item_id = ?
+          LIMIT 1",
+    )
+    .bind(item_id.to_string())
+    .fetch_optional(db.pool())
+    .await?;
+
+    let Some((id, title, year)) = row else {
+        return Ok(None);
+    };
+    // id 存坏了就当"不属于任何剧"，而不是让详情页 500：
+    // 一行脏数据不该让整个条目打不开。
+    let Some(id) = crate::rows::to_id(&id) else {
+        return Ok(None);
+    };
+    Ok(Some(SeriesRef { id, title, year }))
+}
+
+/// 一部剧的季列表（详情页的"季"tab 用它）。
+///
+/// `episode_count` 用子查询带出来，而不是让前端拿季 id 去 `/episodes` 数一遍：
+/// 前端要的是"第 3 季有 12 集"这种标签，为一部剧发 5 个请求换 5 个数字不划算。
+///
+/// **没有季的剧会返回空数组而不是报错**：扫描只认出 series 但没拆出季的情况
+/// 是存在的（目录结构不规整时），那时详情页应当显示"还没有季"，而不是 500。
+pub async fn list_seasons(db: &Db, series_id: Id) -> Result<Vec<SeasonSummary>> {
+    let rows = sqlx::query_as::<_, (String, i32, i64)>(
+        "SELECT se.id, se.season_number,
+                (SELECT COUNT(*) FROM episode e WHERE e.season_id = se.id)
+           FROM season se
+          WHERE se.series_id = ?
+          ORDER BY se.season_number",
+    )
+    .bind(series_id.to_string())
+    .fetch_all(db.pool())
+    .await?;
+
+    Ok(rows
+        .into_iter()
+        .filter_map(|(id, number, episode_count)| {
+            Some(SeasonSummary {
+                id: crate::rows::to_id(&id)?,
+                number,
+                episode_count,
+            })
+        })
+        .collect())
+}
+
 fn push_episode_filters(b: &mut QueryBuilder<sqlx::Sqlite>, q: &EpisodeQuery) {
     if let Some(id) = q.season_id {
         b.push(" AND e.season_id = ").push_bind(id.to_string());
@@ -297,9 +375,4 @@ fn push_episode_filters(b: &mut QueryBuilder<sqlx::Sqlite>, q: &EpisodeQuery) {
     if let Some(id) = q.series_id {
         b.push(" AND se.series_id = ").push_bind(id.to_string());
     }
-}
-
-/// 供 CLI 显示扫描结果的时间戳用。
-pub fn now_rfc3339() -> String {
-    Utc::now().to_rfc3339()
 }

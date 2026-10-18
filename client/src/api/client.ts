@@ -1,7 +1,7 @@
 /**
  * WhatMedia API 客户端。
  *
- * 约定（DEVELOPMENT-PLAN.md §七）：
+ * 约定（开发计划 §七）：
  *   · 前缀 /api/v1，全 JSON
  *   · 错误统一 { error: { code, message, trace_id } }
  *
@@ -26,15 +26,47 @@ export type SortOrder = components['schemas']['SortOrder']
 
 export type ItemSummary = components['schemas']['ItemSummary']
 export type ItemDetail = components['schemas']['ItemDetail']
+export type CreditsView = components['schemas']['CreditsView']
+export type CreditRow = components['schemas']['CreditRow']
+export type SeasonSummary = components['schemas']['SeasonSummary']
+export type SeriesRef = components['schemas']['SeriesRef']
+export type KindCount = components['schemas']['KindCount']
 export type MediaStream = components['schemas']['MediaStream']
 export type ItemPage = components['schemas']['Page_ItemSummary']
-export type SeriesPage = components['schemas']['Page_SeriesSummary']
 export type EpisodePage = components['schemas']['Page_EpisodeSummary']
+export type EpisodeSummary = components['schemas']['EpisodeSummary']
 export type PageInfo = components['schemas']['PageInfo']
 
 export type Library = components['schemas']['Library']
 export type HealthReport = components['schemas']['HealthReport']
 export type HardwareProfileReport = components['schemas']['HardwareProfileView']
+
+// ── 鉴权（多用户）────────────────────────────────────────────
+export type UserOut = components['schemas']['UserOut']
+export type LoginResult = components['schemas']['LoginResult']
+export type ApprovalRow = components['schemas']['ApprovalRow']
+export type SignedUrlOut = components['schemas']['SignedUrlOut']
+/** 服务端认三个角色。前端不自行发明新值。 */
+export type Role = 'admin' | 'user' | 'child'
+
+/** 儿童设备等待家长批准时，服务端会在 403 的 error 里附一个审批编号。 */
+export interface ApprovalRequired {
+  approval_id?: string
+}
+
+// ── AI（P7）──────────────────────────────────────────────
+export type AiChatReply = components['schemas']['AiChatReply']
+export type PendingActionView = components['schemas']['PendingActionView']
+export type ToolSpecView = components['schemas']['ToolSpecView']
+export type ToolListReply = components['schemas']['ToolListReply']
+
+/** 角色。服务端认这五个，缺省 adult。 */
+export type AiRole = 'owner' | 'administrator' | 'adult' | 'child' | 'guest'
+
+export interface AiActor {
+  id: string
+  role: AiRole
+}
 
 export type DecideView = components['schemas']['DecideView']
 export type ReasonView = components['schemas']['ReasonView']
@@ -76,6 +108,35 @@ export class ApiError extends Error {
 
 const BASE = import.meta.env.VITE_WHATMEDIA_API ?? '/api/v1'
 
+/**
+ * 会话票据。
+ *
+ * 放在模块里而不是 store 里，是因为**播放器要用的 URL 也依赖它**：
+ * 那些地址不走 `request()`，但同样需要凭据。让它们从 store 里取会形成
+ * api ← store ← api 的循环依赖。
+ *
+ * 内存里这一份是权威值，localStorage 只是它的持久化镜像 ——
+ * Tauri 的 WebView 与测试环境都可能读不到 localStorage，
+ * 那种情况下"能继续用"比"记得住"重要。
+ */
+let sessionToken: string | null = null
+
+export function setSessionToken(token: string | null): void {
+  sessionToken = token
+}
+
+/** 手写 fetch（例如停 HLS）也要带上凭据。 */
+export function authHeaders(): Record<string, string> {
+  return sessionToken ? { Authorization: `Bearer ${sessionToken}` } : {}
+}
+
+/** 会话失效回调。由 store 注册，避免 api 反向依赖 store。 */
+let onUnauthorized: (() => void) | null = null
+
+export function setUnauthorizedHandler(fn: () => void): void {
+  onUnauthorized = fn
+}
+
 function qs(params: object): string {
   const sp = new URLSearchParams()
   for (const [k, v] of Object.entries(params)) {
@@ -89,10 +150,9 @@ function qs(params: object): string {
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
   let res: Response
   try {
-    res = await fetch(`${BASE}${path}`, {
-      headers: { Accept: 'application/json' },
-      ...init,
-    })
+    const headers: Record<string, string> = { Accept: 'application/json' }
+    if (sessionToken) headers.Authorization = `Bearer ${sessionToken}`
+    res = await fetch(`${BASE}${path}`, { headers, ...init })
   } catch {
     // fetch 只在网络层失败时抛（服务端没起来、断网）。
     // 不包一层的话，UI 上只会看到一句看不懂的 TypeError。
@@ -100,6 +160,9 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
   }
 
   if (!res.ok) {
+    // 401 说明票据过期或被吊销。交给 store 处理（跳登录），
+    // 而不是让每个调用方各自判断 —— 那必然会有漏的。
+    if (res.status === 401 && onUnauthorized) onUnauthorized()
     let detail: ErrorDetail = {
       code: 'UNKNOWN',
       message: `HTTP ${res.status}`,
@@ -127,6 +190,18 @@ function post<T>(path: string, body?: unknown): Promise<T> {
   })
 }
 
+function del<T>(path: string): Promise<T> {
+  return request<T>(path, { method: 'DELETE' })
+}
+
+function put<T>(path: string, body: unknown): Promise<T> {
+  return request<T>(path, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body ?? {}),
+  })
+}
+
 // ─────────────────────────────────────────────────────────────
 // 端点
 // ─────────────────────────────────────────────────────────────
@@ -139,13 +214,9 @@ export function listMedia(q: ItemQuery = {}): Promise<ItemPage> {
   return request<ItemPage>(`/media${qs(q)}`)
 }
 
-export function listMovies(q: ItemQuery = {}): Promise<ItemPage> {
-  return request<ItemPage>(`/movies${qs(q)}`)
-}
-
-/** 剧集列表。`SeriesSummary` 没有海报字段，别指望它能直接喂给海报墙。 */
-export function listSeries(q: ItemQuery = {}): Promise<SeriesPage> {
-  return request<SeriesPage>(`/series${qs(q)}`)
+/** 各类型的条目数。只返回有内容的类型，首页据此渲染分类 tab。 */
+export function mediaKinds(): Promise<KindCount[]> {
+  return request<KindCount[]>('/media/kinds')
 }
 
 export function listEpisodes(q: {
@@ -159,6 +230,25 @@ export function listEpisodes(q: {
 
 export function getItem(id: string): Promise<ItemDetail> {
   return request<ItemDetail>(`/items/${id}`)
+}
+
+/** 演职员。`cast` 与 `crew` 由服务端按 role 分好，前端不再自行分组。 */
+export function itemCredits(id: string): Promise<CreditsView> {
+  return request<CreditsView>(`/items/${id}/credits`)
+}
+
+/**
+ * 条目所属的剧。电影 / 音乐返回 null —— 那时详情页就不渲染季列表。
+ *
+ * 扫描出来的是"一集一个条目"，所以这里是从条目反查剧，不是拿剧查条目。
+ */
+export function itemSeries(id: string): Promise<SeriesRef | null> {
+  return request<SeriesRef | null>(`/items/${id}/series`)
+}
+
+/** 一部剧的季列表（含每季集数）。 */
+export function seriesSeasons(seriesId: string): Promise<SeasonSummary[]> {
+  return request<SeasonSummary[]>(`/series/${seriesId}/seasons`)
 }
 
 export function search(q: string, page: ItemQuery = {}): Promise<ItemPage> {
@@ -209,10 +299,6 @@ export function resumeList(limit = 20): Promise<ResumePoint[]> {
   return request<ResumePoint[]>(`/playback/resume${qs({ limit })}`)
 }
 
-export function itemSubtitles(itemId: string): Promise<SubtitleItemView[]> {
-  return request<SubtitleItemView[]>(`/items/${itemId}/subtitles`)
-}
-
 export function hardwareProfile(): Promise<HardwareProfileReport> {
   return request<HardwareProfileReport>('/hardware/profile')
 }
@@ -220,28 +306,239 @@ export function hardwareProfile(): Promise<HardwareProfileReport> {
 // ── 播放地址（不经过 JSON，直接给播放器用）────────────────────
 
 /**
- * Direct Play / Remux 的地址。
+ * 停 HLS 的地址。
  *
- * 这些都是**给 `<video src>` 用的**，不走 `request()`：
- * 一是响应不是 JSON，二是 Range 请求必须让浏览器自己发 ——
- * 经过 fetch 会把整段视频拉进内存。
+ * 不走 `request()`：响应不是 JSON，而且这个请求常常是页面卸载时发出的，
+ * 走 fetch 反而会被提前取消。
  */
-export function directStreamUrl(fileId: string): string {
-  return `${BASE}/stream/${fileId}`
-}
-
-export function remuxStreamUrl(fileId: string): string {
-  return `${BASE}/stream/${fileId}/remux`
-}
-
-export function hlsMasterUrl(jobId: string): string {
-  return `${BASE}/hls/${jobId}/master.m3u8`
-}
-
 export function stopHlsUrl(jobId: string): string {
   return `${BASE}/hls/${jobId}/stop`
 }
 
-export function externalSubtitleUrl(itemId: string, trackId: string): string {
-  return `${BASE}/subtitles/external${qs({ item_id: itemId, track_id: trackId })}`
+// ── AI 助手（P7）────────────────────────────────────────────
+
+/**
+ * 提问。
+ *
+ * 危险工具不会在这里生效：它们只在回复的 `pending` 里返回一张工单，
+ * 要真正执行得拿 `pending.token` 再打一次 `confirmAi`。
+ */
+export function askAi(message: string, actor?: Partial<AiActor>): Promise<AiChatReply> {
+  return post<AiChatReply>('/ai/chat', { message, ...actor })
+}
+
+/** 确认并执行一张待确认工单。令牌一次性，用过即废。 */
+export function confirmAi(token: string, actor?: Partial<AiActor>): Promise<AiChatReply> {
+  return post<AiChatReply>('/ai/confirm', { token, ...actor })
+}
+
+/**
+ * 当前可用的工具清单。
+ *
+ * 危险工具在未开启时**根本不会出现在这里**，而不是"出现但调用被拒" ——
+ * 后者会让模型反复重试一个永远不可能成功的调用。
+ */
+export function listAiTools(): Promise<ToolSpecView[]> {
+  return request<ToolListReply>('/ai/tools').then((r) => r.data)
+}
+
+/** AI 不可用（未启用 / 运行时没装配）。与"连不上服务端"要分开提示。 */
+export function isAiDisabled(e: unknown): boolean {
+  return e instanceof ApiError && (e.detail.code === 'AI_DISABLED' || e.detail.code === 'DB_UNAVAILABLE')
+}
+
+// ─────────────────────────────────────────────────────────────
+// 电视直播（P8）
+// ─────────────────────────────────────────────────────────────
+
+/** 频道。直播没有时长也没有"看完"，所以它刻意不是 MediaItem。 */
+export type LiveChannel = components['schemas']['LiveChannelView']
+export type LiveSource = components['schemas']['LiveSourceView']
+export type LivePlay = components['schemas']['LivePlayView']
+
+export function listLiveSources(): Promise<LiveSource[]> {
+  return request<LiveSource[]>('/live/sources')
+}
+
+export function createLiveSource(body: {
+  name: string
+  kind: string
+  url?: string
+  epg_url?: string
+}): Promise<LiveSource> {
+  return post<LiveSource>('/live/sources', body)
+}
+
+export function deleteLiveSource(id: string): Promise<{ ok: boolean }> {
+  return del<{ ok: boolean }>(`/live/sources/${id}`)
+}
+
+/** 拉一次订阅并替换频道。返回频道数。 */
+export function syncLiveSource(id: string): Promise<{ source_id: string; channels: number }> {
+  return post<{ source_id: string; channels: number }>(`/live/sources/${id}/sync`)
+}
+
+export function listLiveChannels(): Promise<LiveChannel[]> {
+  return request<LiveChannel[]>('/live/channels')
+}
+
+/**
+ * 起播（或加入已在播的同一频道）。
+ *
+ * 返回的 `playlist_url` 直接喂 hls.js —— 分片的投递与点播是同一套端点，
+ * 前端不需要为直播准备第二条播放路径。
+ */
+export function playLiveChannel(id: string): Promise<LivePlay> {
+  return post<LivePlay>(`/live/channels/${id}/play`)
+}
+
+/** 离开频道。引用计数归零后服务端才真正停掉 ffmpeg。 */
+export function stopLiveChannel(id: string): Promise<{ ok: boolean }> {
+  return post<{ ok: boolean }>(`/live/channels/${id}/stop`)
+}
+
+// ─────────────────────────────────────────────────────────────
+// 鉴权（多用户）
+// ─────────────────────────────────────────────────────────────
+
+/** 创建第一个管理员。**库里已有账户时服务端会 403。** */
+export function bootstrapAdmin(input: {
+  username: string
+  password: string
+  display_name?: string
+}): Promise<{ id: string }> {
+  return post<{ id: string }>('/auth/bootstrap', input)
+}
+
+export function login(input: {
+  username: string
+  password: string
+  device_name?: string
+  device_kind?: 'web' | 'desktop' | 'mobile' | 'tv'
+  platform?: string
+}): Promise<LoginResult> {
+  return post<LoginResult>('/auth/login', input)
+}
+
+export function logout(): Promise<void> {
+  return post<void>('/auth/logout', {})
+}
+
+/** 登出所有设备。家里的电视丢了就用它。 */
+export function logoutAll(): Promise<{ revoked: number }> {
+  return post<{ revoked: number }>('/auth/logout-all', {})
+}
+
+export function me(): Promise<UserOut> {
+  return request<UserOut>('/auth/me')
+}
+
+/**
+ * 给播放地址签一张有时效的 URL。
+ *
+ * **播放器发不出自定义请求头**，所以 `<video src>` 与 hls.js 必须走这条路。
+ * 浏览器其实还带着 Cookie，但电视上的 WebView 与 ExoPlayer 不一定 ——
+ * 统一用签名 URL 才能让六种客户端走同一条路径。
+ */
+export function signStreamUrl(resource: string): Promise<SignedUrlOut> {
+  return post<SignedUrlOut>('/auth/signed-url', { resource })
+}
+
+/** 儿童设备等待批准：`APPROVAL_REQUIRED` 的错误码带一个审批编号。 */
+export function isApprovalRequired(e: unknown): boolean {
+  return e instanceof ApiError && e.detail.code === 'APPROVAL_REQUIRED'
+}
+
+// ─────────────────────────────────────────────────────────────
+// 收藏
+// ─────────────────────────────────────────────────────────────
+
+export type FavoriteRow = components['schemas']['FavoriteRow']
+export type FavoriteState = components['schemas']['FavoriteState']
+export type FavoritePage = components['schemas']['FavoritePage']
+
+/** 我收藏的条目。带条目标题，前端不用再拉一次详情。 */
+export function listMyFavorites(page = 1, pageSize = 50): Promise<FavoritePage> {
+  return request<FavoritePage>(`/me/favorites${qs({ page, page_size: pageSize })}`)
+}
+
+/** 这个条目我收没收、全站多少人收了。 */
+export function getFavorite(itemId: string): Promise<FavoriteState> {
+  return request<FavoriteState>(`/items/${itemId}/favorite`)
+}
+
+/**
+ * 收藏 / 取消收藏。**幂等**：重复设为 true 不会产生第二条记录，
+ * 所以按钮可以随便双击。
+ */
+export function setFavorite(itemId: string, favorite: boolean): Promise<FavoriteState> {
+  return put<FavoriteState>(`/items/${itemId}/favorite`, { favorite })
+}
+
+// ─────────────────────────────────────────────────────────────
+// 通知
+// ─────────────────────────────────────────────────────────────
+
+export type NotificationRow = components['schemas']['NotificationRow']
+export type NotificationList = components['schemas']['NotificationList']
+
+export function listNotifications(opts: {
+  limit?: number
+  unreadOnly?: boolean
+} = {}): Promise<NotificationList> {
+  return request<NotificationList>(
+    `/notifications${qs({ limit: opts.limit, unread_only: opts.unreadOnly })}`,
+  )
+}
+
+export function readNotification(id: string): Promise<void> {
+  return post<void>(`/notifications/${id}/read`)
+}
+
+/** 全部已读。返回实际清掉的条数。 */
+export function readAllNotifications(): Promise<{ updated: number }> {
+  return post<{ updated: number }>('/notifications/read-all')
+}
+
+// ─────────────────────────────────────────────────────────────
+// 设置
+// ─────────────────────────────────────────────────────────────
+
+export type SettingEntry = components['schemas']['SettingEntry']
+export type SettingsView = components['schemas']['SettingsView']
+
+/**
+ * 全部可写设置。
+ *
+ * 管理员拿到 server + user 两档；普通成员只拿到自己的播放偏好 ——
+ * 这个区分是**服务端做的**，前端不该假装过滤。
+ */
+export function getSettings(): Promise<SettingsView> {
+  return request<SettingsView>('/settings')
+}
+
+export function putSetting(key: string, value: string): Promise<SettingEntry> {
+  return put<SettingEntry>('/settings', { key, value })
+}
+
+/** 恢复默认。删掉覆盖行，下次启动（server 级）或立刻（user 级）回到默认。 */
+export function resetSetting(key: string): Promise<void> {
+  return del<void>(`/settings/${encodeURIComponent(key)}`)
+}
+
+// ─────────────────────────────────────────────────────────────
+// 存储统计
+// ─────────────────────────────────────────────────────────────
+
+export type StorageView = components['schemas']['StorageView']
+export type LibraryStorage = components['schemas']['LibraryStorage']
+
+/**
+ * 各媒体库的占用。
+ *
+ * 数字来自数据库里的 `size_bytes`，不是扫盘 —— 所以"某个库占多少"
+ * 是精确值，而磁盘总容量服务端不报（跨平台拿不到可靠的"总量"）。
+ */
+export function storageStats(): Promise<StorageView> {
+  return request<StorageView>('/system/storage')
 }

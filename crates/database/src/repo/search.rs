@@ -8,8 +8,8 @@
 //! 超过 5 万条后评估切换 Tantivy（§75）。
 
 use anyhow::Result;
-use whatmedia_core::Page;
 use sqlx::QueryBuilder;
+use whatmedia_core::Page;
 
 use crate::db::Db;
 use crate::repo::{page_of, ItemQuery, ItemSummary};

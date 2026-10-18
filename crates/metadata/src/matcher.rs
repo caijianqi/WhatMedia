@@ -257,7 +257,7 @@ mod tests {
         assert!(similarity("The Matrix", "Mad Max") < 0.6);
     }
 
-    /// 这条是对 111.md §32 的直接验证：年份差一年仍应匹配，差十年必须拒绝。
+    /// 这条是对 需求稿 §32 的直接验证：年份差一年仍应匹配，差十年必须拒绝。
     #[test]
     fn year_mismatch_is_penalized() {
         let q = MetadataQuery {

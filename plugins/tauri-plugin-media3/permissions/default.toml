@@ -1,0 +1,25 @@
+"$schema" = "../schemas/schema.json"
+
+[default]
+description = "Media3 播放器：载入、控制、轨道切换、取快照、接收事件"
+permissions = [
+    "allow-media3-snapshot",
+    "allow-media3-emit",
+    "allow-media3-clamp_seek",
+    "allow-media3-play",
+    "allow-media3-pause",
+    "allow-media3-stop",
+    "allow-media3-destroy",
+    "allow-media3-seek",
+    "allow-media3-set_volume",
+    "allow-media3-set_muted",
+    "allow-media3-set_rate",
+    "allow-media3-select_audio",
+    "allow-media3-select_subtitle",
+    "allow-media3-select_quality",
+    "allow-media3-set_metadata",
+    "allow-media3-set_pip",
+    "allow-media3-device_form",
+    "allow-media3-event_channel",
+    "allow-media3-status",
+]

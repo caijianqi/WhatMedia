@@ -1,0 +1,10 @@
+[package]
+name = "whatmedia-media3"
+description = "Media3/ExoPlayer 后端协议层（Android/TV 播放器，111 §55 的底层）"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+serde = { workspace = true }
+serde_json = { workspace = true }

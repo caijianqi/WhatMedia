@@ -1,0 +1,122 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  WhatMedia Android 清单。
+
+  三条容易踩的坑，都在这里显式处理了：
+
+  1. `android:hardwareAccelerated` 默认就是 true，但**在 TV 上部分固件会关**。
+     写死为 true，否则视频画面会黑屏（声音正常）—— 这个现象极难定位。
+
+  2. `android:configChanges` 必须包含 `screenLayout|smallestScreenSize|screenSize|orientation`。
+     少了任意一个，旋转屏幕 / 分屏时 Activity 会被销毁重建，
+     播放器实例跟着死掉 → 表现为"横屏就从头开始播"。
+
+  3. `supportsPictureInPicture` + `android:resizeableActivity` 是 PiP 的前提。
+     只声明不够，还得在 Activity 里调 enterPictureInPictureMode()。
+-->
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+
+    <!-- 网络。服务端在局域网/公网，没这个直接白屏。 -->
+    <uses-permission android:name="android.permission.INTERNET" />
+    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
+    <!-- 网络切换（WiFi ↔ 4G）时要知道现在是什么网络，见 P6 的断网恢复。 -->
+    <uses-permission android:name="android.permission.ACCESS_WIFI_STATE" />
+
+    <!-- 前台服务：后台播放必须。缺了它，锁屏 30 秒后播放就停了。 -->
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MEDIA_PLAYBACK" />
+    <!-- Android 13+ 通知栏权限。不申请就没有媒体通知，用户没法从锁屏控制。 -->
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+    <!-- WAKE_LOCK：播放时保持 CPU。不保持会在某些省电策略下被降频到卡顿。 -->
+    <uses-permission android:name="android.permission.WAKE_LOCK" />
+
+    <!-- 仅在 Android 12 及以下需要；13+ 走 POST_NOTIFICATIONS。 -->
+    <uses-permission
+        android:name="android.permission.READ_EXTERNAL_STORAGE"
+        android:maxSdkVersion="32" />
+
+    <!--
+      TV 声明。两件事：
+      · `android.software.leanback` 是系统识别"这是 TV 应用"的依据，
+        没它就不会出现在 TV  launcher 里。
+      · `android.hardware.touchscreen` required=false 是**必须的** ——
+        默认 required=true 会让无触摸屏的 TV 设备在商店里过滤掉本应用。
+        这一行漏掉，TV 上根本装不上，而且报错信息完全不提这回事。
+    -->
+    <uses-feature
+        android:name="android.software.leanback"
+        android:required="false" />
+    <uses-feature
+        android:name="android.hardware.touchscreen"
+        android:required="false" />
+
+    <application
+        android:allowBackup="false"
+        android:fullBackupContent="false"
+        android:hardwareAccelerated="true"
+        android:icon="@mipmap/ic_launcher"
+        android:label="@string/app_name"
+        android:roundIcon="@mipmap/ic_launcher_round"
+        android:supportsRtl="false"
+        android:theme="@style/Theme.WhatMedia"
+        android:banner="@drawable/app_banner">
+
+        <activity
+            android:name=".MainActivity"
+            android:exported="true"
+            android:launchMode="singleTask"
+            android:configChanges="orientation|screenSize|screenLayout|smallestScreenSize|keyboardHidden|density|fontScale|uiMode"
+            android:hardwareAccelerated="true"
+            android:resizeableActivity="true"
+            android:supportsPictureInPicture="true"
+            android:screenOrientation="user"
+            android:theme="@style/Theme.WhatMedia"
+            android:windowSoftInputMode="adjustResize">
+
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+
+            <!-- TV launcher 入口。与手机入口分开声明，两套图标。 -->
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LEANBACK_LAUNCHER" />
+            </intent-filter>
+
+            <!-- 媒体按钮（蓝牙耳机 / 线控）。没有它耳机上的播放键不生效。 -->
+            <intent-filter>
+                <action android:name="android.intent.action.MEDIA_BUTTON" />
+            </intent-filter>
+        </activity>
+
+        <!--
+          MediaSession 的媒体按钮接收器。
+          androidx.media3.session 提供了现成的实现，
+          这里只需声明，不要自己写一个 BroadcastReceiver。
+        -->
+        <receiver
+            android:name="androidx.media3.session.MediaButtonReceiver"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="android.intent.action.MEDIA_BUTTON" />
+            </intent-filter>
+        </receiver>
+
+        <!-- 后台播放用的前台服务。media3 的 MediaSessionService。 -->
+        <service
+            android:name="androidx.media3.session.MediaSessionService"
+            android:exported="true"
+            android:foregroundServiceType="mediaPlayback">
+            <intent-filter>
+                <action android:name="androidx.media3.session.MediaSessionService" />
+            </intent-filter>
+        </service>
+
+        <!--
+          Tauri 自带一个文件选择器 Activity（用于 dialog 插件）。
+          我们不引 dialog 插件，这里也就没有对应声明 ——
+          将来加插件时记得回来补，漏了会在运行时抛 ActivityNotFound。
+        -->
+    </application>
+</manifest>

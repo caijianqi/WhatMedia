@@ -4,6 +4,264 @@
  */
 
 export interface paths {
+    "/api/v1/ai/chat": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["chat"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/ai/confirm": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["confirm"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/ai/tools": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["list_tools"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/auth/approvals": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * 待处理的儿童请求。**任何成人都能看到全部**：只有一位家长的
+         *     家庭里不能因为"这不是我的孩子"就永远没人批得动。
+         */
+        get: operations["list_approvals"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/auth/approvals/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["decide"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/auth/bootstrap": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * 创建第一个账户（管理员）。**库里已有任何账户时返回 403。**
+         * @description 这条规则保护的是"谁是这个服务器的所有者"：只在零用户状态下开放，
+         *     一旦有人占了坑，后面的人必须被邀请。
+         */
+        post: operations["bootstrap"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/auth/devices": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** 当前账户的设备清单 + 在线会话。 */
+        get: operations["list_devices"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/auth/devices/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        delete: operations["revoke_device"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/auth/login": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["login"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/auth/logout": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["logout"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/auth/logout-all": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["logout_all"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/auth/me": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["me"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/auth/signed-url": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * 给播放资源签一张短命 URL。
+         * @description 必须登录后才签发。**不能直接把 `/hls/{job}` 那个 URL 换成永久签名** ——
+         *     那样就等于签了一张能重放的长啥都不限的通行证。这里签的是：
+         *       · 派生钥匙（按 job scope）
+         *       · 数小时过期
+         *       · 只能开这一个 job 目录
+         */
+        post: operations["signed_url"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/auth/users": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["list_accounts"];
+        put?: never;
+        post: operations["create_account"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/auth/users/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        delete: operations["delete_account"];
+        options?: never;
+        head?: never;
+        patch: operations["update_account"];
+        trace?: never;
+    };
     "/api/v1/episodes": {
         parameters: {
             query?: never;
@@ -119,6 +377,45 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/items/{id}/credits": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["item_credits"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/items/{id}/favorite": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** 这个条目的收藏状态（含我自己收没收）。 */
+        get: operations["get_favorite"];
+        /**
+         * 收藏 / 取消收藏一个条目。
+         * @description 用 PUT + 显式 `favorite` 布尔，而不是 POST/DELETE 两条动词：
+         *     详情页那颗心形按钮是**幂等的切换**，"设为已收藏"重复点两次结果一样，
+         *     而 POST 语义上会产生第二条记录。
+         */
+        put: operations["set_favorite"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/items/{id}/identify": {
         parameters: {
             query?: never;
@@ -190,6 +487,28 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/items/{id}/series": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * 条目所属剧集的端点。
+         * @description **为什么是 `/items/{id}/series` 而不是让前端先猜剧集 id**：
+         *     扫描出来的是"一集一个 `media_item`"，前端手里只有条目 id，
+         *     拿不到 series_id。让服务端反查一次，比让前端拿 `/series` 翻页去比对标题可靠。
+         */
+        get: operations["item_series"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/items/{id}/subtitles": {
         parameters: {
             query?: never;
@@ -223,6 +542,132 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/live/channels": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** `GET /api/v1/live/channels` */
+        get: operations["list_channels"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/live/channels/{id}/play": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * `POST /api/v1/live/channels/{id}/play`
+         * @description 同一频道被多人点播时**复用同一个 ffmpeg**：引用计数 +1 就返回同一个 job。
+         */
+        post: operations["play_channel"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/live/channels/{id}/stop": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * `POST /api/v1/live/channels/{id}/stop`
+         * @description 引用计数减一；**归零才停进程**。
+         */
+        post: operations["stop_channel"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/live/sources": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** `GET /api/v1/live/sources` */
+        get: operations["list_sources"];
+        put?: never;
+        /** `POST /api/v1/live/sources` */
+        post: operations["create_source"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/live/sources/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /** `DELETE /api/v1/live/sources/{id}` */
+        delete: operations["delete_source"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/live/sources/{id}/sync": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** `POST /api/v1/live/sources/{id}/sync` —— 拉取订阅并替换频道。 */
+        post: operations["sync_source"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/me/favorites": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** 我收藏的条目。 */
+        get: operations["list_my_favorites"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/media": {
         parameters: {
             query?: never;
@@ -231,6 +676,23 @@ export interface paths {
             cookie?: never;
         };
         get: operations["list_media"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/media/kinds": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** 各类型的条目数。首页的分类 tab 用它决定渲染哪几个 tab。 */
+        get: operations["media_kinds"];
         put?: never;
         post?: never;
         delete?: never;
@@ -316,6 +778,71 @@ export interface paths {
         get: operations["list_movies"];
         put?: never;
         post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/notifications": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["list_notifications"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/notifications/read-all": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** 全部标为已读。返回实际更新的条数 —— 前端要显示"已清空 N 条"。 */
+        post: operations["read_all_notifications"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/notifications/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        delete: operations["delete_notification"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/notifications/{id}/read": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["read_notification"];
         delete?: never;
         options?: never;
         head?: never;
@@ -523,6 +1050,65 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/series/{id}/seasons": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["series_seasons"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/settings": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * 读全部可写设置。
+         * @description 用户级设置按**当前登录者**返回；管理员额外拿到 server 级那一批。
+         */
+        get: operations["get_settings"];
+        /**
+         * 改一条设置。
+         * @description **先过白名单再过校验，最后才落库。** 顺序反过来的话，
+         *     一个非法值会在"看起来写成功了"之后在启动时被拒掉 ——
+         *     那时界面已经打开不了，用户无法自己改回来。
+         */
+        put: operations["put_setting"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/settings/{key}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /** 恢复默认 = 删掉覆盖行。 */
+        delete: operations["reset_setting"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/stream/{id}": {
         parameters: {
             query?: never;
@@ -578,6 +1164,22 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/system/storage": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["storage_stats"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/tasks": {
         parameters: {
             query?: never;
@@ -598,17 +1200,54 @@ export interface paths {
 export type webhooks = Record<string, never>;
 export interface components {
     schemas: {
-        /**
-         * @description 只回一个确认的空信封。
-         *
-         *     心跳 / 停止这类端点没有数据要回，但**必须回一个 body** ——
-         *     `fetch` 对空响应体的 204 与 200 处理不一样，前端容易写错。
-         */
         AckView: {
             ok: boolean;
         };
+        AiChatReply: {
+            /** @description 路由到的 Agent：`media` / `library` / `subtitle` / `maintenance` / `recommendation`。 */
+            agent: string;
+            answer: string;
+            /**
+             * @description true 表示这次是靠规则引擎答的（模型没配 / 连不上）。
+             *     前端据此显示"离线模式"角标，别让用户以为模型真懂他的话。
+             */
+            degraded: boolean;
+            pending?: null | components["schemas"]["PendingActionView"];
+            traces: components["schemas"]["ToolTraceView"][];
+        };
+        AiChatRequest: {
+            /** @description 用户的问题。空串会被直接拒掉。 */
+            message: string;
+            /** @description `owner` / `administrator` / `adult` / `child` / `guest`。缺省 adult。 */
+            role?: string | null;
+            /** @description 操作者 id。待确认令牌与它绑定，换人执行会被拒。 */
+            user_id?: string | null;
+        };
+        AiConfirmRequest: {
+            role?: string | null;
+            token: string;
+            user_id?: string | null;
+        };
+        ApprovalRow: {
+            decided_at?: string | null;
+            decided_by?: string | null;
+            detail?: string | null;
+            device_id?: string | null;
+            id: string;
+            kind: string;
+            note?: string | null;
+            requested_at: string;
+            status: string;
+            title: string;
+            user_id: string;
+        };
         AudioCodec: "aac" | "ac3" | "eac3" | "dts" | "dts_hd" | "true_hd" | "flac" | "opus" | "mp3" | "vorbis" | "pcm" | {
             other: string;
+        };
+        BootstrapInput: {
+            display_name?: string | null;
+            password: string;
+            username: string;
         };
         CacheStats: {
             /** Format: int64 */
@@ -617,6 +1256,14 @@ export interface components {
             entries: number;
             /** Format: int64 */
             hits: number;
+        };
+        CacheUsage: {
+            /** Format: int64 */
+            bytes: number;
+            /** Format: int64 */
+            entries: number;
+            /** @description 目录不存在或读不出来时 true。界面据此显示"暂无缓存"而不是 0B。 */
+            unavailable: boolean;
         };
         CandidateView: {
             confidence: string;
@@ -651,6 +1298,47 @@ export interface components {
             /** Format: int64 */
             start_ms?: number;
         };
+        CreateSourceRequest: {
+            epg_url?: string | null;
+            /** @description 'm3u' | 'xmltv' | 'hdhomerun' | 'dvb' */
+            kind: string;
+            name: string;
+            url?: string | null;
+        };
+        CreateUserInput: {
+            display_name?: string | null;
+            max_rating?: string | null;
+            /** Format: uuid */
+            parent_id?: string | null;
+            password: string;
+            /** @description admin | user | child */
+            role?: string;
+            username: string;
+        };
+        CreditRow: {
+            character?: string | null;
+            person: string;
+            role: string;
+            /** Format: int32 */
+            sort_order: number;
+        };
+        /**
+         * @description 演职员表。
+         *
+         *     拆成 `cast` / `crew` 两组而不是让前端自己按 role 分组：分组规则只有一处
+         *     定义才不会漂移（"actor 是演员、其余都是幕后"这条规则写在服务端）。
+         *     role 的取值来自 `whatmedia_core::provider::MetadataCredit`，存的是小写。
+         */
+        CreditsView: {
+            /** @description 演员。已按 `sort_order` 排好，前端通常只显示前 12 个。 */
+            cast: components["schemas"]["CreditRow"][];
+            /** @description 导演 / 编剧等幕后。同样按 sort_order。 */
+            crew: components["schemas"]["CreditRow"][];
+        };
+        DecideInput: {
+            approved: boolean;
+            note?: string | null;
+        };
         /** @description 决策结果的可序列化视图。 */
         DecideView: {
             /** Format: int32 */
@@ -664,6 +1352,20 @@ export interface components {
             reasons: components["schemas"]["ReasonView"][];
             strategy: components["schemas"]["PlaybackStrategy"];
             subtitles: components["schemas"]["SubtitleView"][];
+        };
+        DeviceRow: {
+            app_version?: string | null;
+            approval_id?: string | null;
+            /** Format: int32 */
+            approved: number;
+            created_at?: string | null;
+            id: string;
+            kind?: string | null;
+            last_ip?: string | null;
+            last_seen_at?: string | null;
+            name: string;
+            platform?: string | null;
+            user_id: string;
         };
         EpisodeParams: {
             /** Format: int32 */
@@ -708,6 +1410,31 @@ export interface components {
             /** Format: int64 */
             removed: number;
         };
+        FavoritePage: {
+            data: components["schemas"]["FavoriteRow"][];
+            /** Format: int64 */
+            total: number;
+        };
+        /** @description 收藏列表里的一行。**带条目信息** —— 只返回 item_id 的话前端还得再拉一次详情。 */
+        FavoriteRow: {
+            added_at: string;
+            /** Format: uuid */
+            item_id: string;
+            kind: string;
+            title: string;
+            /** Format: int32 */
+            year?: number | null;
+        };
+        FavoriteState: {
+            /**
+             * Format: int64
+             * @description 全站有多少人收藏了它。儿童账户也能看到 —— 这不是隐私，是"家里人都爱看"。
+             */
+            count: number;
+            favorite: boolean;
+            /** Format: uuid */
+            item_id: string;
+        };
         FileWithStreams: {
             /** Format: int64 */
             duration_ms?: number | null;
@@ -742,6 +1469,12 @@ export interface components {
             capacity: number;
             ffmpeg?: string | null;
             profiles: components["schemas"]["HardwareProfile"][];
+            /**
+             * @description 实际会写进命令行的设备节点。用户问"为什么没走硬件"时，
+             *     这里是第一现场：profiles 说有 VAAPI，但 render_node 为 None，
+             *     那多半是容器没挂 /dev/dri。
+             */
+            render_node?: string | null;
             streams: number;
         };
         /** @enum {string} */
@@ -768,6 +1501,11 @@ export interface components {
         };
         /** @description 详情：item + 所有版本 + 每个版本的文件 + 每个文件的流。 */
         ItemDetail: components["schemas"]["ItemSummary"] & {
+            /**
+             * @description 类型（动作 / 科幻 …）。**刮削之前是空数组**，不是 null ——
+             *     前端拿到 null 还得自己判空，而"没有类型"和"没刮削过"对 UI 是同一件事。
+             */
+            genres: string[];
             overview?: string | null;
             versions: components["schemas"]["VersionWithFiles"][];
         };
@@ -828,6 +1566,12 @@ export interface components {
             /** Format: int64 */
             skipped: number;
         };
+        /** @description 一个类型有多少条目。 */
+        KindCount: {
+            /** Format: int64 */
+            count: number;
+            kind: components["schemas"]["MediaKind"];
+        };
         /** @description 媒体库。存储、扫描策略、元数据策略的聚合配置点。 */
         Library: {
             /** Format: date-time */
@@ -841,6 +1585,71 @@ export interface components {
             scan_policy: string;
             storage_provider: string;
         };
+        /**
+         * @description 一个媒体库的占用。
+         *
+         *     **全部来自数据库，不扫盘。** 扫一遍几个 TB 的目录要几分钟，
+         *     而这只是设置页的一张卡片 —— 同时 `media_file` 里已经有准确的
+         *     `size_bytes`，扫盘是重复劳动且更慢。
+         */
+        LibraryStorage: {
+            /** Format: int64 */
+            bytes: number;
+            /** Format: int64 */
+            file_count: number;
+            /** Format: uuid */
+            id: string;
+            /** Format: int64 */
+            item_count: number;
+            kind: string;
+            name: string;
+            /**
+             * @description 库根目录现在还在不在。不在的话显示成红色 ——
+             *     这是"盘没挂载"最常见的表现，比任何报错都直观。
+             */
+            reachable: boolean;
+            root_path: string;
+        };
+        LiveChannelView: {
+            /**
+             * Format: int64
+             * @description 时移窗口（秒）。0 = 只能看实时边缘。
+             */
+            dvr_window_secs: number;
+            group?: string | null;
+            id: string;
+            logo_url?: string | null;
+            name: string;
+            /** @description 当前节目（有 EPG 才有） */
+            now_playing?: string | null;
+            /** Format: int64 */
+            number?: number | null;
+            /**
+             * Format: int64
+             * @description 现在有多少人在看（供 UI 显示与自检引用计数）
+             */
+            viewers: number;
+        };
+        LivePlayView: {
+            /** Format: int64 */
+            dvr_window_secs: number;
+            job_id: string;
+            live: boolean;
+            /** @description master 播放列表，直接喂 hls.js */
+            playlist_url: string;
+        };
+        LiveSourceView: {
+            /** Format: int64 */
+            channel_count: number;
+            enabled: boolean;
+            epg_url?: string | null;
+            id: string;
+            kind: string;
+            last_sync_at?: string | null;
+            name: string;
+            sync_error?: string | null;
+            url?: string | null;
+        };
         LockRequest: {
             /** @description 要锁定或解锁的字段名。 */
             fields: string[];
@@ -850,6 +1659,28 @@ export interface components {
             locked_fields: string[];
             /** @description 被拒绝的字段名（不在白名单里）。UI 应当提示用户。 */
             rejected: string[];
+        };
+        LoginInput: {
+            /** @description web | desktop | mobile | tv。默认 web。 */
+            device_kind?: string | null;
+            /** @description 设备名。首次登录时用它登记设备；同一台重复登录会复用同一条记录。 */
+            device_name?: string | null;
+            password: string;
+            platform?: string | null;
+            username: string;
+        };
+        LoginResult: {
+            /**
+             * Format: uuid
+             * @description 儿童账户的设备等待审批时非空。
+             */
+            approval_id?: string | null;
+            expires_at: string;
+            /** Format: uuid */
+            session_id: string;
+            /** @description 会话票据。**只在这一次响应里出现**：服务端存的是它的 SHA-256。 */
+            token: string;
+            user: components["schemas"]["UserOut"];
         };
         /** @description 一个物理文件。可能位于任意 StorageProvider 上。 */
         MediaFile: {
@@ -899,6 +1730,30 @@ export interface components {
             title?: string | null;
             /** Format: int32 */
             width?: number | null;
+        };
+        NotificationList: {
+            data: components["schemas"]["NotificationRow"][];
+            /**
+             * Format: int64
+             * @description 待家长审批的设备数。**只对管理员有意义** —— 其余人恒为 0。
+             *
+             *     它是从 `approval_request` 现算的，不是通知表里的一条记录：
+             *     审批有状态（批了就没了），塞进通知表就得回头去删，多一份可能不一致的数据。
+             */
+            pending_approvals: number;
+            /** Format: int64 */
+            unread: number;
+        };
+        NotificationRow: {
+            body?: string | null;
+            created_at: string;
+            /** Format: uuid */
+            id: string;
+            kind: string;
+            level: string;
+            link?: string | null;
+            read_at?: string | null;
+            title: string;
         };
         PageInfo: {
             /** Format: int32 */
@@ -962,6 +1817,22 @@ export interface components {
             /** Format: int32 */
             page_size?: number;
         };
+        PendingActionView: {
+            /**
+             * Format: int64
+             * @description 剩余秒数。前端做倒计时用，到 0 令牌即失效。
+             */
+            expires_in_secs: number;
+            id: string;
+            lines: string[];
+            /** @description `read_only` / `write` / `destructive`。 */
+            risk: string;
+            summary: string;
+            /** @description 一次性令牌。**不要**把它当成身份凭证：它只证明"用户看过这份预览"。 */
+            token: string;
+            tool: string;
+            warnings: string[];
+        };
         /** @description 播放器数据源。客户端与服务端通过它解耦物理位置。 */
         PlaybackSource: {
             /** Format: uuid */
@@ -990,6 +1861,10 @@ export interface components {
         };
         /** @enum {string} */
         PlaybackStrategy: "direct_play" | "remux" | "transcode" | "unsupported";
+        ReadAllResult: {
+            /** Format: int64 */
+            updated: number;
+        };
         ReasonView: {
             code: string;
             message: string;
@@ -1094,6 +1969,22 @@ export interface components {
         SearchParams: components["schemas"]["ItemQuery"] & {
             q: string;
         };
+        SeasonSummary: {
+            /** Format: int64 */
+            episode_count: number;
+            /** Format: uuid */
+            id: string;
+            /** Format: int32 */
+            number: number;
+        };
+        /** @description 条目所属的剧。只带详情页够用的三个字段。 */
+        SeriesRef: {
+            /** Format: uuid */
+            id: string;
+            title: string;
+            /** Format: int32 */
+            year?: number | null;
+        };
         SeriesSummary: {
             /** Format: int64 */
             episode_count: number;
@@ -1121,6 +2012,59 @@ export interface components {
             /** @description Direct Play 用这个。 */
             url?: string | null;
         };
+        SetFavoriteInput: {
+            favorite: boolean;
+        };
+        SetSettingInput: {
+            key: string;
+            value: string;
+        };
+        /**
+         * @description 界面渲染设置表单所需的全部信息。
+         *
+         *     `value` 是**当前生效值**，`default` 是 TOML/环境变量给的值 ——
+         *     两者不同就说明这条被改过，界面上要显示"已改动"和一个"恢复默认"按钮。
+         *     少了 `default` 的话用户根本不知道自己改没改过。
+         */
+        SettingEntry: {
+            choices: string[];
+            default: string;
+            hint: string;
+            key: string;
+            kind: string;
+            label: string;
+            /** Format: double */
+            max?: number | null;
+            /** Format: double */
+            min?: number | null;
+            overridden: boolean;
+            /**
+             * @description 改完要不要重启服务才生效。
+             *
+             *     **当前 server 级全部是 true**：刮削器、图片缓存、转码运行时都是在
+             *     启动时按配置构造好的，改配置没法热替换它们。
+             *     宁可如实写着"要重启"，也不要假装即时生效。
+             */
+            restart_required: boolean;
+            scope: string;
+            value: string;
+        };
+        SettingsView: {
+            entries: components["schemas"]["SettingEntry"][];
+            /**
+             * @description 启动时被拒掉的覆盖项。正常情况下是空的；
+             *     有内容说明有人在库里写了不合法的值，界面上要露出来而不是静默忽略。
+             */
+            rejected: string[];
+        };
+        SignedUrlInput: {
+            /** @description 需要签名的路径，必须是 `/api/v1/stream/...` 或 `/api/v1/hls/...`。 */
+            resource: string;
+        };
+        SignedUrlOut: {
+            expires_at: string;
+            url: string;
+        };
         /**
          * @description 排序方向。
          * @enum {string}
@@ -1133,6 +2077,19 @@ export interface components {
          */
         StatusView: {
             status: string;
+        };
+        StorageView: {
+            /**
+             * @description 缓存目录（图片 + HLS 分片）的占用。
+             *
+             *     **这个是真的扫盘**：图片缓存不在数据库里有大小记录，
+             *     而 HLS 分片更是短命的临时文件。走一遍目录是唯一准的办法，
+             *     所以调用频率必须低 —— 前端只在设置页打开时拉一次。
+             */
+            cache: components["schemas"]["CacheUsage"];
+            libraries: components["schemas"]["LibraryStorage"][];
+            /** Format: int64 */
+            total_bytes: number;
         };
         /** @description 流式输出的输出目录与生命周期状态。 */
         StreamSession: {
@@ -1173,6 +2130,47 @@ export interface components {
             track_id: string;
             url?: string | null;
         };
+        SyncReply: {
+            channels: number;
+            source_id: string;
+        };
+        /** @description 列表端点统一走 `{ data: [...] }`，与项目其余部分一致。 */
+        ToolListReply: {
+            data: components["schemas"]["ToolSpecView"][];
+        };
+        ToolParamView: {
+            description: string;
+            kind: string;
+            name: string;
+            required: boolean;
+        };
+        ToolSpecView: {
+            description: string;
+            name: string;
+            params: components["schemas"]["ToolParamView"][];
+            risk: string;
+        };
+        ToolTraceView: {
+            ok: boolean;
+            summary: string;
+            tool: string;
+        };
+        UpdateUserInput: {
+            disabled?: boolean | null;
+            max_rating?: string | null;
+            /** Format: uuid */
+            parent_id?: string | null;
+            role?: string | null;
+        };
+        UserOut: {
+            disabled: boolean;
+            display_name?: string | null;
+            /** Format: uuid */
+            id: string;
+            max_rating?: string | null;
+            role: string;
+            username: string;
+        };
         VersionWithFiles: {
             files: components["schemas"]["FileWithStreams"][];
             hdr_type: string;
@@ -1195,6 +2193,759 @@ export interface components {
 }
 export type $defs = Record<string, never>;
 export interface operations {
+    chat: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AiChatRequest"];
+            };
+        };
+        responses: {
+            /** @description 回答。危险工具会在 `pending` 里返回待确认工单 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AiChatReply"];
+                };
+            };
+            /** @description 问题为空 */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description 角色无权执行该操作 */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description AI 未启用或运行时未装配 */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+        };
+    };
+    confirm: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AiConfirmRequest"];
+            };
+        };
+        responses: {
+            /** @description 已执行 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AiChatReply"];
+                };
+            };
+            /** @description 令牌为空或参数被改过 */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description 令牌属于另一个用户 */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description 令牌已用过 */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description 令牌已过期 */
+            410: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description AI 未启用 */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+        };
+    };
+    list_tools: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description 当前可用的工具。危险工具未开启时不出现在列表里 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ToolListReply"];
+                };
+            };
+            /** @description AI 未启用 */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+        };
+    };
+    list_approvals: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description 待处理的儿童请求 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApprovalRow"][];
+                };
+            };
+            /** @description 未认证 */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description 仅成人 */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+        };
+    };
+    decide: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description 审批请求 id */
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["DecideInput"];
+            };
+        };
+        responses: {
+            /** @description 已审批；批准时连带放行设备 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description 该请求已被处理 */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description 未认证 */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description 仅成人 */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description 请求不存在 */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+        };
+    };
+    bootstrap: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["BootstrapInput"];
+            };
+        };
+        responses: {
+            /** @description 管理员已创建 */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description 口令不合策略 */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description 库里已有账户，首次安装通道已关闭 */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description 数据库未就绪 */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+        };
+    };
+    list_devices: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description 自己的设备与在线会话（不含 token_hash） */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description 未认证 */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+        };
+    };
+    revoke_device: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description 设备 id */
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description 设备已移除 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description 未认证 */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description 设备不存在或不属于当前账户 */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+        };
+    };
+    login: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["LoginInput"];
+            };
+        };
+        responses: {
+            /** @description 登录成功 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["LoginResult"];
+                };
+            };
+            /** @description 用户名或口令不对 */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description 账户已停用 / 设备等待家长批准 */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description 连续失败过多，账户已临时锁定 */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description 数据库未就绪 */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+        };
+    };
+    logout: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description 当前会话已吊销 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description 未认证 */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description 会话不存在 */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+        };
+    };
+    logout_all: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description 该账户的全部会话已吊销 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description 未认证 */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+        };
+    };
+    me: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description 当前身份 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["UserOut"];
+                };
+            };
+            /** @description 未认证 */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+        };
+    };
+    signed_url: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SignedUrlInput"];
+            };
+        };
+        responses: {
+            /** @description 带 exp/sig 的短命 URL */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SignedUrlOut"];
+                };
+            };
+            /** @description 资源不是播放路径 */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description 未认证 */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+        };
+    };
+    list_accounts: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description 账户清单（不含任何密文） */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["UserOut"][];
+                };
+            };
+            /** @description 未认证 */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description 仅管理员 */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+        };
+    };
+    create_account: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CreateUserInput"];
+            };
+        };
+        responses: {
+            /** @description 已创建 */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description 角色未知或口令不合策略 */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description 未认证 */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description 仅管理员 */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+        };
+    };
+    delete_account: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description 账户 id */
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description 已删除（会话与设备级联） */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description 不能删除自己 */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description 未认证 */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description 仅管理员 */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description 账户不存在 */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+        };
+    };
+    update_account: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description 账户 id */
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["UpdateUserInput"];
+            };
+        };
+        responses: {
+            /** @description 已更新 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description 参数非法（例如停用自己） */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description 未认证 */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description 仅管理员 */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+        };
+    };
     list_episodes: {
         parameters: {
             query?: {
@@ -1410,6 +3161,113 @@ export interface operations {
             };
         };
     };
+    item_credits: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description 条目 id */
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description 成功 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CreditsView"];
+                };
+            };
+            /** @description 数据库未就绪 */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+        };
+    };
+    get_favorite: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description 收藏状态 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["FavoriteState"];
+                };
+            };
+            /** @description 未认证 */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+        };
+    };
+    set_favorite: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SetFavoriteInput"];
+            };
+        };
+        responses: {
+            /** @description 已更新 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["FavoriteState"];
+                };
+            };
+            /** @description 未认证 */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description 条目不存在 */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+        };
+    };
     identify: {
         parameters: {
             query?: never;
@@ -1548,6 +3406,38 @@ export interface operations {
             };
         };
     };
+    item_series: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description 条目 id */
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description 成功 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": null | components["schemas"]["SeriesRef"];
+                };
+            };
+            /** @description 数据库未就绪 */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+        };
+    };
     item_subtitles: {
         parameters: {
             query?: never;
@@ -1660,6 +3550,266 @@ export interface operations {
             };
         };
     };
+    list_channels: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description 频道列表 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["LiveChannelView"][];
+                };
+            };
+            /** @description 数据库不可用 */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+        };
+    };
+    play_channel: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description 频道 id */
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description 已在拉流 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["LivePlayView"];
+                };
+            };
+            /** @description 频道不存在 */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description ffmpeg 不可用或起不来 */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+        };
+    };
+    stop_channel: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description 频道 id */
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description 已释放 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AckView"];
+                };
+            };
+        };
+    };
+    list_sources: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description 直播源列表 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["LiveSourceView"][];
+                };
+            };
+            /** @description 数据库不可用 */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+        };
+    };
+    create_source: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CreateSourceRequest"];
+            };
+        };
+        responses: {
+            /** @description 已创建 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["LiveSourceView"];
+                };
+            };
+            /** @description 参数不合法 */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+        };
+    };
+    delete_source: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description 直播源 id */
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description 已删除 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AckView"];
+                };
+            };
+            /** @description 不存在 */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+        };
+    };
+    sync_source: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description 直播源 id */
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description 同步完成 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SyncReply"];
+                };
+            };
+            /** @description 源不存在 */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description 订阅下载失败或格式不对 */
+            502: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+        };
+    };
+    list_my_favorites: {
+        parameters: {
+            query?: {
+                page?: number;
+                page_size?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description 收藏列表 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["FavoritePage"];
+                };
+            };
+            /** @description 未认证 */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+        };
+    };
     list_media: {
         parameters: {
             query?: {
@@ -1691,6 +3841,35 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["Page_ItemSummary"];
+                };
+            };
+            /** @description 数据库未就绪 */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+        };
+    };
+    media_kinds: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description 成功 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["KindCount"][];
                 };
             };
             /** @description 数据库未就绪 */
@@ -1871,6 +4050,143 @@ export interface operations {
             };
             /** @description 数据库未就绪 */
             503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+        };
+    };
+    list_notifications: {
+        parameters: {
+            query?: {
+                limit?: number;
+                unread_only?: boolean;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description 通知列表 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["NotificationList"];
+                };
+            };
+            /** @description 未认证 */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+        };
+    };
+    read_all_notifications: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description 已全部标记 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ReadAllResult"];
+                };
+            };
+            /** @description 未认证 */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+        };
+    };
+    delete_notification: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description 已删除 */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description 未认证 */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description 不是你的通知 */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+        };
+    };
+    read_notification: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description 已标记 */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description 未认证 */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description 不是你的通知或已读 */
+            404: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -2317,6 +4633,156 @@ export interface operations {
             };
         };
     };
+    series_seasons: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description 剧集 id */
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description 成功 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SeasonSummary"][];
+                };
+            };
+            /** @description 数据库未就绪 */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+        };
+    };
+    get_settings: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description 设置项 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SettingsView"];
+                };
+            };
+            /** @description 未认证 */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+        };
+    };
+    put_setting: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SetSettingInput"];
+            };
+        };
+        responses: {
+            /** @description 已保存 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SettingEntry"];
+                };
+            };
+            /** @description 键不在白名单内或值不合法 */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description 未认证 */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description 无权改 server 级设置 */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+        };
+    };
+    reset_setting: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                key: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description 已恢复默认 */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description 键不在白名单内 */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description 无权改 server 级设置 */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+        };
+    };
     stream_direct: {
         parameters: {
             query?: never;
@@ -2436,6 +4902,35 @@ export interface operations {
             };
             /** @description 字幕不存在或不在库内 */
             404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+        };
+    };
+    storage_stats: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description 存储占用 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["StorageView"];
+                };
+            };
+            /** @description 未认证 */
+            401: {
                 headers: {
                     [name: string]: unknown;
                 };

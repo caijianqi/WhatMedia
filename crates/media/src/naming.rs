@@ -11,9 +11,9 @@
 //!
 //! 顺序不能随意调换：先抽季集，是因为 `S01E01` 里的数字会干扰年份与分辨率判断。
 
-use whatmedia_core::HdrType;
 use regex::Regex;
 use std::sync::LazyLock;
+use whatmedia_core::HdrType;
 
 /// 解析结果。所有字段都是"尽力而为"，缺了就 None，绝不猜。
 #[derive(Debug, Clone, Default, PartialEq, Eq)]

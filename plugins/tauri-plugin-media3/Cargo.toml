@@ -1,0 +1,36 @@
+[package]
+name = "tauri-plugin-media3"
+description = "Media3/ExoPlayer 播放器插件（Android / Android TV，111 §55）"
+version = "0.1.0"
+edition = "2021"
+rust-version = "1.98"
+license = "MIT OR Apache-2.0"
+repository = "https://github.com/whatmedia/whatmedia"
+
+[dependencies]
+# 语义层（错误码分类、轨道标签、seek 收敛…）在主 workspace 的 crates/media3 里，
+# 那边有 39 条测试。本 crate 只做桥接，不重复实现任何语义。
+whatmedia-media3 = { path = "../../crates/media3" }
+
+# 只用 `tauri::plugin::Builder`，不直接依赖 `tauri-plugin` crate。
+# 原因：`tauri-plugin 2.7.1` 会拉进 `schemars 0.8.22`，
+# 而后者与 `indexmap 1.9` 的组合在标准环境下编译不过（E0107，上游问题）。
+# 权限清单因此手写（见 permissions/），不用 build.rs 生成。
+tauri = { version = "2", features = [] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+thiserror = "2"
+
+# ── 上游缺陷的绕行钉子，本 crate 不直接用 indexmap ──────────────
+#
+# `tauri / tauri-utils → schemars 0.8.22 → indexmap 1.9.3`。
+# indexmap 1.x 的 `std` 是**可选特性且不在 default 里**，
+# 而 schemars 只开了 `serde-1` 没开 `std`。
+# 结果是 indexmap 按 no_std 编译，`IndexMap<K, V, S>` 丢掉第三个参数的默认值，
+# schemars 里写成 `IndexMap<K, V>` 的地方就报 E0107。
+#
+# 只要在依赖图里**有任何人**打开 indexmap 1.x 的 std，问题就消失。
+# 这里显式开一次。等上游（schemars 升到 0.9+ / tauri 换了依赖）修好后删掉这行。
+# 同样的钉子在 client/src-tauri/Cargo.toml 里也有一份 —— 两处是独立的依赖图，
+# 各自都要钉。
+indexmap = { version = "1", features = ["std"], default-features = false }

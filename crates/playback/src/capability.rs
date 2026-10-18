@@ -7,10 +7,10 @@
 //! 分开的理由：能力可以从 HTTP 头 / ffprobe / 启动自检里各自拿到，
 //! 而策略只有一份。混在一起就没法单独测"这个客户端能不能放 AV1"。
 
+use serde::{Deserialize, Serialize};
 use whatmedia_core::{
     AudioCodec, Container, HdrType, MediaFile, MediaStream, StreamType, SubtitleCodec, VideoCodec,
 };
-use serde::{Deserialize, Serialize};
 
 use whatmedia_subtitle::ExternalSubtitle;
 
@@ -392,10 +392,6 @@ impl MediaCapability {
             .find(|a| a.is_default && client.supports_audio(&a.codec))
             .or_else(|| self.audio.iter().find(|a| client.supports_audio(&a.codec)))
     }
-
-    pub fn has_video(&self) -> bool {
-        self.video.is_some()
-    }
 }
 
 // ─────────────────────────────────────────────────────────────
@@ -408,6 +404,11 @@ pub struct ServerCapability {
     pub ffmpeg_available: bool,
     /// 可用后端（含软件）。按顺序尝试。
     pub encoders: Vec<whatmedia_core::HardwareProfile>,
+    /// 拼硬件参数所需的机器细节（render 节点 / 核数 / 内存）。
+    ///
+    /// `HardwareProfile` 只说"有 VAAPI"，拼 `-vaapi_device` 还得知道是
+    /// renderD128 还是 renderD129。这些是探测时顺手就能拿到的，别丢。
+    pub accel_ctx: whatmedia_transcoder::AccelContext,
     /// 正在跑的转码数。
     pub active_transcodes: usize,
 }
@@ -417,6 +418,7 @@ impl ServerCapability {
         Self {
             ffmpeg_available: false,
             encoders: Vec::new(),
+            accel_ctx: whatmedia_transcoder::AccelContext::default(),
             active_transcodes: 0,
         }
     }
@@ -435,19 +437,6 @@ impl ServerCapability {
             .max()
             .unwrap_or(0);
         self.ffmpeg_available && self.active_transcodes < max.max(1)
-    }
-
-    /// 服务端能编的所有视频格式。
-    pub fn encodable(&self) -> Vec<VideoCodec> {
-        let mut out: Vec<VideoCodec> = Vec::new();
-        for p in &self.encoders {
-            for c in &p.encoders {
-                if !out.contains(c) {
-                    out.push(c.clone());
-                }
-            }
-        }
-        out
     }
 }
 

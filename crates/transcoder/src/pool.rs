@@ -7,10 +7,10 @@
 //! 做法：主信号量 + **一个只为 Critical 保留的备用槽**。
 //! Critical 同时在两条队列上等，谁先给就用谁 —— 播放永远有路可走。
 
-use whatmedia_core::TaskPriority;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
 use tokio::sync::{OwnedSemaphorePermit, Semaphore};
+use whatmedia_core::TaskPriority;
 
 /// 转码并发池。
 #[derive(Debug, Clone)]

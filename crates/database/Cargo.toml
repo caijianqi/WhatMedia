@@ -12,6 +12,8 @@ openapi = ["dep:utoipa", "whatmedia-core/openapi"]
 utoipa = { workspace = true, optional = true }
 whatmedia-core = { workspace = true }
 whatmedia-config = { workspace = true }
+# 直播的频道/节目草稿类型来自 crates/live（repo 只消费它的类型，不写解析逻辑）。
+whatmedia-live = { workspace = true }
 sqlx = { workspace = true }
 anyhow = { workspace = true }
 thiserror = { workspace = true }
@@ -21,4 +23,7 @@ uuid = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
 async-trait = { workspace = true }
+tokio = { workspace = true }
+
+[dev-dependencies]
 tokio = { workspace = true }

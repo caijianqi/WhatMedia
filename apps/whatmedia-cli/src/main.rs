@@ -5,13 +5,13 @@
 
 use anyhow::{Context, Result};
 use clap::{Parser, Subcommand};
+use std::path::PathBuf;
+use std::sync::Arc;
 use whatmedia_config::AppConfig;
 use whatmedia_core::MediaKind;
 use whatmedia_database::{repo, Db};
 use whatmedia_scanner::{ScanConfig, ScanControl, ScanProgress, Scanner};
 use whatmedia_storage::LocalStorage;
-use std::path::PathBuf;
-use std::sync::Arc;
 
 #[derive(Parser)]
 #[command(name = "whatmedia-cli", about = "WhatMedia 运维命令行", version)]
@@ -472,7 +472,11 @@ fn build_scraper(
              或 WHATMEDIA_METADATA_BANGUMI=1"
         );
     }
-    Ok(whatmedia_metadata::Scraper::new(db.clone(), providers, scrape))
+    Ok(whatmedia_metadata::Scraper::new(
+        db.clone(),
+        providers,
+        scrape,
+    ))
 }
 
 async fn scrape_cmd(
@@ -681,7 +685,8 @@ async fn play_cmd(
     let file_id: whatmedia_core::Id = match file {
         Some(f) => parse_id(&f)?,
         None => {
-            let item_id: whatmedia_core::Id = parse_id(&item.context("需要 --item 或 --file 之一")?)?;
+            let item_id: whatmedia_core::Id =
+                parse_id(&item.context("需要 --item 或 --file 之一")?)?;
             let files = repo::files_for_item(db, item_id).await?;
             let (f, _) = files
                 .into_iter()
@@ -721,15 +726,15 @@ async fn play_cmd(
         .clone()
         .unwrap_or_else(|| "ffmpeg".to_string());
     let runner = whatmedia_transcoder::FfmpegRunner::new(&ffmpeg_bin);
+    let machine = whatmedia_hardware::detect_machine(&whatmedia_hardware::RealEnv::new());
     let server = whatmedia_playback::ServerCapability {
         ffmpeg_available: runner.is_available().await,
-        encoders: whatmedia_hardware::build_accels(&whatmedia_hardware::detect_machine(
-            &whatmedia_hardware::RealEnv::new(),
-        ))
-        .iter()
-        .filter_map(|a| a.probe().ok())
-        .collect(),
+        encoders: whatmedia_hardware::build_accels(&machine)
+            .iter()
+            .filter_map(|a| a.probe().ok())
+            .collect(),
         active_transcodes: 0,
+        accel_ctx: machine.accel_context(),
     };
 
     let d = whatmedia_playback::decide(whatmedia_playback::DecisionInput {
@@ -769,7 +774,27 @@ async fn play_cmd(
             println!("原因      [{}] {}", r.code(), r.message());
         }
     }
-    if let Some(req) = &d.stream {
+    // 决策层不知道真实路径（`StreamRequest.input` 留空由调用方填），
+    // 预览里不填就会打出一条 `-i ` 后面没有参数的命令 —— 看着像 bug 其实是漏填。
+    let mut preview = d;
+    if let Some(req) = preview.stream.as_mut() {
+        req.input = target.file.path.clone();
+    }
+
+    if !preview.accel_chain.is_empty() {
+        // 候选链是"硬件失败会往哪退"的答案，必须打印出来 ——
+        // 否则用户看到软转很慢，却无从判断是硬件没探到还是降级了。
+        println!(
+            "\n转码后端链  {}",
+            preview
+                .accel_chain
+                .iter()
+                .map(|a| a.id.clone())
+                .collect::<Vec<_>>()
+                .join(" → ")
+        );
+    }
+    if let Some(req) = &preview.stream {
         let args = whatmedia_transcoder::build_args(req);
         println!("\nffmpeg 参数（{} 个）：", args.len());
         println!("  ffmpeg {}", args.join(" "));
@@ -783,9 +808,9 @@ async fn play_cmd(
             );
         }
     }
-    if !d.subtitle_plans.is_empty() {
+    if !preview.subtitle_plans.is_empty() {
         println!("\n字幕投递：");
-        for p in &d.subtitle_plans {
+        for p in &preview.subtitle_plans {
             println!("  {}\t{:?}\t{}", p.track_id, p.mode, p.reason);
         }
     }

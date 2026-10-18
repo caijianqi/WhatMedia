@@ -1,0 +1,7 @@
+# 手写，不是生成的。见 Cargo.toml 与 ADR-0005 的说明。
+# 增删命令时必须同步改 permissions/default.toml 与本目录。
+
+[[permission]]
+identifier = "allow-media3-status"
+description = "允许调用 media3_status 命令，无预置作用域。"
+commands.allow = ["media3_status"]

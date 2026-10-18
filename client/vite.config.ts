@@ -1,4 +1,4 @@
-import { defineConfig } from 'vitest/config'
+import { defineConfig } from 'vite'
 import vue from '@vitejs/plugin-vue'
 
 // Tauri 要求固定端口 + 禁用 host 检查；Web 构建走默认配置。
@@ -6,7 +6,15 @@ const host = process.env.TAURI_DEV_HOST
 
 export default defineConfig({
   plugins: [vue()],
+  css: {
+    postcss: {
+      plugins: [],
+    },
+  },
   clearScreen: false,
+  // 缓存目录钉在项目内。默认会落到系统临时目录，而在受限的 Windows
+  // 环境里往那里写会 EPERM —— 表现是测试文件随机少跑一个，很难查。
+  cacheDir: 'node_modules/.vite',
   server: {
     port: 1420,
     strictPort: true,
@@ -34,4 +42,4 @@ export default defineConfig({
     include: ['src/**/*.test.ts'],
     globals: true,
   },
-})
+} as any)

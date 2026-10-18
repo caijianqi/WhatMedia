@@ -14,7 +14,12 @@ use axum::{
     response::{IntoResponse, Response},
     Json,
 };
-use chrono::Utc;
+use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
+use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
+use std::sync::{Arc, Mutex};
+use tokio_util::io::ReaderStream;
+use tracing::warn;
 use whatmedia_core::{
     ByteRange, Container, HardwareProfile, Id, MediaStream, PlaybackStrategy, StorageProvider,
     TaskPriority,
@@ -28,12 +33,6 @@ use whatmedia_transcoder::{
     build_args, master_playlist, FfmpegRunner, OutputSpec, StreamRequest, TempDirGuard,
     TranscodePool,
 };
-use serde::{Deserialize, Serialize};
-use std::collections::HashMap;
-use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
-use std::sync::{Arc, Mutex};
-use tokio_util::io::ReaderStream;
-use uuid::Uuid;
 
 use crate::{bad_request, error_response, internal, unavailable, AppState};
 
@@ -93,6 +92,8 @@ impl StreamRegistry {
 pub struct TranscodeRuntime {
     pub ffmpeg: Option<Arc<FfmpegRunner>>,
     pub profiles: Vec<HardwareProfile>,
+    /// 拼硬件参数用的机器细节（render 节点 / 核数 / 内存）。
+    pub accel_ctx: whatmedia_transcoder::AccelContext,
     pub pool: Arc<TranscodePool>,
     pub streams: StreamRegistry,
     pub active: Arc<AtomicUsize>,
@@ -104,6 +105,7 @@ impl TranscodeRuntime {
         ffmpeg: Option<Arc<FfmpegRunner>>,
         profiles: Vec<HardwareProfile>,
         hls_root: std::path::PathBuf,
+        accel_ctx: whatmedia_transcoder::AccelContext,
     ) -> Self {
         let capacity = profiles
             .iter()
@@ -114,6 +116,7 @@ impl TranscodeRuntime {
         Self {
             ffmpeg,
             profiles,
+            accel_ctx,
             pool: Arc::new(TranscodePool::new(capacity)),
             streams: StreamRegistry::default(),
             active: Arc::new(AtomicUsize::new(0)),
@@ -127,6 +130,7 @@ impl TranscodeRuntime {
             ffmpeg_available: self.ffmpeg.is_some(),
             encoders: self.profiles.clone(),
             active_transcodes: self.active.load(Ordering::SeqCst),
+            accel_ctx: self.accel_ctx.clone(),
         }
     }
 }
@@ -410,7 +414,15 @@ pub async fn create_playback_session(
         req.input = target.file.path.clone();
         match &req.output {
             OutputSpec::Hls { .. } => {
-                let job = match start_hls(&state, &target, req.clone(), session.id).await {
+                let job = match start_hls(
+                    &state,
+                    &target,
+                    req.clone(),
+                    session.id,
+                    d.accel_chain.clone(),
+                )
+                .await
+                {
                     Ok(j) => j,
                     Err(e) => return internal(e),
                 };
@@ -757,6 +769,7 @@ pub async fn stream_remux(
                 burn: None,
                 output: OutputSpec::PipeTs,
                 accel: None,
+                live: false,
             }
         }
     };
@@ -811,13 +824,29 @@ pub struct RemuxParams {
 // HLS
 // ─────────────────────────────────────────────────────────────
 
+/// 把 ffmpeg 的输出目录改成 job 目录。
+///
+/// **决策层只能按 file_id 给一个占位目录** —— 那时 job 还没出生，
+/// 而 `start_hls` 的 `TempDirGuard` 建的是 job 目录。不覆盖就会变成：
+/// 守卫建 A 目录、ffmpeg 往 B 目录写，而 B 从来没被创建，
+/// 于是每个 HLS 任务都以 `Failed to open file .../seg_00000.ts` 告终。
+///
+/// 这个 bug 单元测试一度抓不到：MockRunner 不做任何真实 IO，
+/// 参数"看起来完全正确"。是本机真跑 HLS 才暴露出来的。
+fn rewrite_hls_dir(req: &mut StreamRequest, job_dir: &std::path::Path) {
+    if let OutputSpec::Hls { ref mut dir, .. } = req.output {
+        *dir = job_dir.to_string_lossy().to_string();
+    }
+}
+
 /// 启动一个 HLS 输出任务。目录由 `TempDirGuard` 持有，
 /// ffmpeg 进程一结束（正常完成、失败、被取消）目录就被删掉。
 async fn start_hls(
     state: &AppState,
     target: &FileTarget,
-    req: StreamRequest,
+    mut req: StreamRequest,
     session_id: Id,
+    accel_chain: Vec<whatmedia_transcoder::AccelArgs>,
 ) -> anyhow::Result<Id> {
     let Some(ffmpeg) = state.transcode.ffmpeg.clone() else {
         return Err(anyhow::anyhow!("ffmpeg 不可用"));
@@ -825,7 +854,12 @@ async fn start_hls(
     let job_id = Id::new_v4();
     let dir = state.transcode.hls_root.join(job_id.to_string());
 
+    // 见 `rewrite_hls_dir`：决策层给的是 file_id 占位目录，这里改成 job 目录。
+    rewrite_hls_dir(&mut req, &dir);
+
     let guard = TempDirGuard::create(&dir)?;
+    // 入库的是首选后端的参数；真跑起来降级了，用 set_stream_state 之外的地方
+    // 记录不下"实际用了哪个后端"，所以降级只在日志里留痕（诊断够用）。
     let args = build_args(&req);
     let cancel = Arc::new(AtomicBool::new(false));
 
@@ -864,8 +898,9 @@ async fn start_hls(
         let _slot = pool.acquire(TaskPriority::Critical).await;
         active.fetch_add(1, Ordering::SeqCst);
 
-        let mut proc = match ffmpeg.spawn(args) {
-            Ok(p) => p,
+        // 硬件在首帧窗口内挂掉就换下一个后端，用户只会觉得"起播慢了一点"。
+        let outcome = match ffmpeg.spawn_with_fallback(&req, &accel_chain, None).await {
+            Ok(o) => o,
             Err(_) => {
                 active.fetch_sub(1, Ordering::SeqCst);
                 if let Some(db) = db.as_ref() {
@@ -875,6 +910,20 @@ async fn start_hls(
                 return;
             }
         };
+        if outcome.degraded() {
+            warn!(
+                job = %job_id,
+                used = outcome.used,
+                attempts = outcome.attempts,
+                "转码后端已降级；首位失败原因：{}",
+                outcome
+                    .dropped
+                    .first()
+                    .map(|(_, s)| s.lines().last().unwrap_or("").trim().to_string())
+                    .unwrap_or_default()
+            );
+        }
+        let mut proc = outcome.process;
         let token = proc.cancel_token();
 
         // 一边等进程，一边响应取消。
@@ -1205,7 +1254,10 @@ pub async fn external_subtitle(
     };
 
     let out = if body.to.eq_ignore_ascii_case("srt") {
-        (whatmedia_subtitle::to_srt(&cues), "text/plain; charset=utf-8")
+        (
+            whatmedia_subtitle::to_srt(&cues),
+            "text/plain; charset=utf-8",
+        )
     } else {
         (whatmedia_subtitle::to_vtt(&cues), "text/vtt; charset=utf-8")
     };
@@ -1241,6 +1293,10 @@ pub struct AckView {
 pub struct HardwareProfileView {
     pub ffmpeg: Option<String>,
     pub profiles: Vec<HardwareProfile>,
+    /// 实际会写进命令行的设备节点。用户问"为什么没走硬件"时，
+    /// 这里是第一现场：profiles 说有 VAAPI，但 render_node 为 None，
+    /// 那多半是容器没挂 /dev/dri。
+    pub render_node: Option<String>,
     pub active_transcodes: usize,
     pub capacity: usize,
     pub streams: usize,
@@ -1261,6 +1317,7 @@ pub async fn hardware_profile(State(state): State<AppState>) -> Response {
     Json(HardwareProfileView {
         ffmpeg: state.transcode.ffmpeg.as_ref().map(|f| f.bin().to_string()),
         profiles: state.transcode.profiles.clone(),
+        render_node: state.transcode.accel_ctx.render_node.clone(),
         active_transcodes: state.transcode.active.load(Ordering::SeqCst),
         capacity: state.transcode.pool.capacity(),
         streams: state.transcode.streams.len(),
@@ -1466,16 +1523,6 @@ fn parse_range_header(v: Option<&str>, total: u64) -> Result<Option<ByteRange>, 
     Ok(Some(ByteRange::new(start, end)))
 }
 
-#[allow(dead_code)]
-fn now() -> chrono::DateTime<Utc> {
-    Utc::now()
-}
-
-#[allow(dead_code)]
-fn new_id() -> Uuid {
-    Uuid::new_v4()
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1546,8 +1593,57 @@ mod tests {
     }
 
     #[test]
+    fn hls_args_point_at_the_job_dir_not_the_file_dir() {
+        // 决策层只认 file_id，job 目录是 start_hls 才定的。
+        // 两边不一致时 ffmpeg 会往一个根本不存在的目录写分片。
+        let mut req = StreamRequest {
+            input: "/media/a.mkv".into(),
+            seek_ms: 0,
+            video: whatmedia_transcoder::VideoAction::Copy,
+            audio: whatmedia_transcoder::AudioAction::None,
+            burn: None,
+            output: OutputSpec::Hls {
+                dir: "/cache/hls/FILE-ID".into(),
+                seg_seconds: 6,
+            },
+            accel: None,
+            live: false,
+        };
+        rewrite_hls_dir(&mut req, std::path::Path::new("/cache/hls/JOB-ID"));
+
+        let args = build_args(&req);
+        let seg = args
+            .iter()
+            .find(|a| a.starts_with("/cache/hls/") && a.contains("seg_"))
+            .expect("分片路径应当出现在参数里");
+        assert!(seg.starts_with("/cache/hls/JOB-ID/"), "实际：{seg}");
+        assert!(args.last().unwrap().starts_with("/cache/hls/JOB-ID/"));
+    }
+
+    #[test]
+    fn rewrite_hls_dir_leaves_other_outputs_alone() {
+        let mut req = StreamRequest {
+            input: "/media/a.mkv".into(),
+            seek_ms: 0,
+            video: whatmedia_transcoder::VideoAction::Copy,
+            audio: whatmedia_transcoder::AudioAction::None,
+            burn: None,
+            output: OutputSpec::PipeTs,
+            accel: None,
+            live: false,
+        };
+        rewrite_hls_dir(&mut req, std::path::Path::new("/cache/hls/JOB-ID"));
+        assert!(matches!(req.output, OutputSpec::PipeTs));
+    }
+
+    #[test]
     fn server_capability_reflects_ffmpeg_presence() {
-        let rt = TranscodeRuntime::new(None, Vec::new(), std::path::PathBuf::from("/tmp"));
+        let rt = TranscodeRuntime::new(
+            None,
+            Vec::new(),
+            std::path::PathBuf::from("/tmp"),
+            Default::default(),
+        );
         let c = rt.server_capability();
         assert!(!c.ffmpeg_available);
         assert!(!c.has_budget());

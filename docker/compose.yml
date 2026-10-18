@@ -1,0 +1,62 @@
+# WhatMedia 家庭部署模板（x86_64 / ARM64 通用）
+#
+# 用法：
+#   cp docker/compose.yml docker-compose.yml   # 或者直接用 -f 指定
+#   docker compose -f docker/compose.yml up -d
+#
+# 三个容易踩的点：
+#   1. **PUID/PGID** —— 镜像以 uid 1000 运行。宿主机上你的用户不是 1000 时，
+#      /config 里写出的文件会变成 1000:1000，宿主机上改不动。
+#      要么改这里的 uid/gid，要么 `chown -R` 你的目录。
+#   2. **媒体目录只读挂载**（:ro）。WhatMedia 不需要写媒体文件，
+#      只读能挡掉"删库"类事故 —— 包括 AI 工具被诱导去删（P7 权限模型）。
+#   3. **硬件直通**默认注释掉。需要转码时才开，且开了之后如果驱动不对，
+#      服务端会静默降级到软件转码（不会报错，只会变慢）。
+
+services:
+  whatmedia:
+    image: ghcr.io/whatmedia/whatmedia:latest
+    container_name: whatmedia
+    restart: unless-stopped
+    ports:
+      - "8080:8080"
+    environment:
+      WHATMEDIA_LOG_LEVEL: info
+      WHATMEDIA_LOG_FORMAT: json
+      WHATMEDIA_DATABASE_URL: sqlite:/config/whatmedia.db?mode=rwc
+      TZ: Asia/Shanghai
+    volumes:
+      - ./config:/config
+      - ./data:/data
+      - ./cache:/cache
+      - ./logs:/logs
+      # 媒体目录：改成你自己的路径，保持 :ro
+      - /path/to/media:/media:ro
+    # ── 硬件直通（按需开启，三选一或都不开）──────────────────
+    # Intel QSV / AMD VAAPI（x86_64 小主机、NUC）
+    # devices:
+    #   - /dev/dri:/dev/dri
+    #
+    # Rockchip RK3588（R5S / R6S）：MPP 与 RGA 是两个独立节点
+    # devices:
+    #   - /dev/dri:/dev/dri
+    #   - /dev/mpp_service:/dev/mpp_service
+    #   - /dev/rga:/dev/rga
+    #
+    # NVIDIA（需要宿主机装 nvidia-container-toolkit，不是 devices 能解决的）
+    # deploy:
+    #   resources:
+    #     reservations:
+    #       devices:
+    #         - driver: nvidia
+    #           count: 1
+    #           capabilities: [gpu]
+    #
+    # 以宿主机当前用户的 uid/gid 运行（避免 /config 文件归属变乱）
+    # user: "${UID}:${GID}"
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1:8080/healthz"]
+      interval: 30s
+      timeout: 5s
+      start_period: 20s
+      retries: 3

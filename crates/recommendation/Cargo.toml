@@ -1,7 +1,0 @@
-[package]
-name = "whatmedia-recommendation"
-version = "0.1.0"
-edition = "2021"
-
-[dependencies]
-whatmedia-core = { path = "../core" }

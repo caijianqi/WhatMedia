@@ -536,33 +536,52 @@ impl HardwareReport {
 /// 顺序的依据：专用硬件 > 通用 GPU > CPU。
 /// RKMPP 放在 VAAPI 之前是因为 RK3588 上也有 /dev/dri（panfrost），
 /// 但 MPP 的解码能力明显更强。
+///
+/// **"有没有设备节点"不等于"能不能用"。** Windows 上没有 `/dev/dri`，
+/// 但 Intel QSV 走 D3D11 一样能用 —— 只看设备节点会把整台机器的硬件能力
+/// 判成 0，用户只会觉得"转码莫名其妙很慢"。所以候选先列全，
+/// 再用 `is_relevant` 按 OS 砍掉真正不可能的那些。
 pub fn detect_backends(m: &MachineProfile) -> Vec<String> {
-    let mut out = Vec::new();
+    let os = match m.os.as_str() {
+        "linux" => Os::Linux,
+        "macos" => Os::Macos,
+        "windows" => Os::Windows,
+        _ => Os::Other,
+    };
 
-    if m.devices.mpp_service {
-        out.push("rkmpp".to_string());
-    }
-    if m.devices.has_nvidia() {
-        out.push("nvenc".to_string());
-    }
     let is_intel = m
         .cpu
         .vendor
         .as_deref()
         .map(|v| v.eq_ignore_ascii_case("GenuineIntel"))
         .unwrap_or(false);
+
+    // (后端 id, 类型) —— 类型用来过 is_relevant。
+    let mut candidates: Vec<(String, HardwareKind)> = Vec::new();
+
+    if m.devices.mpp_service {
+        candidates.push(("rkmpp".into(), HardwareKind::RockchipMpp));
+    }
+    if m.devices.has_nvidia() {
+        candidates.push(("nvenc".into(), HardwareKind::NvidiaNvenc));
+    }
+    if is_intel && (m.devices.has_drm() || m.os == "windows") {
+        candidates.push(("qsv".into(), HardwareKind::IntelQsv));
+    }
     if m.devices.has_drm() {
-        if is_intel {
-            out.push("qsv".to_string());
-        }
-        out.push("vaapi".to_string());
+        candidates.push(("vaapi".into(), HardwareKind::AmdVaapi));
     }
     if m.os == "macos" {
-        out.push("videotoolbox".to_string());
+        candidates.push(("videotoolbox".into(), HardwareKind::AppleVideoToolbox));
     }
     // 软件永远在最后，保证降级链不会断。
-    out.push("software".to_string());
-    out
+    candidates.push(("software".into(), HardwareKind::Software));
+
+    candidates
+        .into_iter()
+        .filter(|(_, k)| is_relevant(os, *k))
+        .map(|(id, _)| id)
+        .collect()
 }
 
 /// 构造探测到的后端实例（含软件兜底）。
@@ -597,14 +616,21 @@ pub fn report(m: MachineProfile) -> HardwareReport {
     }
 }
 
-/// 判断该 OS 上是否"值得"探测某类硬件。Windows 上没有 /dev/dri，
-/// 但 QSV 依然可用 —— 这类差异集中在这里，避免散落到调用方。
+/// 判断某类硬件在该 OS 上是否可能存在。
+///
+/// **砍掉"不可能"的，留下的交给降级链兜底。** 探测是廉价的猜测，
+/// ffmpeg 真跑起来才是事实：这条过滤只挡住"给了也一定跑不起来"的组合，
+/// 剩下的（比如有 /dev/dri 但驱动坏了）由首帧窗口内的失败降级来接。
 pub fn is_relevant(os: Os, kind: HardwareKind) -> bool {
     match (os, kind) {
+        (_, HardwareKind::Software) => true,
         (Os::Macos, HardwareKind::AppleVideoToolbox) => true,
         (Os::Macos, _) => false,
         (Os::Linux, HardwareKind::AppleVideoToolbox) => false,
-        (_, HardwareKind::Software) => true,
+        // Windows 上没有 /dev/dri。实测 ffmpeg 在 Windows 上拿到
+        // `-hwaccel vaapi` 会在 1 秒内 "Failed to initialise VAAPI connection"，
+        // 与其每次起播都白试一次，不如一开始就不列。
+        (Os::Windows, HardwareKind::AmdVaapi | HardwareKind::RockchipMpp) => false,
         _ => true,
     }
 }
@@ -709,6 +735,34 @@ mod tests {
         let b = detect_backends(&m);
         assert_eq!(b[0], "rkmpp");
         assert!(b.contains(&"vaapi".to_string()));
+    }
+
+    #[test]
+    fn windows_intel_still_gets_qsv_without_drm() {
+        // Windows 上没有 /dev/dri，只看设备节点会把 QSV 判成不存在。
+        // 实测这台机器上 h264_qsv 是能出片的 —— 漏掉它等于白白放弃硬件转码。
+        let m = machine("windows", DeviceNodes::default(), Some("GenuineIntel"));
+        let b = detect_backends(&m);
+        assert_eq!(b[0], "qsv");
+        assert!(!b.contains(&"vaapi".to_string()), "Windows 上没有 VAAPI");
+        assert_eq!(b.last().unwrap(), "software");
+    }
+
+    #[test]
+    fn windows_amd_only_gets_software() {
+        // 没有 Intel / NVIDIA 就没有可用硬件后端 —— 降级链只剩软件也不能断。
+        let m = machine("windows", DeviceNodes::default(), Some("AuthenticAMD"));
+        assert_eq!(detect_backends(&m), vec!["software"]);
+    }
+
+    #[test]
+    fn vaapi_is_irrelevant_on_windows() {
+        assert!(!is_relevant(Os::Windows, HardwareKind::AmdVaapi));
+        assert!(!is_relevant(Os::Windows, HardwareKind::RockchipMpp));
+        assert!(is_relevant(Os::Windows, HardwareKind::IntelQsv));
+        assert!(is_relevant(Os::Linux, HardwareKind::AmdVaapi));
+        // 软件在任何系统上都必须相关，否则降级链会断。
+        assert!(is_relevant(Os::Windows, HardwareKind::Software));
     }
 
     #[test]

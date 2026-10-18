@@ -10,10 +10,10 @@
 //! 而 WhatMedia 是一个**长期运行、对外开放 HTTP 端口**的服务。
 
 use async_trait::async_trait;
-use whatmedia_core::{ByteRange, WhatMediaError, Result, StorageEntry, StorageProvider};
 use std::io::SeekFrom;
 use std::path::{Component, Path, PathBuf};
 use tokio::io::{AsyncReadExt, AsyncSeekExt};
+use whatmedia_core::{ByteRange, Result, StorageEntry, StorageProvider, WhatMediaError};
 
 /// 本地文件系统存储。
 ///
@@ -306,10 +306,12 @@ impl StorageProvider for LocalStorage {
 
     async fn read(&self, path: &str) -> Result<Vec<u8>> {
         let p = self.resolve(path)?;
-        tokio::fs::read(&p).await.map_err(|e| WhatMediaError::Storage {
-            provider: self.id.clone(),
-            message: format!("读取文件失败 {}: {e}", p.display()),
-        })
+        tokio::fs::read(&p)
+            .await
+            .map_err(|e| WhatMediaError::Storage {
+                provider: self.id.clone(),
+                message: format!("读取文件失败 {}: {e}", p.display()),
+            })
     }
 
     async fn write(&self, path: &str, data: &[u8]) -> Result<()> {
@@ -414,7 +416,10 @@ mod safety_tests {
 
         let s = LocalStorage::new("local", &root).unwrap();
         let err = s.stat(&outside.to_string_lossy()).await.unwrap_err();
-        assert!(matches!(err, WhatMediaError::PathRejected { .. }), "{err:?}");
+        assert!(
+            matches!(err, WhatMediaError::PathRejected { .. }),
+            "{err:?}"
+        );
     }
 
     /// 库内路径必须放行，且 Range 读取要正确。
@@ -451,6 +456,9 @@ mod safety_tests {
 
         let s = LocalStorage::new("local", &root).unwrap();
         let err = s.stat("link.mkv").await.unwrap_err();
-        assert!(matches!(err, WhatMediaError::PathRejected { .. }), "{err:?}");
+        assert!(
+            matches!(err, WhatMediaError::PathRejected { .. }),
+            "{err:?}"
+        );
     }
 }

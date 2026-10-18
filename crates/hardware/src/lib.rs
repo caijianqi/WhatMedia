@@ -17,7 +17,7 @@ pub use accel::{
 };
 pub use env::{FakeEnv, Os, ProbeEnv, RealEnv};
 pub use profile::{
-    detect_cpu, detect_devices, detect_machine, detect_memory, CpuInfo, DeviceNodes,
+    detect_cpu, detect_devices, detect_machine, detect_memory, AccelContext, CpuInfo, DeviceNodes,
     MachineProfile, MemoryInfo,
 };
 

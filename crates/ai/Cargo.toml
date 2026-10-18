@@ -1,7 +1,32 @@
 [package]
 name = "whatmedia-ai"
-version = "0.1.0"
-edition = "2021"
+description = "AI 媒体管家：ModelProvider + Tool + Agent + MCP（见 ADR-0006）"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+
+[features]
+# 与 api crate 同口径：默认不付 utoipa 的编译代价。
+openapi = ["dep:utoipa", "whatmedia-core/openapi"]
+
+# 依赖守卫（见 tests/no_direct_access.rs）：
+# 这里**不允许**出现 whatmedia-database / whatmedia-scanner / whatmedia-transcoder。
+# AI 只能通过 AiHost trait 触达业务，直接依赖这些 crate 就是把后门开在编译期。
 
 [dependencies]
-whatmedia-core = { path = "../core" }
+whatmedia-core = { workspace = true }
+whatmedia-config = { workspace = true }
+utoipa = { workspace = true, optional = true }
+async-trait = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+thiserror = { workspace = true }
+tracing = { workspace = true }
+uuid = { workspace = true }
+chrono = { workspace = true }
+reqwest = { workspace = true }
+sha2 = { workspace = true }
+tokio = { workspace = true }
+
+[dev-dependencies]
+tokio = { workspace = true }

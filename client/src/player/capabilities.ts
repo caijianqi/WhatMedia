@@ -55,8 +55,11 @@ export const CLIENT_CAPABILITIES: Record<PlayerClientId, PlayerCapabilities> = O
 
 /**
  * 播放器后端。
+ *
+ * `media3` 只在 Android / Android TV 上出现，且**只有当原生插件真的注册成功**时才算；
+ * 探测不到必须回落 web，理由见 `resolveBackend` 的注释。
  */
-export type PlayerBackend = 'web' | 'mpv'
+export type PlayerBackend = 'web' | 'mpv' | 'media3'
 
 /**
  * 按**实际使用的播放器后端**取能力，而不是按运行环境取。
@@ -69,7 +72,18 @@ export type PlayerBackend = 'web' | 'mpv'
  * 所以：能力跟着后端走。换后端就必须换能力。
  */
 export function capabilitiesFor(backend: PlayerBackend): PlayerCapabilities {
-  return backend === 'mpv' ? CLIENT_CAPABILITIES['tauri-mpv'] : CLIENT_CAPABILITIES.web
+  switch (backend) {
+    case 'mpv':
+      return CLIENT_CAPABILITIES['tauri-mpv']
+    case 'media3':
+      // 能力档跟着**实际在用的播放器**走，不跟着"跑在什么设备上"走。
+      // 在 Android 上却用 WebView 播（插件没注册成功）时，
+      // 若按 android-exoplayer 上报，服务端会给出 AC3 的 Direct Play，
+      // 而实际播放器放不了 —— 用户遇到"明明是本机能播的格式却播不了"。
+      return CLIENT_CAPABILITIES['android-exoplayer']
+    default:
+      return CLIENT_CAPABILITIES.web
+  }
 }
 
 /**

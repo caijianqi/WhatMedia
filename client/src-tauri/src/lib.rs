@@ -1,6 +1,6 @@
 // Tauri 2 客户端外壳。
 //
-// 分工（DEVELOPMENT-PLAN.md §五）：
+// 分工（开发计划 §五）：
 //   · 业务逻辑全在 src/（Vue 3 + TypeScript）
 //   · 平台原生能力在 Rust 侧，但**只做薄桥接**
 // 这个文件因此只有四件事：托盘、单实例、关窗不退出、mpv 桥接的命令注册。
@@ -34,6 +34,9 @@ pub fn run() {
                 let _ = w.set_focus();
             }
         }))
+        // Media3 播放器插件。Android 上真正干活的是它的 Kotlin 一半，
+        // Rust 一半只负责把原始值翻译成前端契约；桌面端注册了也没人调。
+        .plugin(tauri_plugin_media3::init())
         .manage(MpvState::default())
         .invoke_handler(tauri::generate_handler![
             ping,

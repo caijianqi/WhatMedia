@@ -1,7 +1,38 @@
 [package]
 name = "whatmedia-auth"
-version = "0.1.0"
-edition = "2021"
+description = "多用户鉴权：口令摘要、会话票据、签名 URL、角色与内容分级策略"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+
+[features]
+# `openapi` 打开后才标记 `Principal` / `Role` 的 schema。
+# core 必须保持零依赖，"生成契约"这件事不能给所有下游加编译期负担。
+openapi = ["dep:utoipa", "whatmedia-core/openapi"]
 
 [dependencies]
-whatmedia-core = { path = "../core" }
+utoipa = { workspace = true, optional = true }
+whatmedia-core = { workspace = true }
+
+# 口令散列。argon2id 是 OWASP 目前的推荐项， resists GPU/ASIC 暴力。
+# 不用 bcrypt：它对长口令有 72 字节截断，用户粘个长密码进去会被静默砍掉。
+argon2 = { workspace = true }
+
+# 签名 URL：这里**刻意不用 hmac  crate** —— 它要求 digest 0.11，
+# 而 workspace 锁的是 sha2 0.10，混进来会同时编出两棵 digest 树。
+# RFC 2104 的构造只有二十行，自己实现并拿 RFC 4231 的测试向量钉住。
+sha2 = { workspace = true }
+
+# 票据是 256 位随机数 + base64url（无 padding）。URL-safe 是因为
+# 它要出现在 Bearer、Cookie、query string 三个地方，而 `+` 和 `/` 在这三处的
+# 转义规则各不相同 —— 这类 bug 只在"某个设备偶尔掉线"的形式下暴露。
+base64 = { workspace = true }
+
+getrandom = { workspace = true }
+chrono = { workspace = true }
+serde = { workspace = true }
+thiserror = { workspace = true }
+uuid = { workspace = true }
+
+[dev-dependencies]
+hex = "0.4"

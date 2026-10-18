@@ -10,6 +10,7 @@ whatmedia-core = { workspace = true }
 whatmedia-hardware = { path = "../hardware" }
 async-trait = { workspace = true }
 tokio = { workspace = true }
+tracing = { workspace = true }
 
 [dev-dependencies]
 tempfile = { workspace = true }

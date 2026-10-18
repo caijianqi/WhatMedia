@@ -10,6 +10,7 @@ rust-version.workspace = true
 # 默认关闭：常规构建不该为此付出编译时间。
 openapi = [
   "dep:utoipa",
+  "whatmedia-auth/openapi",
   "whatmedia-core/openapi",
   "whatmedia-database/openapi",
   "whatmedia-diagnostics/openapi",
@@ -19,7 +20,16 @@ openapi = [
 
 [dependencies]
 utoipa = { workspace = true, optional = true }
+whatmedia-ai = { workspace = true }
+whatmedia-auth = { workspace = true }
 whatmedia-core = { workspace = true }
+whatmedia-live = { workspace = true }
+async-trait = { workspace = true }
+# 拉取 M3U 订阅 / XMLTV 节目单。直播是少数需要主动出站的端点。
+reqwest = { workspace = true }
+# DbHost 直接写 SQL（AI 的查询谓词太多，全下推会让查询不可维护），
+# 所以这里需要 sqlx 本身，而不只是通过 whatmedia-database 间接拿到。
+sqlx = { workspace = true }
 anyhow = { workspace = true }
 whatmedia-config = { workspace = true }
 whatmedia-database = { workspace = true }
@@ -42,6 +52,7 @@ chrono = { workspace = true }
 uuid = { workspace = true }
 
 [dev-dependencies]
+whatmedia-auth = { workspace = true }
 tower = { workspace = true, features = ["util"] }
 tempfile = { workspace = true }
 sqlx = { workspace = true }

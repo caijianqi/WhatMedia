@@ -8,7 +8,7 @@
 //!
 //! 所以 NFO 在优先级链里是**独立的一环**，由 `pipeline` 在 Provider 之前应用。
 
-use whatmedia_core::{MetadataImage, MetadataRecord};
+use whatmedia_core::MetadataRecord;
 use whatmedia_media::{NfoKind, NfoMovie, NfoSeries};
 
 /// 把 NFO 翻译成统一的 `MetadataRecord`，`provider` 标记为 `"nfo"`。
@@ -78,18 +78,6 @@ fn has_anything(r: &MetadataRecord) -> bool {
         || r.rating.is_some()
         || r.runtime_ms.is_some()
         || r.original_title.is_some()
-}
-
-/// NFO 里记录的图片路径（`<thumb>`）通常是相对路径或 URL。
-/// 这里只做"是不是 http"的判断，真正的取图在 `images` 模块。
-pub fn image_from_nfo_thumb(thumb: &str) -> MetadataImage {
-    MetadataImage {
-        kind: "poster".into(),
-        url: thumb.to_string(),
-        width: None,
-        height: None,
-        vote: None,
-    }
 }
 
 #[cfg(test)]

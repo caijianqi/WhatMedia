@@ -7,13 +7,13 @@ use std::sync::Arc;
 
 use anyhow::Result;
 use chrono::Utc;
+use std::path::Path;
 use whatmedia_core::{
     deterministic_id, MediaItem, MediaKind, MetadataImage, MetadataProvider, MetadataQuery,
-    MetadataRecord, WhatMediaError, Result as CoreResult,
+    MetadataRecord, Result as CoreResult, WhatMediaError,
 };
 use whatmedia_database::{repo, Db};
 use whatmedia_metadata::{matcher::MatchThresholds, ScrapeConfig, Scraper};
-use std::path::Path;
 
 fn migrations_dir() -> std::path::PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR"))

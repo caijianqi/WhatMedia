@@ -1,9 +1,9 @@
 //! 媒体资产读写：item / version / file / stream。
 
 use anyhow::Result;
-use whatmedia_core::{Id, MediaFile, MediaItem, MediaStream, MediaVersion, Page, StreamType};
 use serde::Serialize;
 use sqlx::QueryBuilder;
+use whatmedia_core::{Id, MediaFile, MediaItem, MediaKind, MediaStream, MediaVersion, Page};
 
 use crate::db::Db;
 use crate::repo::{page_of, ItemQuery, ItemSummary};
@@ -185,6 +185,41 @@ pub async fn count_items(db: &Db, q: &ItemQuery) -> Result<i64> {
     Ok(total.0)
 }
 
+/// 每个类型的条目数（首页"分类 tab"用它决定显示哪几个 tab）。
+///
+/// **只返回数量大于 0 的类型**。硬编码一份"电影 / 剧集 / 动画 / 纪录片"的
+/// tab 列表，在只有电影的库里会留下三个点进去永远是空的 tab ——
+/// 那种空 tab 比没有 tab 更糟，它让人以为自己的库坏了。
+///
+/// 顺序按数量降序：最常用的类型在最前面。
+pub async fn kind_counts(db: &Db) -> Result<Vec<KindCount>> {
+    let rows = sqlx::query_as::<_, (String, i64)>(
+        "SELECT kind, COUNT(*) AS n FROM media_item
+          GROUP BY kind HAVING n > 0
+          ORDER BY n DESC, kind",
+    )
+    .fetch_all(db.pool())
+    .await?;
+
+    Ok(rows
+        .into_iter()
+        .map(|(kind, n)| KindCount {
+            // `to_kind` 不认识的串会落回 Mixed。这里不因此丢行：
+            // 库里真有 `mixed` 时它也是一个可点的分类，只是标签不好看而已。
+            kind: crate::rows::to_kind(&kind),
+            count: n,
+        })
+        .collect())
+}
+
+/// 一个类型有多少条目。
+#[derive(Debug, Clone, Serialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
+pub struct KindCount {
+    pub kind: MediaKind,
+    pub count: i64,
+}
+
 pub async fn list_items(db: &Db, q: &ItemQuery) -> Result<Page<ItemSummary>> {
     let total = count_items(db, q).await?;
     let (_, size) = q.clamp();
@@ -229,6 +264,9 @@ pub struct ItemDetail {
     #[serde(flatten)]
     pub item: ItemSummary,
     pub overview: Option<String>,
+    /// 类型（动作 / 科幻 …）。**刮削之前是空数组**，不是 null ——
+    /// 前端拿到 null 还得自己判空，而"没有类型"和"没刮削过"对 UI 是同一件事。
+    pub genres: Vec<String>,
     pub versions: Vec<VersionWithFiles>,
 }
 
@@ -329,14 +367,15 @@ pub async fn get_item(db: &Db, id: Id) -> Result<Option<ItemDetail>> {
         });
     }
 
+    // 类型在另一张关联表上，单独取。刮削没跑过时 `genres_of` 返回空数组。
+    let genres = crate::repo::metadata::genres_of(db, id)
+        .await
+        .unwrap_or_default();
+
     Ok(Some(ItemDetail {
         item: ItemSummary::from_row(&item),
         overview: item.overview,
+        genres,
         versions,
     }))
-}
-
-/// 详情里"有没有视频轨"这种查询会反复用到，集中放一处。
-pub fn has_video_stream(streams: &[MediaStream]) -> bool {
-    streams.iter().any(|s| s.stream_type == StreamType::Video)
 }

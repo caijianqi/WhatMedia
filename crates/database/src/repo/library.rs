@@ -2,8 +2,8 @@
 
 use anyhow::Result;
 use chrono::Utc;
-use whatmedia_core::{Id, Library, MediaKind};
 use uuid::Uuid;
+use whatmedia_core::{Id, Library, MediaKind};
 
 use crate::db::Db;
 use crate::rows::{from_kind, LibraryRow};

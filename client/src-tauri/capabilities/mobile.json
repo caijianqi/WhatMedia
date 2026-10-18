@@ -1,0 +1,14 @@
+{
+  "$schema": "../gen/schemas/mobile-schema.json",
+  "identifier": "mobile",
+  "description": "Android / Android TV 的权限集。与 default.json 分开是因为移动端只跑 android，且要多要两样东西：事件通道（播放器事件是 Kotlin 主动推的）与 media3 播放器命令。",
+  "windows": ["main"],
+  "platforms": ["android"],
+  "permissions": [
+    "core:default",
+    "core:app:default",
+    "core:window:default",
+    "core:event:default",
+    "media3:default"
+  ]
+}

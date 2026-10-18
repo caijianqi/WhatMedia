@@ -33,13 +33,15 @@ async-trait = "0.1"
 sqlx = "未锁定（P1）"
 
 [media]
-# P3 播放引擎阶段在 Docker builder 阶段固定构建产物。
-# 严禁依赖发行版 apt 包 —— 两个架构的 codec 可用性完全不同。
-ffmpeg = "未锁定（P3）"
-ffprobe = "未锁定（P3）"
+# P5（2026-10-12）实测：开发机 Windows 上用 gyan.dev essentials 构建 9.0.2。
+# Docker 镜像里改用 johnvansickle 静态构建（Dockerfile 的 FFMPEG_VERSION），
+# 因为要同时覆盖 amd64 与 arm64，且不能依赖发行版 apt 包
+# —— arm64 的 apt ffmpeg 常缺 libx264/libx265，会得到"能启动但转不了码"的镜像。
+ffmpeg_dev_windows = "9.0.2"      # 实测：libx264/libx265/qsv/zscale/tonemap 全在
+ffmpeg_image = "7.1（johnvansickle 静态构建，Dockerfile FFMPEG_VERSION）"
 
-ffmpeg_amd64 = { status = "待 P3 填充", decoders = [], encoders = [] }
-ffmpeg_arm64 = { status = "待 P3 填充", decoders = [], encoders = [] }
+ffmpeg_amd64 = { status = "待 R5S/真机填充", decoders = [], encoders = [] }
+ffmpeg_arm64 = { status = "待 R5S/真机填充", decoders = [], encoders = [] }
 
 [client]
 tauri_cli = "未锁定（P4）"

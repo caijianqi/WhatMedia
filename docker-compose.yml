@@ -1,4 +1,6 @@
 # 家庭部署最小模板。ARM64 与 x86_64 同一份文件，镜像按本机架构自动拉取。
+#
+# 更完整的版本（含硬件直通、uid/gid、健康检查说明）见 docker/compose.yml。
 services:
   whatmedia:
     image: ghcr.io/whatmedia/whatmedia:latest
@@ -10,13 +12,22 @@ services:
       WHATMEDIA_LOG_LEVEL: info
       WHATMEDIA_LOG_FORMAT: json
       WHATMEDIA_DATABASE_URL: sqlite:/config/whatmedia.db?mode=rwc
+      TZ: Asia/Shanghai
     volumes:
       - ./config:/config
       - ./data:/data
       - ./cache:/cache
       - ./logs:/logs
-      # 媒体目录按需挂载，只读更安全
+      # 媒体目录按需挂载，只读更安全（服务端不需要写媒体文件）
       - /path/to/media:/media:ro
-    # P6 硬件加速阶段按需开启（x86 为 /dev/dri，Rockchip 另需 mpp/rga）
+    # 硬件直通按需开启（x86 为 /dev/dri，Rockchip 另需 mpp/rga）。
+    # 挂了但驱动不对不会报错，只会静默降级到软件转码 —— 用
+    # GET /api/v1/hardware/profile 看 render_node 判断是否真的生效。
     # devices:
     #   - /dev/dri:/dev/dri
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1:8080/healthz"]
+      interval: 30s
+      timeout: 5s
+      start_period: 20s
+      retries: 3

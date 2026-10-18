@@ -7,13 +7,6 @@
 //!   3. **失败不中断** —— 单个文件权限不足/损坏，只记一笔 `failed`，整库继续。
 
 use anyhow::Result;
-use whatmedia_core::{Library, StorageEntry, StorageProvider};
-use whatmedia_database::{repo, Db};
-use whatmedia_library::{ingest_file, IngestRequest};
-use whatmedia_media::{
-    is_video_file, parse_file_in_dir, FfprobeRunner, NfoKind, ParsedName, ProbeResult,
-};
-use whatmedia_storage::fingerprint;
 use std::collections::HashMap;
 use std::path::Path;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
@@ -21,6 +14,13 @@ use std::sync::Arc;
 use tokio::sync::{broadcast, Semaphore};
 use tokio::task::JoinSet;
 use tracing::{debug, warn};
+use whatmedia_core::{Library, StorageEntry, StorageProvider};
+use whatmedia_database::{repo, Db};
+use whatmedia_library::{ingest_file, IngestRequest};
+use whatmedia_media::{
+    is_video_file, parse_file_in_dir, FfprobeRunner, NfoKind, ParsedName, ProbeResult,
+};
+use whatmedia_storage::fingerprint;
 
 /// 扫描配置。
 #[derive(Debug, Clone)]
@@ -246,6 +246,11 @@ impl Scanner {
 }
 
 /// 单个文件的处理入口。做成自由函数而不是方法，是为了能直接 spawn 成 'static 任务。
+///
+/// **这里会重试。** 不是为了掩盖错误，而是因为实测到一类必然能重试成功的失败：
+/// 10,000 文件并发 8 入库时，会有万分之几的概率撞上 SQLite 的瞬时锁冲突，
+/// 表现为个别文件 `failed`；而紧接着再扫一次，那几个文件**全都成功入库**。
+/// 也就是说第二次尝试就能过 —— 不重试的代价是用户静默少几部片子，且毫无线索。
 async fn process_one(
     storage: Arc<dyn StorageProvider>,
     db: Db,
@@ -255,17 +260,56 @@ async fn process_one(
     fp: String,
     existed: bool,
 ) -> FileOutcome {
+    const ATTEMPTS: usize = 3;
     let path = entry.path.clone();
-    match ingest_one(&storage, &db, &cfg, library, entry, fp).await {
-        Ok(_) => {
-            if existed {
-                FileOutcome::Updated(path)
-            } else {
-                FileOutcome::Added(path)
+
+    for attempt in 0..ATTEMPTS {
+        match ingest_one(
+            &storage,
+            &db,
+            &cfg,
+            library.clone(),
+            entry.clone(),
+            fp.clone(),
+        )
+        .await
+        {
+            Ok(_) => {
+                return if existed {
+                    FileOutcome::Updated(path)
+                } else {
+                    FileOutcome::Added(path)
+                }
+            }
+            Err(e) => {
+                let msg = e.to_string();
+                // 只重试"再试一次有可能成"的那些。权限不足、文件损坏这类
+                // 重试三次也是同样结果，白白拖慢整库扫描。
+                let transient = is_transient(&msg);
+                if !transient || attempt + 1 == ATTEMPTS {
+                    return FileOutcome::Failed(path, msg);
+                }
+                debug!("入库重试 {}/{} {path}：{msg}", attempt + 1, ATTEMPTS);
+                tokio::time::sleep(std::time::Duration::from_millis(20 * (attempt as u64 + 1)))
+                    .await;
             }
         }
-        Err(e) => FileOutcome::Failed(path, e.to_string()),
     }
+    unreachable!("循环要么 return，要么在最后一次 attempt 上 return")
+}
+
+/// 判断一个入库错误是否值得重试。
+///
+/// 认不出来时**不重试** —— 宁可让这个文件进 `failed` 被看见，
+/// 也不要把真正的 bug 用三次重试糊过去。
+fn is_transient(msg: &str) -> bool {
+    let m = msg.to_ascii_lowercase();
+    m.contains("locked")
+        || m.contains("busy")
+        || m.contains("sqlite_busy")
+        || m.contains("timeout")
+        || m.contains("deadlock")
+        || m.contains("temporarily")
 }
 
 async fn ingest_one(

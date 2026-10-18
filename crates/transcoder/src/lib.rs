@@ -3,7 +3,7 @@
 //! 模块分层：
 //!
 //! ```text
-//! runner    进程生命周期（启动 / 超时 / 取消 / 收尸）
+//! runner    进程生命周期（启动 / 超时 / 取消 / 收尸 / 硬件失败降级）
 //!   ├─ args     命令行构造（顺序即正确性，见模块注释）
 //!   ├─ progress stderr 进度解析
 //!   ├─ pool     并发上限与播放抢占
@@ -27,10 +27,89 @@ pub use args::{
 pub use pool::{Slot, TranscodePool};
 pub use process::{CommandRunner, MockChild, MockRunner, TokioRunner};
 pub use progress::{parse_line, Progress, ProgressParser};
-pub use runner::{describe_failure, timeout_for_priority, Exit, FfmpegRunner, RunningProcess};
+pub use runner::{
+    describe_failure, timeout_for_priority, Exit, FallbackOutcome, FfmpegRunner, RunningProcess,
+    FIRST_FRAME_WINDOW,
+};
 pub use temp::{dir_size, TempDirGuard};
 
-use whatmedia_core::{HardwareAccelerationProvider, HardwareKind, HdrType, VideoCodec};
+use std::sync::Arc;
+
+use whatmedia_core::{
+    HardwareAccelerationProvider, HardwareKind, HardwareProfile, HdrType, VideoCodec,
+};
+use whatmedia_hardware::{
+    MemoryInfo, NvencAccel, QsvAccel, RkmppAccel, SoftwareAccel, VaapiAccel, VideoToolboxAccel,
+};
+
+pub use whatmedia_hardware::AccelContext;
+
+/// 由后端类型反查 provider 实例。
+///
+/// 决策层只持有 `HardwareProfile`（core 类型），不该 import hardware crate
+/// 去 new 具体实现——那会把"挑后端"和"造后端"搅在一起。
+pub fn provider_for(
+    kind: HardwareKind,
+    ctx: &AccelContext,
+) -> Arc<dyn HardwareAccelerationProvider> {
+    let mem = MemoryInfo {
+        total_bytes: ctx.memory_bytes,
+    };
+    match kind {
+        HardwareKind::RockchipMpp => Arc::new(RkmppAccel),
+        HardwareKind::NvidiaNvenc => Arc::new(NvencAccel::default()),
+        HardwareKind::IntelQsv => Arc::new(QsvAccel::new(ctx.render_node.clone())),
+        HardwareKind::AmdVaapi => Arc::new(VaapiAccel::new(ctx.render_node.clone())),
+        HardwareKind::AppleVideoToolbox => Arc::new(VideoToolboxAccel),
+        _ => Arc::new(SoftwareAccel::new(ctx.cpu_cores.max(1), &mem)),
+    }
+}
+
+/// 后端候选链：能编目标格式的按探测顺序排在前面，**软件永远压在最后**。
+///
+/// 返回的列表**保证以软件档收尾**（P5 DoD：硬件转码失败时静默降级）。
+/// 只有硬件的机器也必须补一个软件档，否则降级链会在最后一级断掉。
+pub fn accel_chain(
+    profiles: &[HardwareProfile],
+    ctx: &AccelContext,
+    target: &VideoCodec,
+    width: Option<u32>,
+    height: Option<u32>,
+    tonemap_from: Option<HdrType>,
+) -> Vec<AccelArgs> {
+    let mut out: Vec<AccelArgs> = Vec::new();
+    let mut seen: Vec<String> = Vec::new();
+
+    for p in profiles {
+        if !p.encoders.contains(target) {
+            continue;
+        }
+        let a = accel_args_for(
+            &*provider_for(p.kind, ctx),
+            target,
+            width,
+            height,
+            tonemap_from,
+        );
+        if seen.contains(&a.id) {
+            continue;
+        }
+        seen.push(a.id.clone());
+        out.push(a);
+    }
+
+    // 兜底：软件档必须在链尾，且只放一次。
+    if !seen.iter().any(|id| id == "software") {
+        let sw = SoftwareAccel::new(
+            ctx.cpu_cores.max(1),
+            &MemoryInfo {
+                total_bytes: ctx.memory_bytes,
+            },
+        );
+        out.push(accel_args_for(&sw, target, width, height, tonemap_from));
+    }
+    out
+}
 
 /// 把 `HardwareAccelerationProvider` 的参数片段打包成 `AccelArgs`。
 ///
@@ -108,5 +187,75 @@ mod tests {
         let a = accel_args_for(&sw, &VideoCodec::H264, None, None, Some(HdrType::Sdr));
         // SDR→SDR 不需要任何滤镜。
         assert!(a.tonemap.is_none());
+    }
+
+    fn profile(kind: HardwareKind, enc: Vec<VideoCodec>) -> HardwareProfile {
+        HardwareProfile {
+            kind,
+            decoders: enc.clone(),
+            encoders: enc,
+            supports_zero_copy: true,
+            supports_tone_mapping: true,
+            max_concurrent_sessions: 2,
+        }
+    }
+
+    #[test]
+    fn chain_puts_software_last_even_when_only_hw_probed() {
+        // P5 DoD：降级链的最后一级必须是软件，否则"硬件失败"就等于"播不了"。
+        let ctx = AccelContext {
+            render_node: Some("/dev/dri/renderD128".into()),
+            cpu_cores: 8,
+            memory_bytes: 8 << 30,
+        };
+        let chain = accel_chain(
+            &[profile(HardwareKind::AmdVaapi, vec![VideoCodec::H264])],
+            &ctx,
+            &VideoCodec::H264,
+            Some(1280),
+            Some(720),
+            None,
+        );
+        assert_eq!(chain.len(), 2);
+        assert_eq!(chain[0].id, "vaapi");
+        assert_eq!(chain[1].id, "software");
+        // VAAPI 的设备参数要靠 context 带下来，不能拍脑袋写死。
+        assert!(chain[0]
+            .decoder
+            .contains(&"/dev/dri/renderD128".to_string()));
+    }
+
+    #[test]
+    fn chain_skips_backends_that_cannot_encode_target() {
+        // VideoToolbox 编不出 AV1，不该出现在候选链里（否则白试一次）。
+        let ctx = AccelContext::default();
+        let chain = accel_chain(
+            &[
+                profile(HardwareKind::AppleVideoToolbox, vec![VideoCodec::H264]),
+                profile(HardwareKind::Software, vec![VideoCodec::H264]),
+            ],
+            &ctx,
+            &VideoCodec::Av1,
+            None,
+            None,
+            None,
+        );
+        assert_eq!(chain.len(), 1, "只剩软件档");
+        assert_eq!(chain[0].id, "software");
+    }
+
+    #[test]
+    fn chain_does_not_duplicate_software() {
+        let ctx = AccelContext::default();
+        let chain = accel_chain(
+            &[profile(HardwareKind::Software, vec![VideoCodec::H264])],
+            &ctx,
+            &VideoCodec::H264,
+            None,
+            None,
+            None,
+        );
+        assert_eq!(chain.len(), 1);
+        assert_eq!(chain[0].id, "software");
     }
 }

@@ -14,9 +14,16 @@ tauri-build = { version = "2", features = [] }
 
 [dependencies]
 # tray-icon / single-instance 是桌面端外壳的两个硬需求，显式打开而不是靠默认值。
-tauri = { version = "2", features = ["tray-icon"] }
+# protocol-asset 是给 P6 的移动端 asset 协议准备的：
+# tauri.conf.json 里开了 `security.assetProtocol.enable`，
+# 而 Cargo feature 与配置必须一致 —— 不一致时报错发生在 **build.rs 阶段**，
+# 且错误信息里只说"run tauri dev/build or add the feature"，不会告诉你是哪个 feature。
+tauri = { version = "2", features = ["tray-icon", "protocol-asset"] }
 tauri-plugin-single-instance = "2"
 # mpv 后端的核心逻辑（参数构造 / 协议编解码）在主 workspace 里，那边有测试。
 whatmedia-mpv = { path = "../../crates/mpv" }
+# Android 播放器插件。桌面端注册它也没有副作用（命令只在 Android 上被调用），
+# 所以不做 cfg 切分 —— 少一个条件分支就少一处"只在某些平台编译"的盲区。
+tauri-plugin-media3 = { path = "../../plugins/tauri-plugin-media3" }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"

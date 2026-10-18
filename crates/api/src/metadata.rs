@@ -184,10 +184,36 @@ pub async fn start_scrape(
     });
 
     let registry = state.scrapes.clone();
+    let notify_db = state.db.clone();
     tokio::spawn(async move {
         let result = scraper.run(library_id, Default::default()).await;
         match result {
-            Ok(stats) => registry.finish(run_id, stats),
+            Ok(stats) => {
+                // 刮削跑几分钟是常态，跑完时人早不在页面上了 —— 结果要靠通知送出去。
+                // 有待确认项时升级成 warn：那意味着这批匹配里可能有错的需要人看一眼。
+                if let Some(db) = &notify_db {
+                    let n = whatmedia_database::repo::NewNotification {
+                        kind: "scrape_finished",
+                        level: if stats.failed > 0 {
+                            whatmedia_database::repo::NotifyLevel::Error
+                        } else if stats.review > 0 {
+                            whatmedia_database::repo::NotifyLevel::Warn
+                        } else {
+                            whatmedia_database::repo::NotifyLevel::Info
+                        },
+                        title: "刮削完成".to_string(),
+                        body: Some(format!(
+                            "匹配 {} 个，待确认 {} 个，失败 {} 个，抓图 {} 张。",
+                            stats.matched, stats.review, stats.failed, stats.images
+                        )),
+                        link: None,
+                    };
+                    if let Err(e) = whatmedia_database::repo::notify_admins(db, &n).await {
+                        tracing::warn!("写刮削完成通知失败：{e:#}");
+                    }
+                }
+                registry.finish(run_id, stats);
+            }
             Err(e) => {
                 tracing::error!("刮削失败：{e:#}");
                 registry.finish(run_id, ScrapeStats::default());

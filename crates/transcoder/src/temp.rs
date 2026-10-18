@@ -22,13 +22,6 @@ impl TempDirGuard {
         Ok(Self { path: Some(path) })
     }
 
-    /// 接管一个已经存在的目录（比如进程重启后从库里捞回来的残留）。
-    pub fn adopt(path: impl Into<PathBuf>) -> Self {
-        Self {
-            path: Some(path.into()),
-        }
-    }
-
     pub fn path(&self) -> &Path {
         self.path.as_deref().expect("guard 已被 persist 消耗")
     }

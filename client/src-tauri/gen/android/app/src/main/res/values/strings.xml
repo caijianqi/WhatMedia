@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">WhatMedia</string>
+    <!-- 通知栏 / MediaSession 的渠道名。用户看到的是这个，不是 app_name。 -->
+    <string name="playback_channel_name">播放控制</string>
+    <string name="playback_channel_description">锁屏与通知栏上的播放控制</string>
+</resources>

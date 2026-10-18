@@ -1,0 +1,12 @@
+# 手写，不是生成的。
+#
+# 常规 Tauri 插件由 `tauri_plugin::build::try_build` 生成这些文件，
+# 但我们没有引入 `tauri-plugin` crate（见 Cargo.toml 与 ADR-0005），
+# 所以这里手写。**增删命令时必须同步改 permissions/default.toml 与本目录。**
+# 漏了的后果是前端 invoke 报 "permission denied"，
+# 而错误信息完全不会提示"清单里少了一条"。
+
+[[permission]]
+identifier = "allow-media3-load"
+description = "允许调用 media3_load 命令，无预置作用域。"
+commands.allow = ["media3_load"]

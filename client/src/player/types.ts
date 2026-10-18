@@ -7,7 +7,7 @@
  * 所以上层只认识这个接口，并且**必须能查询后端能力**（`capabilities`），
  * 不能假设"所有后端都一样"。
  *
- * **与 111.md §53 的差异（有意为之）**：§53 写的是 `get_position()` / `get_duration()`
+ * **与 需求稿 §53 的差异（有意为之）**：§53 写的是 `get_position()` / `get_duration()`
  * 这类轮询式 getter。在 Vue 里轮询是反模式 —— 位置每 250ms 变一次，
  * 要么用 `setInterval` 把整个组件树吵醒，要么干脆不更新。
  * 改成 `state` 快照 + `subscribe()` 订阅：底层有事件（timeupdate / mpv 的 property change）
@@ -294,6 +294,3 @@ export interface MediaPlayer {
   /** 订阅事件。返回取消订阅函数。 */
   on(listener: (event: PlayerEvent) => void): () => void
 }
-
-/** 播放器工厂。 */
-export type PlayerFactory = () => MediaPlayer

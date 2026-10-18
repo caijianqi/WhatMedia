@@ -24,7 +24,7 @@ pub use plan::{
 };
 pub use sidecar::{discover_sidecars, ExternalSubtitle};
 
-use whatmedia_core::{SubtitleCodec, VideoCodec};
+use whatmedia_core::SubtitleCodec;
 
 /// 从 ffprobe 的 codec 名映射字幕格式。
 ///
@@ -68,13 +68,6 @@ pub fn burn_filter(track: &str) -> String {
 /// 内嵌轨烧录用。ffprobe 的流序号是**文件内序号**，不是过滤后的序号。
 pub fn burn_filter_for_stream(file_index: i32) -> String {
     format!("subtitles=si={file_index}")
-}
-
-/// 独立于字幕之外的小工具：判断某个视频格式是否需要烧录才能上 HDR 屏。
-///
-/// 这里返回 false 只是表示"与字幕无关"，真正的 HDR 决策在 playback crate。
-pub fn needs_burn_for_video(_codec: &VideoCodec) -> bool {
-    false
 }
 
 #[cfg(test)]

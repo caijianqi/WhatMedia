@@ -372,11 +372,6 @@ fn clean_ass_text(raw: &str) -> String {
     cleaned.join("\n")
 }
 
-/// 把任意文本字幕统一转成 SRT。目标是"服务端外挂投递"这一条路径。
-pub fn to_srt_from(cues: &[Cue]) -> String {
-    to_srt(cues)
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;

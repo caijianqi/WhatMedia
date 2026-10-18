@@ -215,11 +215,11 @@ export class MpvPlayer implements MediaPlayer {
   private renderPlaceholder(container: HTMLElement): void {
     const el = document.createElement('div')
     el.className =
-      'flex h-full w-full flex-col items-center justify-center gap-2 bg-black text-center text-sm text-slate-400'
+      'flex h-full w-full flex-col items-center justify-center gap-2 bg-black text-center text-sm text-wm-muted'
     const line1 = document.createElement('p')
     line1.textContent = '正在用 mpv 播放（独立窗口）'
     const line2 = document.createElement('p')
-    line2.className = 'text-xs text-slate-500'
+    line2.className = 'text-xs text-wm-muted'
     line2.textContent = '画面在 mpv 窗口里，下面的控制条仍然可用'
     el.append(line1, line2)
     container.appendChild(el)

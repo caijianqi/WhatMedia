@@ -5,11 +5,11 @@
 //! 不要带着半初始化的状态去监听端口 —— 那会让健康检查说谎。
 
 use anyhow::{Context, Result};
+use std::sync::Arc;
+use tracing::{info, warn};
 use whatmedia_api::{build_router, AppState};
 use whatmedia_config::AppConfig;
 use whatmedia_database::Db;
-use std::sync::Arc;
-use tracing::{info, warn};
 
 #[tokio::main]
 async fn main() -> Result<()> {
@@ -18,15 +18,69 @@ async fn main() -> Result<()> {
         .filter(|a| a.ends_with(".toml"))
         .map(std::path::PathBuf::from);
 
-    let config = AppConfig::load(config_path)?;
+    let mut config = AppConfig::load(config_path)?;
     config.ensure_dirs()?;
     init_logging(&config.logging);
+    // 不记这一下，`/healthz` 的 `uptime_secs` 永远是 0 —— 健康检查会安静地说谎。
+    whatmedia_diagnostics::mark_started();
 
     let db = Db::open(&config.database.url)
         .await
         .with_context(|| format!("打开数据库失败：{}", config.database.url))?;
     db.migrate(&config.paths.migrations_dir).await?;
     db.ping().await?;
+
+    // ── 首次运行的引导账户 ──────────────────────────────────
+    // 部署者可以用 WHATMEDIA_BOOTSTRAP_USER / _PASSWORD 直接把管理员准备好
+    // （Docker / 无人值守场景）。没设就什么都不做 ——
+    // Web UI 首次访问会看到相应的安装引导。
+    match whatmedia_api::auth::bootstrap_dev_user(&db).await {
+        Ok(Some((username, _))) => {
+            info!(%username, "已按环境变量创建首个管理员账户");
+        }
+        Ok(None) => {}
+        Err(e) => warn!("引导账户创建失败：{e:#}"),
+    }
+
+    // ── 数据库里存的设置覆盖 ────────────────────────────────
+    // 顺序是刻意的：先按 TOML + 环境变量拿到连库的 URL，连上之后再让库里的
+    // 覆盖值盖上来。反过来做不了 —— 没有配置就不知道库在哪。
+    //
+    // 被拒掉的项（不合法 / 不在白名单）只记日志并保留在 state 里，
+    // 让 `GET /api/v1/settings` 能把它显示出来：
+    // 一个"改了但没生效"的设置如果无处可见，用户永远发现不了。
+    let rejected = match whatmedia_database::repo::list_server_settings(&db).await {
+        Ok(rows) => {
+            let overrides: Vec<(String, String)> =
+                rows.into_iter().map(|r| (r.key, r.value)).collect();
+            if overrides.is_empty() {
+                Vec::new()
+            } else {
+                let r = config.apply_setting_overrides(&overrides);
+                if r.is_empty() {
+                    info!(n = overrides.len(), "已套用数据库里的设置覆盖");
+                }
+                r
+            }
+        }
+        Err(e) => {
+            warn!("读取设置覆盖失败，本次启动只使用配置文件与环境变量：{e:#}");
+            Vec::new()
+        }
+    };
+    for r in &rejected {
+        warn!("设置覆盖被忽略：{r}");
+    }
+
+    // 清掉过期会话。放在服务的稳定运行期而不是启动期做会更"干净"，
+    // 但那就需要一个后台任务 —— 相比多一个常驻任务，启动时顺手扫一遍不值得拒绝。
+    whatmedia_api::auth::prune_sessions(&db, 30).await;
+    // 通知表是唯一会自己持续长大的表，同样顺手清一次。
+    match whatmedia_database::repo::prune_notifications(&db, 90).await {
+        Ok(0) => {}
+        Ok(n) => info!("已清理 {n} 条过期通知"),
+        Err(e) => warn!("清理过期通知失败：{e:#}"),
+    }
 
     let ffprobe = detect_ffprobe().await;
 
@@ -70,13 +124,17 @@ async fn main() -> Result<()> {
 
     let state = AppState::new(config.clone())
         .with_db(db.clone())
+        .with_rejected_settings(rejected)
         .with_ffprobe(ffprobe)
         .with_scraper(scraper)
         .with_images(images)
-        .with_playback(ffmpeg, profiles);
+        .with_playback(ffmpeg, profiles, machine.accel_context())
+        // AI 是可选能力：没配模型时它走规则引擎，配置错误也不该让服务起不来。
+        .with_ai();
 
     // 重启后把上次崩溃遗留的 HLS 分片目录清掉，否则 /cache 会越堆越大。
-    match whatmedia_api::playback::reap_orphan_streams(&db, &config.paths.cache_dir.join("hls")).await
+    match whatmedia_api::playback::reap_orphan_streams(&db, &config.paths.cache_dir.join("hls"))
+        .await
     {
         Ok(0) => {}
         Ok(n) => info!("已清理 {n} 个上次运行遗留的 HLS 目录"),

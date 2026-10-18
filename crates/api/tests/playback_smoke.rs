@@ -9,13 +9,12 @@
 //! 501 前端能提示"请安装 ffmpeg"，500 只会弹一个毫无意义的网络错误。
 
 use axum::body::Body;
-use axum::http::{header, HeaderMap, Request, StatusCode};
-use whatmedia_api::{build_router, AppState};
+use axum::http::{header, Request, StatusCode};
+use std::path::Path;
+use whatmedia_api::AppState;
 use whatmedia_config::AppConfig;
 use whatmedia_core::Id;
 use whatmedia_database::Db;
-use std::path::{Path, PathBuf};
-use tower::ServiceExt;
 
 // ─────────────────────────────────────────────────────────────
 // 装配
@@ -23,6 +22,8 @@ use tower::ServiceExt;
 
 struct Harness {
     state: AppState,
+    /// 会话票据。**播放端点也在鉴权之后** —— 这条以前没被验证过。
+    tok: String,
     /// 必须活到测试结束：媒体文件与缓存目录都在它下面。
     _dir: tempfile::TempDir,
     /// MP4 + H264 + AAC —— Web 端可以直出。
@@ -35,13 +36,8 @@ struct Harness {
     sidecar: String,
 }
 
-fn migrations_dir() -> PathBuf {
-    Path::new(env!("CARGO_MANIFEST_DIR"))
-        .ancestors()
-        .nth(2)
-        .unwrap()
-        .join("migrations")
-}
+mod common;
+use common::{admin_token, get, post_json, send};
 
 async fn seed_library(db: &Db, root: &Path) {
     sqlx::query(
@@ -190,7 +186,7 @@ async fn harness() -> Harness {
     std::fs::create_dir_all(&root).unwrap();
 
     let db = Db::open_in_memory().await.unwrap();
-    db.migrate(&migrations_dir()).await.unwrap();
+    db.migrate(&common::migrations_dir()).await.unwrap();
     seed_library(&db, &root).await;
 
     let (mp4_item, mp4) = seed_file(&db, &root, "Movie.2020.1080p.mp4", "mp4", false).await;
@@ -209,12 +205,14 @@ async fn harness() -> Harness {
     std::fs::create_dir_all(&cfg.paths.cache_dir).unwrap();
 
     // 本机没有 ffmpeg：这正是要测的状态之一（端点必须给 501 而不是 500）。
+    let tok = admin_token(&db).await;
     let state = AppState::new(cfg)
         .with_db(db)
-        .with_playback(None, Vec::new());
+        .with_playback(None, Vec::new(), Default::default());
 
     Harness {
         state,
+        tok,
         _dir: dir,
         mp4,
         mp4_item,
@@ -228,63 +226,15 @@ async fn harness() -> Harness {
 // 请求辅助
 // ─────────────────────────────────────────────────────────────
 
-struct Reply {
-    status: StatusCode,
-    headers: HeaderMap,
-    body: Vec<u8>,
-}
+// `Reply` / `send` 来自 common：它们装配的是同一个真 router，
+// 各文件自己写一份就会有人漏掉鉴权中间件。
 
-impl Reply {
-    fn json(&self) -> serde_json::Value {
-        serde_json::from_slice(&self.body).unwrap_or(serde_json::Value::Null)
-    }
-
-    fn text(&self) -> String {
-        String::from_utf8_lossy(&self.body).to_string()
-    }
-
-    fn header(&self, name: header::HeaderName) -> String {
-        self.headers
-            .get(name)
-            .and_then(|v| v.to_str().ok())
-            .unwrap_or("")
-            .to_string()
-    }
-}
-
-async fn send(state: &AppState, req: Request<Body>) -> Reply {
-    let res = build_router(state.clone()).oneshot(req).await.unwrap();
-    let status = res.status();
-    let headers = res.headers().clone();
-    let body = axum::body::to_bytes(res.into_body(), usize::MAX)
-        .await
-        .unwrap()
-        .to_vec();
-    Reply {
-        status,
-        headers,
-        body,
-    }
-}
-
-fn get(uri: &str) -> Request<Body> {
-    Request::builder().uri(uri).body(Body::empty()).unwrap()
-}
-
-fn get_with_range(uri: &str, v: &str) -> Request<Body> {
+fn get_with_range(tok: &str, uri: &str, v: &str) -> Request<Body> {
     Request::builder()
         .uri(uri)
+        .header("authorization", format!("Bearer {tok}"))
         .header(header::RANGE, v)
         .body(Body::empty())
-        .unwrap()
-}
-
-fn post_json(uri: &str, v: serde_json::Value) -> Request<Body> {
-    Request::builder()
-        .method("POST")
-        .uri(uri)
-        .header(header::CONTENT_TYPE, "application/json")
-        .body(Body::from(serde_json::to_vec(&v).unwrap()))
         .unwrap()
 }
 
@@ -297,10 +247,10 @@ async fn decide_direct_plays_web_friendly_file() {
     let h = harness().await;
     let r = send(
         &h.state,
-        get(&format!(
-            "/api/v1/playback/decide?file_id={}&client=web",
-            h.mp4
-        )),
+        get(
+            &h.tok,
+            &format!("/api/v1/playback/decide?file_id={}&client=web", h.mp4),
+        ),
     )
     .await;
     assert_eq!(r.status, StatusCode::OK, "{}", r.text());
@@ -316,10 +266,10 @@ async fn decide_remuxes_mkv_on_web_with_an_explanation() {
     let h = harness().await;
     let r = send(
         &h.state,
-        get(&format!(
-            "/api/v1/playback/decide?file_id={}&client=web",
-            h.mkv
-        )),
+        get(
+            &h.tok,
+            &format!("/api/v1/playback/decide?file_id={}&client=web", h.mkv),
+        ),
     )
     .await;
     assert_eq!(r.status, StatusCode::OK, "{}", r.text());
@@ -340,10 +290,13 @@ async fn decide_is_a_pure_read_with_no_side_effects() {
     let h = harness().await;
     let _ = send(
         &h.state,
-        get(&format!("/api/v1/playback/decide?file_id={}", h.mp4)),
+        get(
+            &h.tok,
+            &format!("/api/v1/playback/decide?file_id={}", h.mp4),
+        ),
     )
     .await;
-    let r = send(&h.state, get("/api/v1/playback/resume")).await;
+    let r = send(&h.state, get(&h.tok, "/api/v1/playback/resume")).await;
     assert_eq!(r.status, StatusCode::OK);
     assert!(r.json().as_array().unwrap().is_empty());
 }
@@ -353,7 +306,10 @@ async fn decide_returns_404_for_unknown_file() {
     let h = harness().await;
     let r = send(
         &h.state,
-        get(&format!("/api/v1/playback/decide?file_id={}", Id::new_v4())),
+        get(
+            &h.tok,
+            &format!("/api/v1/playback/decide?file_id={}", Id::new_v4()),
+        ),
     )
     .await;
     assert_eq!(r.status, StatusCode::NOT_FOUND);
@@ -367,7 +323,7 @@ async fn decide_returns_404_for_unknown_file() {
 #[tokio::test]
 async fn direct_stream_returns_full_body_and_accept_ranges() {
     let h = harness().await;
-    let r = send(&h.state, get(&format!("/api/v1/stream/{}", h.mp4))).await;
+    let r = send(&h.state, get(&h.tok, &format!("/api/v1/stream/{}", h.mp4))).await;
     assert_eq!(r.status, StatusCode::OK, "{}", r.text());
     assert_eq!(r.header(header::ACCEPT_RANGES), "bytes");
     assert_eq!(r.header(header::CONTENT_LENGTH), "4096");
@@ -375,7 +331,7 @@ async fn direct_stream_returns_full_body_and_accept_ranges() {
     assert_eq!(r.body.len(), 4096);
     assert_eq!(r.header(header::CONTENT_TYPE), "video/mp4");
 
-    let r = send(&h.state, get(&format!("/api/v1/stream/{}", h.mkv))).await;
+    let r = send(&h.state, get(&h.tok, &format!("/api/v1/stream/{}", h.mkv))).await;
     assert_eq!(r.header(header::CONTENT_TYPE), "video/x-matroska");
 }
 
@@ -384,7 +340,7 @@ async fn direct_stream_honors_range_request() {
     let h = harness().await;
     let r = send(
         &h.state,
-        get_with_range(&format!("/api/v1/stream/{}", h.mp4), "bytes=0-99"),
+        get_with_range(&h.tok, &format!("/api/v1/stream/{}", h.mp4), "bytes=0-99"),
     )
     .await;
     assert_eq!(r.status, StatusCode::PARTIAL_CONTENT);
@@ -403,7 +359,7 @@ async fn direct_stream_honors_open_ended_and_suffix_ranges() {
     // 开区间：从 4000 到结尾。
     let r = send(
         &h.state,
-        get_with_range(&format!("/api/v1/stream/{}", h.mp4), "bytes=4000-"),
+        get_with_range(&h.tok, &format!("/api/v1/stream/{}", h.mp4), "bytes=4000-"),
     )
     .await;
     assert_eq!(r.status, StatusCode::PARTIAL_CONTENT);
@@ -413,7 +369,7 @@ async fn direct_stream_honors_open_ended_and_suffix_ranges() {
     // 尾部区间：最后 96 字节。
     let r = send(
         &h.state,
-        get_with_range(&format!("/api/v1/stream/{}", h.mp4), "bytes=-96"),
+        get_with_range(&h.tok, &format!("/api/v1/stream/{}", h.mp4), "bytes=-96"),
     )
     .await;
     assert_eq!(r.status, StatusCode::PARTIAL_CONTENT);
@@ -427,7 +383,7 @@ async fn direct_stream_out_of_bounds_range_is_416() {
     for bad in ["bytes=99999-", "bytes=0-99999", "bytes=10-5"] {
         let r = send(
             &h.state,
-            get_with_range(&format!("/api/v1/stream/{}", h.mp4), bad),
+            get_with_range(&h.tok, &format!("/api/v1/stream/{}", h.mp4), bad),
         )
         .await;
         assert_eq!(r.status, StatusCode::RANGE_NOT_SATISFIABLE, "{bad}");
@@ -441,7 +397,7 @@ async fn direct_stream_rejects_multipart_and_malformed_ranges() {
     for bad in ["bytes=0-9,20-29", "items=0-10", "bytes=abc-def", "0-99"] {
         let r = send(
             &h.state,
-            get_with_range(&format!("/api/v1/stream/{}", h.mp4), bad),
+            get_with_range(&h.tok, &format!("/api/v1/stream/{}", h.mp4), bad),
         )
         .await;
         assert_eq!(r.status, StatusCode::RANGE_NOT_SATISFIABLE, "{bad}");
@@ -451,7 +407,11 @@ async fn direct_stream_rejects_multipart_and_malformed_ranges() {
 #[tokio::test]
 async fn direct_stream_returns_404_for_unknown_file() {
     let h = harness().await;
-    let r = send(&h.state, get(&format!("/api/v1/stream/{}", Id::new_v4()))).await;
+    let r = send(
+        &h.state,
+        get(&h.tok, &format!("/api/v1/stream/{}", Id::new_v4())),
+    )
+    .await;
     assert_eq!(r.status, StatusCode::NOT_FOUND);
 }
 
@@ -467,6 +427,7 @@ async fn session_lifecycle_start_heartbeat_resume_stop() {
     let r = send(
         &h.state,
         post_json(
+            &h.tok,
             "/api/v1/playback/sessions",
             serde_json::json!({ "file_id": h.mp4, "client": "web", "device_id": "dev-1" }),
         ),
@@ -485,6 +446,7 @@ async fn session_lifecycle_start_heartbeat_resume_stop() {
     let r = send(
         &h.state,
         post_json(
+            &h.tok,
             &format!("/api/v1/playback/sessions/{session}/heartbeat"),
             serde_json::json!({ "position_ms": 600_000, "duration_ms": 7_200_000 }),
         ),
@@ -493,7 +455,7 @@ async fn session_lifecycle_start_heartbeat_resume_stop() {
     assert_eq!(r.status, StatusCode::OK, "{}", r.text());
 
     // 续播列表里应当出现。
-    let r = send(&h.state, get("/api/v1/playback/resume")).await;
+    let r = send(&h.state, get(&h.tok, "/api/v1/playback/resume")).await;
     assert_eq!(r.status, StatusCode::OK);
     let list = r.json().as_array().unwrap().clone();
     assert_eq!(list.len(), 1, "{list:?}");
@@ -504,13 +466,14 @@ async fn session_lifecycle_start_heartbeat_resume_stop() {
     let r = send(
         &h.state,
         post_json(
+            &h.tok,
             &format!("/api/v1/playback/sessions/{session}/stop"),
             serde_json::json!({ "position_ms": 610_000 }),
         ),
     )
     .await;
     assert_eq!(r.status, StatusCode::OK);
-    let r = send(&h.state, get("/api/v1/playback/resume")).await;
+    let r = send(&h.state, get(&h.tok, "/api/v1/playback/resume")).await;
     assert!(r.json().as_array().unwrap().is_empty());
 }
 
@@ -522,6 +485,7 @@ async fn session_that_needs_ffmpeg_is_501_not_500() {
     let r = send(
         &h.state,
         post_json(
+            &h.tok,
             "/api/v1/playback/sessions",
             serde_json::json!({ "file_id": h.mkv, "client": "web" }),
         ),
@@ -537,6 +501,7 @@ async fn session_for_unknown_file_is_404() {
     let r = send(
         &h.state,
         post_json(
+            &h.tok,
             "/api/v1/playback/sessions",
             serde_json::json!({ "file_id": Id::new_v4() }),
         ),
@@ -548,7 +513,11 @@ async fn session_for_unknown_file_is_404() {
 #[tokio::test]
 async fn remux_without_ffmpeg_is_501() {
     let h = harness().await;
-    let r = send(&h.state, get(&format!("/api/v1/stream/{}/remux", h.mkv))).await;
+    let r = send(
+        &h.state,
+        get(&h.tok, &format!("/api/v1/stream/{}/remux", h.mkv)),
+    )
+    .await;
     assert_eq!(r.status, StatusCode::NOT_IMPLEMENTED);
     assert_eq!(r.json()["error"]["code"], "FFMPEG_UNAVAILABLE");
 }
@@ -567,9 +536,9 @@ async fn unknown_hls_job_is_404() {
         format!("/api/v1/hls/{job}/stop"),
     ] {
         let req = if uri.ends_with("/stop") {
-            post_json(&uri, serde_json::json!({}))
+            post_json(&h.tok, &uri, serde_json::json!({}))
         } else {
-            get(&uri)
+            get(&h.tok, &uri)
         };
         let r = send(&h.state, req).await;
         assert_eq!(r.status, StatusCode::NOT_FOUND, "{uri}");
@@ -584,7 +553,7 @@ async fn hls_file_name_is_checked_against_traversal() {
     let job = Id::new_v4();
     let r = send(
         &h.state,
-        get(&format!("/api/v1/hls/{job}/..%2f..%2fetc%2fpasswd")),
+        get(&h.tok, &format!("/api/v1/hls/{job}/..%2f..%2fetc%2fpasswd")),
     )
     .await;
     assert_ne!(r.status, StatusCode::OK);
@@ -593,7 +562,7 @@ async fn hls_file_name_is_checked_against_traversal() {
 #[tokio::test]
 async fn hardware_profile_reports_ffmpeg_absence() {
     let h = harness().await;
-    let r = send(&h.state, get("/api/v1/hardware/profile")).await;
+    let r = send(&h.state, get(&h.tok, "/api/v1/hardware/profile")).await;
     assert_eq!(r.status, StatusCode::OK);
     let v = r.json();
     assert!(v["ffmpeg"].is_null());
@@ -606,7 +575,7 @@ async fn item_subtitles_lists_internal_and_external_tracks() {
     let h = harness().await;
     let r = send(
         &h.state,
-        get(&format!("/api/v1/items/{}/subtitles", h.mkv_item)),
+        get(&h.tok, &format!("/api/v1/items/{}/subtitles", h.mkv_item)),
     )
     .await;
     assert_eq!(r.status, StatusCode::OK, "{}", r.text());
@@ -630,6 +599,7 @@ async fn external_subtitle_is_converted_to_vtt() {
     let r = send(
         &h.state,
         post_json(
+            &h.tok,
             "/api/v1/subtitles/external",
             serde_json::json!({ "path": h.sidecar }),
         ),
@@ -651,6 +621,7 @@ async fn external_subtitle_outside_any_library_is_rejected() {
     let r = send(
         &h.state,
         post_json(
+            &h.tok,
             "/api/v1/subtitles/external",
             serde_json::json!({ "path": outside.to_string_lossy() }),
         ),
@@ -662,8 +633,10 @@ async fn external_subtitle_outside_any_library_is_rejected() {
 }
 
 #[tokio::test]
-async fn playback_endpoints_report_503_without_db() {
-    // 未接数据库时必须是 503，前端据此区分"功能没做"与"后端没准备好"。
+async fn playback_endpoints_are_behind_auth_first() {
+    // 没凭据一律 401。这条替代了原来的 "无数据库 → 503"：
+    // 鉴权现在排在数据库之前，一个来路不明的请求连"有没有接数据库"
+    // 都不该看得出来。
     let mut cfg = AppConfig::default();
     cfg.server.port = 0;
     let state = AppState::new(cfg);
@@ -671,9 +644,13 @@ async fn playback_endpoints_report_503_without_db() {
         format!("/api/v1/playback/decide?file_id={}", Id::new_v4()),
         "/api/v1/playback/resume".to_string(),
         "/api/v1/playback/streams".to_string(),
+        format!("/api/v1/stream/{}", Id::new_v4()),
     ] {
-        let r = send(&state, get(&uri)).await;
-        assert_eq!(r.status, StatusCode::SERVICE_UNAVAILABLE, "{uri}");
-        assert_eq!(r.json()["error"]["code"], "DB_UNAVAILABLE", "{uri}");
+        let r = send(
+            &state,
+            Request::builder().uri(&uri).body(Body::empty()).unwrap(),
+        )
+        .await;
+        assert_eq!(r.status, StatusCode::UNAUTHORIZED, "{uri}");
     }
 }

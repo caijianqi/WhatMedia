@@ -26,6 +26,9 @@ whatmedia-storage = { path = "crates/storage" }
 whatmedia-library = { path = "crates/library" }
 whatmedia-scanner = { path = "crates/scanner" }
 whatmedia-api = { path = "crates/api" }
+whatmedia-ai = { path = "crates/ai" }
+whatmedia-auth = { path = "crates/auth" }
+whatmedia-live = { path = "crates/live" }
 
 tokio = { version = "1", features = ["rt-multi-thread", "macros", "signal", "time", "sync", "fs", "net", "process", "rt", "io-util"] }
 axum = { version = "0.8", features = ["macros"] }
@@ -77,6 +80,11 @@ reqwest = { version = "0.12", default-features = false, features = ["json", "rus
 # ── 图片缓存键 / 指纹 ────────────────────────────────────────
 sha2 = "0.10"
 tempfile = "3"
+
+# ── 鉴权（多用户）──────────────────────────────────────────
+argon2 = { version = "0.6", features = ["password-hash", "getrandom", "rand_core"] }
+base64 = "0.22"
+getrandom = "0.4"
 
 [profile.release]
 opt-level = 3

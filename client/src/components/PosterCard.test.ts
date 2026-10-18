@@ -1,15 +1,20 @@
 /**
- * 海报卡片的渲染测试。
- *
- * 覆盖的是**降级路径**而不是正常路径：刮削没跑完的库里大片条目都没有海报，
- * 那条路径上的表现比"有海报时显示图片"重要得多 ——
- * 满屏灰色占位方块时，用户根本分不出哪个是哪个。
+ * 海报卡片的渲染与交互测试。
  */
-
-import { describe, expect, it } from 'vitest'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { mount } from '@vue/test-utils'
+import { createPinia, setActivePinia } from 'pinia'
 import PosterCard from './PosterCard.vue'
 import type { ItemSummary } from '../api/client'
+import * as api from '../api/client'
+
+vi.mock('../api/client', async (importOriginal) => {
+  const actual = await importOriginal<typeof api>()
+  return {
+    ...actual,
+    setFavorite: vi.fn(),
+  }
+})
 
 const item: ItemSummary = {
   id: 'abc',
@@ -19,7 +24,14 @@ const item: ItemSummary = {
   added_at: '2026-01-01T00:00:00Z',
 }
 
-function mountCard(props: Partial<{ item: ItemSummary; progress: number }> = {}) {
+function mountCard(
+  props: Partial<{
+    item: ItemSummary
+    progress: number
+    quality: string
+    isFavorite: boolean
+  }> = {},
+) {
   return mount(PosterCard, {
     props: { item, ...props } as never,
     global: { stubs: { RouterLink: { template: '<a><slot /></a>' } } },
@@ -27,6 +39,11 @@ function mountCard(props: Partial<{ item: ItemSummary; progress: number }> = {})
 }
 
 describe('PosterCard', () => {
+  beforeEach(() => {
+    setActivePinia(createPinia())
+    vi.clearAllMocks()
+  })
+
   it('渲染标题与年份', () => {
     const w = mountCard()
     expect(w.text()).toContain('失控玩家')
@@ -43,7 +60,6 @@ describe('PosterCard', () => {
   it('海报加载失败时降级成标题首字，而不是留一片灰', () => {
     const w = mountCard()
     const img = w.find('img')
-    // jsdom 不会真的去请求图片，手动触发 error。
     img.trigger('error')
     expect(w.text()).toContain('失')
   })
@@ -58,5 +74,28 @@ describe('PosterCard', () => {
   it('没有进度时不画进度条', () => {
     const w = mountCard()
     expect(w.find('[role="progressbar"]').exists()).toBe(false)
+  })
+
+  it('传 quality 渲染品质角标', () => {
+    const w = mountCard({ quality: '4K HDR' })
+    expect(w.text()).toContain('4K HDR')
+    expect(w.find('.badge-quality').exists()).toBe(true)
+  })
+
+  it('点击收藏按钮切换状态并调用 api 与 emit 事件', async () => {
+    vi.mocked(api.setFavorite).mockResolvedValueOnce({
+      item_id: 'abc',
+      favorite: true,
+      count: 1,
+    })
+
+    const w = mountCard({ isFavorite: false })
+    const btn = w.find('button[aria-label="添加收藏"]')
+    expect(btn.exists()).toBe(true)
+
+    await btn.trigger('click')
+    expect(api.setFavorite).toHaveBeenCalledWith('abc', true)
+    expect(w.emitted('favorite-change')).toBeTruthy()
+    expect(w.emitted('favorite-change')![0]).toEqual([true])
   })
 })

@@ -1,0 +1,10 @@
+# ⚠️ 绕行上游缺陷，不是常规配置。说明见 client/src-tauri/.cargo/config.toml。
+#
+# 症状：schemars 0.8.22 与 indexmap 1.9.3 的组合编译失败（E0107）。
+# 修复：显式打开 indexmap 1.x 需要的 `has_std` cfg。
+#
+# 本文件与 client/src-tauri 下那份是同一个绕行，两个依赖图各自需要一份。
+# 上游修好后两处一起删。
+
+[build]
+rustflags = ["--cfg", "has_std"]

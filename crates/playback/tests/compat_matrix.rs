@@ -16,13 +16,13 @@
 //!   2. Web 上**不允许出现放不了的情况**（转码必须兜住）
 //!   3. 每个组合的降级原因都能解释自己（不允许出现"没原因的降级"）
 
+use serde::Deserialize;
+use std::path::{Path, PathBuf};
 use whatmedia_core::{AudioCodec, Container, HdrType, PlaybackStrategy, SubtitleCodec, VideoCodec};
 use whatmedia_playback::{
     decide, AudioTrack, ClientCapability, DecisionInput, MediaCapability, ServerCapability,
     SubtitleTrack, VideoTrack,
 };
-use serde::Deserialize;
-use std::path::{Path, PathBuf};
 
 /// 一条片源样本。`weight` 是这类片源在家庭库里的相对出现频率。
 #[derive(Debug, Deserialize)]
@@ -157,6 +157,7 @@ fn server() -> ServerCapability {
             max_concurrent_sessions: 2,
         }],
         active_transcodes: 0,
+        accel_ctx: whatmedia_transcoder::AccelContext::default(),
     }
 }
 

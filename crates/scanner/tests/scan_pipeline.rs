@@ -4,12 +4,12 @@
 //! 而是"给一个目录，能不能得到一个能查的媒体库"。
 
 use anyhow::Result;
+use std::path::{Path, PathBuf};
+use std::sync::Arc;
 use whatmedia_core::MediaKind;
 use whatmedia_database::{repo, Db};
 use whatmedia_scanner::{ScanConfig, ScanControl, Scanner};
 use whatmedia_storage::LocalStorage;
-use std::path::{Path, PathBuf};
-use std::sync::Arc;
 
 fn migrations_dir() -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR"))
@@ -293,11 +293,30 @@ async fn chinese_search_hits_by_substring() -> Result<()> {
 
 /// 10,000 文件基线。**默认不跑**（需要几分钟），用于建立 P1 DoD 里的性能基线：
 /// `cargo test -p whatmedia-scanner -- --ignored --nocapture scan_10k_baseline`
+///
+/// 规模可用 `WHATMEDIA_SCAN_BASELINE_N` 调小（例如 2000），用来在本地快速复跑，
+/// 不必每次都等满 10k。DoD 里的正式数字仍以默认 10,000 为准。
+///
+/// **这条测试不只是计时**：它同时断言 `found == N`、`failed == 0`、全量 `added == N`、
+/// 增量 `skipped == N`。只打印数字而不校验"到底扫到了几个"的话，
+/// 少扫一个文件不会红 —— 那这条基线就守不住任何东西。
 #[tokio::test]
 #[ignore]
 async fn scan_10k_baseline() -> Result<()> {
+    // 入库失败是靠 `warn!` 报的。测试进程默认没有 subscriber，
+    // 不装一个的话失败原因会被静默吞掉 —— 只剩一个数字，没法查。
+    let _ = tracing_subscriber::fmt()
+        .with_max_level(tracing::Level::WARN)
+        .with_test_writer()
+        .try_init();
+
+    let n: u64 = std::env::var("WHATMEDIA_SCAN_BASELINE_N")
+        .ok()
+        .and_then(|s| s.parse().ok())
+        .unwrap_or(10_000);
+
     let tmp = tempfile::tempdir()?;
-    for i in 0..10_000 {
+    for i in 0..n {
         let dir = tmp.path().join(format!("d{:03}", i % 100));
         std::fs::create_dir_all(&dir)?;
         touch(
@@ -338,15 +357,33 @@ async fn scan_10k_baseline() -> Result<()> {
     let incremental = start.elapsed();
 
     println!(
-        "\n=== 10k 基线 ===\n全量扫描 {:?}（新增 {}）\n增量扫描 {:?}（跳过 {}）\n",
-        full, stats.added, incremental, inc.skipped
+        "\n=== 扫描基线（N={n}）===\n\
+         全量 {:?} — found {} / added {} / updated {} / skipped {} / failed {}\n\
+         增量 {:?} — skipped {} / added {} / failed {}\n",
+        full,
+        stats.found,
+        stats.added,
+        stats.updated,
+        stats.skipped,
+        stats.failed,
+        incremental,
+        inc.skipped,
+        inc.added,
+        inc.failed,
     );
+
     // DoD：无变更增量扫描 ≤ 30s
     assert!(
         incremental.as_secs() <= 30,
         "增量扫描 {:?} 超过 30s 预算",
         incremental
     );
+    // 正确性：一个都不少、一个都不失败。计时之外的这两条才是基线真正的价值。
+    assert_eq!(stats.found, n, "全量扫描漏文件：{stats:?}");
+    assert_eq!(stats.failed, 0, "全量扫描有失败项：{stats:?}");
+    assert_eq!(stats.added, n, "全量扫描新增数不等于文件数：{stats:?}");
+    assert_eq!(inc.skipped, n, "增量扫描未全部命中指纹：{inc:?}");
+    assert_eq!(inc.added, 0, "无变更增量不应产生新增：{inc:?}");
     Ok(())
 }
 

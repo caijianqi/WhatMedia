@@ -10,11 +10,11 @@
 //! 所以单一真源放在 `client/src/player/capabilities.json`，
 //! 前端 `import` 它，这个测试拿它跟 Rust 的预置档逐字段比对。
 
-use whatmedia_core::{AudioCodec, Container, SubtitleCodec, VideoCodec};
-use whatmedia_playback::ClientCapability;
 use serde::Serialize;
 use serde_json::Value;
 use std::path::PathBuf;
+use whatmedia_core::{AudioCodec, Container, SubtitleCodec, VideoCodec};
+use whatmedia_playback::ClientCapability;
 
 /// 前端的能力清单。
 fn manifest() -> Value {

@@ -11,6 +11,15 @@
 
 use utoipa::OpenApi;
 
+use crate::ai::{
+    AiChatReply, AiChatRequest, AiConfirmRequest, PendingActionView, ToolListReply, ToolParamView,
+    ToolSpecView, ToolTraceView,
+};
+use crate::auth::{
+    BootstrapInput, CreateUserInput, DecideInput, LoginInput, LoginResult, SignedUrlInput,
+    SignedUrlOut, UpdateUserInput, UserOut,
+};
+use crate::live::{CreateSourceRequest, LiveChannelView, LivePlayView, LiveSourceView, SyncReply};
 use crate::metadata::{
     IdentifyRequest, LockRequest, LockResult, ReviewItem, ScrapeAccepted, ScrapeRequest,
     ScrapeRunView, StatusView,
@@ -19,9 +28,13 @@ use crate::playback::{
     AckView, CreateSessionBody, DecideView, HardwareProfileView, HeartbeatBody, ReasonView,
     SessionView, SubtitleConvertBody, SubtitleItemView, SubtitleView,
 };
+use crate::social::{
+    FavoritePage, FavoriteState, NotificationList, ReadAllResult, SetFavoriteInput, SettingEntry,
+    SetSettingInput, SettingsView, StorageView,
+};
 use crate::{
-    CreateLibrary, EpisodeParams, ErrorBody, ErrorDetail, Paging, ScanAccepted, ScanRequest,
-    ScanTaskView, SearchParams,
+    CreateLibrary, CreditsView, EpisodeParams, ErrorBody, ErrorDetail, Paging, ScanAccepted,
+    ScanRequest, ScanTaskView, SearchParams,
 };
 
 /// 契约文档。CI 用 `make openapi-check` 校验它与代码同步。
@@ -39,6 +52,10 @@ use crate::{
         (name = "media", description = "媒体库与条目"),
         (name = "metadata", description = "刮削、锁定与图片缓存"),
         (name = "playback", description = "播放决策、会话与流"),
+        (name = "ai", description = "AI 助手：提问、工具清单与危险操作确认"),
+        (name = "live", description = "电视直播：订阅源、频道、拉流与停止"),
+        (name = "auth", description = "多用户：登录、账户、设备与家长审批、签名 URL"),
+        (name = "social", description = "收藏、通知、可写设置与存储统计"),
     ),
     paths(
         // system
@@ -49,10 +66,14 @@ use crate::{
         crate::list_libraries,
         crate::create_library,
         crate::list_media,
+        crate::media_kinds,
         crate::list_movies,
         crate::list_series,
         crate::list_episodes,
         crate::get_item,
+        crate::item_credits,
+        crate::item_series,
+        crate::series_seasons,
         crate::search,
         // metadata
         crate::metadata::start_scrape,
@@ -81,12 +102,57 @@ use crate::{
         crate::playback::hls_master,
         crate::playback::hls_stop,
         crate::playback::hls_file,
+        // ai
+        crate::ai::chat,
+        crate::ai::list_tools,
+        crate::ai::confirm,
+        // live
+        crate::live::list_sources,
+        crate::live::create_source,
+        crate::live::delete_source,
+        crate::live::sync_source,
+        crate::live::list_channels,
+        crate::live::play_channel,
+        crate::live::stop_channel,
+        // auth
+        crate::auth::bootstrap,
+        crate::auth::login,
+        crate::auth::logout,
+        crate::auth::logout_all,
+        crate::auth::me,
+        crate::auth::signed_url,
+        crate::auth::list_accounts,
+        crate::auth::create_account,
+        crate::auth::update_account,
+        crate::auth::delete_account,
+        crate::auth::list_devices,
+        crate::auth::revoke_device,
+        crate::auth::list_approvals,
+        crate::auth::decide,
+        // social
+        crate::social::list_my_favorites,
+        crate::social::get_favorite,
+        crate::social::set_favorite,
+        crate::social::list_notifications,
+        crate::social::read_notification,
+        crate::social::read_all_notifications,
+        crate::social::delete_notification,
+        crate::social::get_settings,
+        crate::social::put_setting,
+        crate::social::reset_setting,
+        crate::social::storage_stats,
     ),
     components(schemas(
         // ── 传输层 ────────────────────────────────────────
         ErrorBody,
         ErrorDetail,
         AckViewLike,
+        // ── live ─────────────────────────────────────────
+        CreateSourceRequest,
+        LiveSourceView,
+        LiveChannelView,
+        LivePlayView,
+        SyncReply,
         // ── core ─────────────────────────────────────────
         whatmedia_core::MediaKind,
         whatmedia_core::StreamType,
@@ -110,6 +176,7 @@ use crate::{
         // ── 媒体库/条目 ───────────────────────────────────
         Paging,
         EpisodeParams,
+        CreditsView,
         SearchParams,
         CreateLibrary,
         ScanRequest,
@@ -121,10 +188,27 @@ use crate::{
         whatmedia_database::repo::SortOrder,
         whatmedia_database::repo::ItemSummary,
         whatmedia_database::repo::ItemDetail,
+        whatmedia_database::repo::KindCount,
         whatmedia_database::repo::VersionWithFiles,
         whatmedia_database::repo::FileWithStreams,
         whatmedia_database::repo::SeriesSummary,
+        whatmedia_database::repo::SeasonSummary,
+        whatmedia_database::repo::SeriesRef,
         whatmedia_database::repo::EpisodeSummary,
+        // ── 收藏 / 通知 / 设置 / 存储 ─────────────────────
+        whatmedia_database::repo::FavoriteRow,
+        whatmedia_database::repo::NotificationRow,
+        whatmedia_database::repo::LibraryStorage,
+        FavoritePage,
+        FavoriteState,
+        SetFavoriteInput,
+        NotificationList,
+        ReadAllResult,
+        SettingEntry,
+        SetSettingInput,
+        SettingsView,
+        StorageView,
+        whatmedia_database::repo::CreditRow,
         // ── 元数据 ────────────────────────────────────────
         ScrapeRequest,
         ScrapeAccepted,
@@ -151,6 +235,27 @@ use crate::{
         SubtitleItemView,
         SubtitleConvertBody,
         whatmedia_database::repo::ResumePoint,
+        // ── AI（P7）──────────────────────────────────────
+        AiChatRequest,
+        AiConfirmRequest,
+        AiChatReply,
+        PendingActionView,
+        ToolTraceView,
+        ToolSpecView,
+        ToolParamView,
+        ToolListReply,
+        // ── 鉴权（多用户）──────────────────────────────────
+        BootstrapInput,
+        LoginInput,
+        LoginResult,
+        UserOut,
+        CreateUserInput,
+        UpdateUserInput,
+        DecideInput,
+        SignedUrlInput,
+        SignedUrlOut,
+        whatmedia_database::repo::ApprovalRow,
+        whatmedia_database::repo::DeviceRow,
     ))
 )]
 pub struct ApiDoc;

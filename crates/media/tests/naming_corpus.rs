@@ -3,9 +3,9 @@
 //! P1 的 DoD 之一：**季/集解析在语料上准确率 ≥ 99%**。
 //! 语料在 `test-media/naming/cases.jsonl`，加新语料的规则写在那个文件头部。
 
-use whatmedia_media::{parse_file_in_dir, parse_filename};
 use serde::Deserialize;
 use std::path::PathBuf;
+use whatmedia_media::{parse_file_in_dir, parse_filename};
 
 #[derive(Debug, Deserialize)]
 struct Case {

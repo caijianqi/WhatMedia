@@ -7,6 +7,12 @@
 
 import { WebPlayer, type WebPlayerOptions } from './web'
 import { MpvPlayer, probeMpv, tauriAvailable, type MpvPlayerOptions } from './mpv'
+import {
+  Media3Player,
+  media3Available,
+  tauriAvailable as tauriShell,
+  type Media3PlayerOptions,
+} from './media3'
 import { capabilitiesFor, defaultBackend, type PlayerBackend } from './capabilities'
 import type { MediaPlayer } from './types'
 
@@ -14,12 +20,17 @@ export * from './types'
 export { PlayerCore, initialSnapshot } from './core'
 export { ProgressReporter } from './progress'
 export { WebPlayer } from './web'
-export { MpvPlayer, tauriAvailable, probeMpv } from './mpv'
+export { MpvPlayer, probeMpv } from './mpv'
 export type { MpvBridge, MpvEventPayload, MpvPlayerOptions, MpvStatus } from './mpv'
+export { Media3Player, MEDIA3_EVENT_CHANNEL, media3Available } from './media3'
+export type { Media3Bridge, Media3PlayerOptions, Media3WireEvent } from './media3'
 export { CLIENT_CAPABILITIES, capabilitiesFor, defaultBackend } from './capabilities'
 export type { HlsConstructor, HlsLike, WebPlayerOptions } from './web'
+export { RecoveryCoordinator, delayForAttempt, resumePosition } from './reconnect'
+export type { ReconnectPolicy } from './reconnect'
+export { tauriAvailable } from './mpv'
 
-export interface CreatePlayerOptions extends WebPlayerOptions, MpvPlayerOptions {
+export interface CreatePlayerOptions extends WebPlayerOptions, MpvPlayerOptions, Media3PlayerOptions {
   /** 指定后端。不传则用 `defaultBackend()`。 */
   backend?: PlayerBackend
 }
@@ -33,6 +44,11 @@ export interface CreatePlayerOptions extends WebPlayerOptions, MpvPlayerOptions 
  */
 export async function resolveBackend(): Promise<PlayerBackend> {
   if (!tauriAvailable()) return 'web'
+
+  // Android 优先于 mpv：Tauri 移动端上没有 mpv，
+  // 反过来探测会白等一次 IPC，且拿到一个"有 mpv 但用不了"的假结果。
+  if (await media3Available()) return 'media3'
+
   try {
     const status = await probeMpv()
     return status?.available ? 'mpv' : 'web'
@@ -51,6 +67,20 @@ export function createPlayer(options: CreatePlayerOptions = {}): MediaPlayer {
   const backend = options.backend ?? defaultBackend()
 
   switch (backend) {
+    case 'media3':
+      // 与 mpv 分支同样的处理：探测不到就回落 web，
+      // 并且**能力档也按 web 上报**。
+      // 不然服务端会按 android-exoplayer 给出 AC3 的 Direct Play，
+      // 而实际在播的是 WebView —— 用户遇到"明明能播的格式播不了"。
+      if (!tauriShell()) {
+        console.warn(
+          '[whatmedia] media3 后端只能在 Android 壳里使用，已回落 Web 播放器；' +
+            '能力档按 web 上报，不会让服务端给出放不出来的 Direct Play',
+        )
+        return new WebPlayer({ ...options, capabilities: capabilitiesFor('web') })
+      }
+      return new Media3Player({ ...options, capabilities: capabilitiesFor('media3') })
+
     case 'mpv':
       // mpv 后端只在桌面壳里有意义。Web 构建里走到这里说明调用方没先探测 ——
       // 明确记录后回落，而不是静默假装成功：

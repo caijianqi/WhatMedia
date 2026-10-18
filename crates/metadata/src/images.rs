@@ -298,13 +298,6 @@ fn fnv1a(s: &str) -> u64 {
     h
 }
 
-/// 缓存目录里的绝对路径是否仍在库内 —— 与 storage 层同样的逃逸检查。
-pub fn is_inside(dir: &Path, p: &Path) -> bool {
-    p.canonicalize()
-        .map(|c| c.starts_with(dir.canonicalize().unwrap_or_else(|_| dir.to_path_buf())))
-        .unwrap_or(false)
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;

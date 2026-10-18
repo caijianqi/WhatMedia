@@ -11,7 +11,7 @@
 //!
 //! 每一条都有对应的测试守护，改参数顺序前先看测试为什么那么写。
 
-use whatmedia_core::{AudioCodec, HdrType, SubtitleCodec, VideoCodec};
+use whatmedia_core::{AudioCodec, HdrType, VideoCodec};
 
 /// 硬件加速参数片段。由 `whatmedia-hardware` 的 provider 产出，这里只负责拼。
 #[derive(Debug, Clone, Default)]
@@ -79,27 +79,58 @@ pub enum OutputSpec {
     PipeTs,
     /// 管道直出 fMP4。浏览器友好，但需要整个 moov 前置。
     PipeFmp4,
-    /// HLS：写分片到磁盘，返回 m3u8。
+    /// HLS：写分片到磁盘，返回 m3u8。**点播**：播放列表一次性列全，末尾有 `EXT-X-ENDLIST`。
     Hls { dir: String, seg_seconds: u32 },
+    /// HLS **直播**：滚动窗口，播放列表里没有 `EXT-X-ENDLIST`。
+    ///
+    /// 与 `Hls` 的区别不是"参数多了几个"，是**三件点播做不到的事**：
+    ///
+    /// 1. 没有 `EXT-X-ENDLIST`。写了它，播放器会认为流已经结束而停在最后一帧 ——
+    ///    hls.js 尤其明显：播完窗口里的分片就判定 ended，不再刷新列表。
+    /// 2. `list_size` 限定了播放列表里保留多少分片，配合 `delete_segments`
+    ///    让磁盘上的分片**滚动删除**。点播不加这两个参数，跑一小时就是几 GB。
+    /// 3. `dvr_window_secs` 决定时移能往回拖多远。0 表示只能看实时边缘。
+    LiveHls {
+        dir: String,
+        seg_seconds: u32,
+        /// 播放列表里保留的分片数。它 × seg_seconds = 时移窗口长度。
+        list_size: u32,
+        /// 对外声明的时移窗口（秒）。用于前端画进度条范围；与 list_size 保持一致由调用方负责。
+        dvr_window_secs: u32,
+    },
+}
+
+impl OutputSpec {
+    pub fn is_live(&self) -> bool {
+        matches!(self, Self::LiveHls { .. })
+    }
 }
 
 /// 一次流式输出 / 转码的完整请求。
 #[derive(Debug, Clone)]
 pub struct StreamRequest {
     pub input: String,
-    /// 起播位置（毫秒）。0 表示从头。
+    /// 起播位置（毫秒）。0 表示从头。直播恒为 0 —— 直播没有"起播位置"。
     pub seek_ms: i64,
     pub video: VideoAction,
     pub audio: AudioAction,
     pub burn: Option<BurnSource>,
     pub output: OutputSpec,
     pub accel: Option<AccelArgs>,
+    /// 输入是**直播流**吗。为 true 时按实时速率读、挂重连、容忍时间戳跳变。
+    pub live: bool,
 }
 
 impl StreamRequest {
     /// 是否需要重编码视频。Remux 与 Transcode 的分界线就是它。
     pub fn reencodes_video(&self) -> bool {
         matches!(self.video, VideoAction::Encode { .. }) || self.burn.is_some()
+    }
+
+    /// 直播由输出形态决定，不另设开关 ——
+    /// 两个开关能组合出"live=true 但输出是 VOD"这种自相矛盾的状态。
+    pub fn is_live(&self) -> bool {
+        self.output.is_live()
     }
 }
 
@@ -122,6 +153,41 @@ pub fn build_args(req: &StreamRequest) -> Vec<String> {
     if req.seek_ms > 0 {
         a.push("-ss".into());
         a.push(format!("{:.3}", req.seek_ms as f64 / 1000.0));
+    }
+
+    // ── ①′ 直播输入侧（必须也在 -i 之前）─────────────────────
+    //
+    // 点播的默认行为在直播下全是错的，逐条说：
+    if req.is_live() {
+        let u = req.input.trim().to_ascii_lowercase();
+        let is_multicast = u.starts_with("udp://") || u.starts_with("rtp://");
+        let is_http = u.starts_with("http://") || u.starts_with("https://");
+
+        // · `-re`：不加的话 ffmpeg 会**全速**把源拉完。点播这正是我们要的，
+        //   直播这么干的结果是几秒后 buffer 里堆了几分钟的数据，然后等源慢慢吐。
+        //   例外是多播：它本来就是实时推的，再限速只会欠载丢包。
+        if !is_multicast {
+            a.push("-re".into());
+        }
+
+        // · 直播源的时间戳经常缺失或跳变（尤其是转封装 -c copy 时）。
+        //   让 ffmpeg 生成时间戳，并丢掉损坏的包，而不是让 muxer 报错退出。
+        a.push("-fflags".into());
+        a.push("+genpts+discardcorrupt".into());
+
+        if is_http {
+            // · 重连：家庭网络下源偶尔抽风是常态。不加这些，一次抖动就是永久黑屏。
+            a.push("-reconnect".into());
+            a.push("1".into());
+            a.push("-reconnect_streamed".into());
+            a.push("1".into());
+            a.push("-reconnect_delay_max".into());
+            a.push("5".into());
+            // · 读写超时 10s（单位微秒）：源挂了要**能感知**，
+            //   否则 ffmpeg 会永远挂着，占着一个进程和一个转码名额。
+            a.push("-rw_timeout".into());
+            a.push("10000000".into());
+        }
     }
 
     a.push("-i".into());
@@ -258,6 +324,32 @@ pub fn build_args(req: &StreamRequest) -> Vec<String> {
             a.push(format!("{dir}/seg_%05d.ts"));
             a.push(format!("{dir}/index.m3u8"));
         }
+        OutputSpec::LiveHls {
+            dir,
+            seg_seconds,
+            list_size,
+            dvr_window_secs: _,
+        } => {
+            a.push("-f".into());
+            a.push("hls".into());
+            a.push("-hls_time".into());
+            a.push(seg_seconds.to_string());
+
+            // 关键：**不能写 `-hls_playlist_type`**（vod 会加 ENDLIST，
+            // event 会在结束后加 ENDLIST 且不允许滚动删除）。
+            // 什么都不写就是 live 形态：播放列表持续追加、没有终态标记。
+            //
+            // 滚动窗口：只保留最近 list_size 个分片，老的从磁盘删掉。
+            // 少了这两个参数，跑一小时就是几个 GB 的 .ts 堆在 /cache。
+            a.push("-hls_list_size".into());
+            a.push(list_size.to_string());
+            a.push("-hls_flags".into());
+            a.push("delete_segments+append_list+independent_segments".into());
+
+            a.push("-hls_segment_filename".into());
+            a.push(format!("{dir}/seg_%05d.ts"));
+            a.push(format!("{dir}/index.m3u8"));
+        }
     }
 
     a
@@ -358,17 +450,6 @@ pub fn audio_encoder_name(c: &AudioCodec) -> &'static str {
     }
 }
 
-pub fn subtitle_codec_name(c: &SubtitleCodec) -> &'static str {
-    match c {
-        SubtitleCodec::Ass | SubtitleCodec::Ssa => "ass",
-        SubtitleCodec::Vtt => "webvtt",
-        SubtitleCodec::Pgs => "pgs",
-        SubtitleCodec::DvbSub => "dvbsub",
-        SubtitleCodec::DvdSub => "dvdsub",
-        _ => "srt",
-    }
-}
-
 /// 单码率 HLS 的 master playlist。
 ///
 /// 现在只有一路，但**master 与 media playlist 必须分开** ——
@@ -427,6 +508,7 @@ mod tests {
             burn: None,
             output: OutputSpec::PipeTs,
             accel: None,
+            live: false,
         }
     }
 
@@ -510,6 +592,73 @@ mod tests {
         assert!(a.contains(&"/cache/hls/j1/seg_%05d.ts".to_string()));
         assert!(a.contains(&"/cache/hls/j1/index.m3u8".to_string()));
         assert_eq!(a.last().unwrap(), "/cache/hls/j1/index.m3u8");
+    }
+
+    fn live_req(url: &str) -> StreamRequest {
+        let mut req = remux_req();
+        req.input = url.into();
+        req.output = OutputSpec::LiveHls {
+            dir: "/cache/live/c1".into(),
+            seg_seconds: 4,
+            list_size: 450,
+            dvr_window_secs: 1800,
+        };
+        req
+    }
+
+    #[test]
+    fn live_hls_never_writes_endlist() {
+        // 这条是直播能不能看的生死线：写了 vod，hls.js 播完窗口里的分片就判 ended。
+        let a = build_args(&live_req("http://x/live.ts"));
+        assert!(!a.contains(&"-hls_playlist_type".to_string()));
+        let joined = a.join(" ");
+        assert!(!joined.contains("vod"), "绝不能出现 vod 播放列表类型");
+        assert!(
+            !joined.contains("event"),
+            "event 会在结束后加 ENDLIST 且不允许滚动删除"
+        );
+    }
+
+    #[test]
+    fn live_hls_uses_a_rolling_window() {
+        // 不加 list_size / delete_segments，跑一小时就是几个 GB 堆在 /cache。
+        let a = build_args(&live_req("http://x/live.ts"));
+        let i = idx(&a, "-hls_list_size");
+        assert_eq!(a[i + 1], "450");
+        let f = idx(&a, "-hls_flags");
+        assert!(a[f + 1].contains("delete_segments"));
+        assert!(a[f + 1].contains("append_list"));
+    }
+
+    #[test]
+    fn live_http_input_reads_at_realtime_and_reconnects() {
+        let a = build_args(&live_req("http://x/live.ts"));
+        // -re 必须在 -i 之前，否则就不是输入选项了
+        assert!(idx(&a, "-re") < idx(&a, "-i"));
+        let i = idx(&a, "-reconnect_streamed");
+        assert_eq!(a[i + 1], "1");
+        assert!(a.contains(&"-rw_timeout".to_string()));
+        // 时间戳：直播源经常缺失或跳变
+        let g = idx(&a, "-fflags");
+        assert!(a[g + 1].contains("genpts"));
+    }
+
+    #[test]
+    fn live_multicast_is_not_rate_limited() {
+        // 多播本来就是实时推的，再 -re 只会欠载丢包。
+        let a = build_args(&live_req("udp://@239.1.1.1:1234"));
+        assert!(!a.contains(&"-re".to_string()));
+        // 但时间戳照样要生成
+        assert!(a.contains(&"-fflags".to_string()));
+    }
+
+    #[test]
+    fn vod_requests_are_untouched_by_live_flags() {
+        // 反方向同样重要：点播绝不能被直播参数污染（否则首帧会被 -re 拖慢）。
+        let a = build_args(&remux_req());
+        assert!(!a.contains(&"-re".to_string()));
+        assert!(!a.contains(&"-reconnect".to_string()));
+        assert!(!a.contains(&"-hls_list_size".to_string()));
     }
 
     #[test]
