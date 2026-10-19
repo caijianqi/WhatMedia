@@ -28,7 +28,7 @@ RUN mkdir -p crates/*/src apps/*/src && \
     done
 RUN --mount=type=cache,target=/usr/local/cargo/registry \
     --mount=type=cache,target=/src/target \
-    cargo build --release --bin whatmedia-server --bin whatmedia-cli
+    cargo build --release -p whatmedia
 
 # ── FFmpeg 静态构建 ────────────────────────────────────────────
 # 版本号写死在 FFMPEG_VERSION：johnvansickle 的 release 只保留最新版，
@@ -63,6 +63,7 @@ RUN groupadd -r -g 1000 whatmedia && useradd -r -u 1000 -g whatmedia whatmedia \
     && mkdir -p /config /data /cache /logs \
     && chown -R whatmedia:whatmedia /config /data /cache /logs
 
+COPY --from=builder /src/target/release/whatmedia /usr/local/bin/whatmedia
 COPY --from=builder /src/target/release/whatmedia-server /usr/local/bin/whatmedia-server
 COPY --from=builder /src/target/release/whatmedia-cli /usr/local/bin/whatmedia-cli
 COPY --from=ffmpeg  /usr/local/bin/ffmpeg  /usr/local/bin/ffmpeg
@@ -86,7 +87,7 @@ ENV WHATMEDIA_MIGRATIONS_DIR=/usr/local/share/whatmedia/migrations \
     WHATMEDIA_DATABASE_URL=sqlite:/config/whatmedia.db?mode=rwc \
     WHATMEDIA_LOG_FORMAT=json
 
-# 打 /healthz，不要打 `whatmedia-cli config`。
+# 打 /healthz，不要打 `whatmedia config`。
 # 后者只验证"配置能解析"：进程活着但端口没起来（端口被占、迁移卡住、
 # 监听失败）时它照样返回 0 —— 健康检查一直绿，服务其实没人应答。
 # 另外 exec 形式下 `> /dev/null` 会被当成参数传给程序，`|| exit 1` 也不会
@@ -94,4 +95,4 @@ ENV WHATMEDIA_MIGRATIONS_DIR=/usr/local/share/whatmedia/migrations \
 HEALTHCHECK --interval=30s --timeout=5s --start-period=20s --retries=3 \
     CMD wget -q -O /dev/null "http://127.0.0.1:8080/healthz" || exit 1
 
-ENTRYPOINT ["whatmedia-server"]
+ENTRYPOINT ["whatmedia"]

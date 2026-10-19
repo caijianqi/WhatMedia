@@ -1,0 +1,54 @@
+[package]
+name = "whatmedia"
+description = "WhatMedia 统一单二进制：HTTP 服务端 + 运维诊断 CLI"
+default-run = "whatmedia"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+
+[features]
+default = []
+# 打开后才编译 OpenAPI 契约导出（`whatmedia openapi`）。
+openapi = ["whatmedia-api/openapi"]
+
+[dependencies]
+whatmedia-core = { workspace = true }
+whatmedia-config = { workspace = true }
+whatmedia-database = { workspace = true }
+whatmedia-diagnostics = { workspace = true }
+whatmedia-media = { workspace = true }
+whatmedia-metadata = { workspace = true }
+whatmedia-storage = { workspace = true }
+whatmedia-scanner = { workspace = true }
+whatmedia-api = { workspace = true }
+whatmedia-hardware = { path = "../../crates/hardware" }
+whatmedia-playback = { path = "../../crates/playback" }
+whatmedia-subtitle = { path = "../../crates/subtitle" }
+whatmedia-transcoder = { path = "../../crates/transcoder" }
+
+anyhow = { workspace = true }
+axum = { workspace = true }
+chrono = { workspace = true }
+clap = { workspace = true }
+serde_json = { workspace = true }
+tokio = { workspace = true }
+toml = { workspace = true }
+tracing = { workspace = true }
+tracing-subscriber = { workspace = true }
+uuid = { workspace = true }
+
+[lib]
+name = "whatmedia"
+path = "src/lib.rs"
+
+[[bin]]
+name = "whatmedia"
+path = "src/main.rs"
+
+[[bin]]
+name = "whatmedia-server"
+path = "src/bin/whatmedia_server.rs"
+
+[[bin]]
+name = "whatmedia-cli"
+path = "src/bin/whatmedia_cli.rs"

@@ -23,7 +23,7 @@ const out = resolve(client, 'src/api/schema.d.ts')
 if (!existsSync(spec)) {
   console.error(
     `缺少契约文件：${spec}\n` +
-      '先跑：cargo run --features openapi --bin whatmedia-cli -- openapi',
+      '先跑：cargo run --features openapi -p whatmedia -- openapi',
   )
   process.exit(1)
 }

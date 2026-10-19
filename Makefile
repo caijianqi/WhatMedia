@@ -40,7 +40,7 @@ desktop-check:  # 桌面壳（Tauri）编译检查：它不在主 workspace 里�
 	cd client/src-tauri && cargo check
 
 build:          # 本地双架构无意义，这里只出本机 release 二进制
-	cargo build --release --bin whatmedia-server --bin whatmedia-cli
+	cargo build --release -p whatmedia
 
 docker:         # 多架构镜像（需要 buildx；首次执行需 docker buildx create --use）
 	docker buildx build --platform linux/amd64,linux/arm64 -t $(IMAGE):$(TAG) --load .
@@ -49,13 +49,13 @@ docker-push:    # 打 tag 后推送双架构镜像
 	docker buildx build --platform linux/amd64,linux/arm64 -t $(IMAGE):$(TAG) --push .
 
 migrations:     # 列出迁移文件及执行顺序
-	cargo run --bin whatmedia-cli -- migrations --root .
+	cargo run -p whatmedia -- migrations
 
 compat:         # 播放兼容性矩阵（P3 DoD 覆盖率判定依据）
 	scripts/compat-matrix.sh
 
 openapi:        # 重新导出契约并刷新前端类型（改了 API 就跑一次）
-	cargo run --features openapi --bin whatmedia-cli -- openapi
+	cargo run --features openapi -p whatmedia -- openapi
 	cd client && npm run gen:api
 
 bench:          # 转码性能基准；与已记录的性能基线比，退化 >10% 阻断
@@ -65,7 +65,7 @@ tonemap-check:  # HDR→SDR 链路真机验证（滤镜链只在真 ffmpeg 上�
 	scripts/tonemap-check.sh
 
 openapi-check:  # CI 门禁：契约与生成物必须和代码同步，不许只改一边
-	cargo run --features openapi --bin whatmedia-cli -- openapi
+	cargo run --features openapi -p whatmedia -- openapi
 	cd client && npm run gen:api
 	git diff --exit-code -- docs/openapi/openapi.json client/src/api/schema.d.ts
 

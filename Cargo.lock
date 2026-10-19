@@ -2506,6 +2506,35 @@ dependencies = [
 ]
 
 [[package]]
+name = "whatmedia"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "axum",
+ "chrono",
+ "clap",
+ "serde_json",
+ "tokio",
+ "toml",
+ "tracing",
+ "tracing-subscriber",
+ "uuid",
+ "whatmedia-api",
+ "whatmedia-config",
+ "whatmedia-core",
+ "whatmedia-database",
+ "whatmedia-diagnostics",
+ "whatmedia-hardware",
+ "whatmedia-media",
+ "whatmedia-metadata",
+ "whatmedia-playback",
+ "whatmedia-scanner",
+ "whatmedia-storage",
+ "whatmedia-subtitle",
+ "whatmedia-transcoder",
+]
+
+[[package]]
 name = "whatmedia-ai"
 version = "0.1.0"
 dependencies = [
@@ -2575,33 +2604,6 @@ dependencies = [
  "utoipa",
  "uuid",
  "whatmedia-core",
-]
-
-[[package]]
-name = "whatmedia-cli"
-version = "0.1.0"
-dependencies = [
- "anyhow",
- "chrono",
- "clap",
- "serde_json",
- "tokio",
- "toml",
- "tracing",
- "tracing-subscriber",
- "uuid",
- "whatmedia-api",
- "whatmedia-config",
- "whatmedia-core",
- "whatmedia-database",
- "whatmedia-hardware",
- "whatmedia-media",
- "whatmedia-metadata",
- "whatmedia-playback",
- "whatmedia-scanner",
- "whatmedia-storage",
- "whatmedia-subtitle",
- "whatmedia-transcoder",
 ]
 
 [[package]]
@@ -2774,26 +2776,6 @@ dependencies = [
  "whatmedia-library",
  "whatmedia-media",
  "whatmedia-storage",
-]
-
-[[package]]
-name = "whatmedia-server"
-version = "0.1.0"
-dependencies = [
- "anyhow",
- "axum",
- "chrono",
- "tokio",
- "tracing",
- "tracing-subscriber",
- "whatmedia-api",
- "whatmedia-config",
- "whatmedia-database",
- "whatmedia-diagnostics",
- "whatmedia-hardware",
- "whatmedia-media",
- "whatmedia-metadata",
- "whatmedia-transcoder",
 ]
 
 [[package]]
