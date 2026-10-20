@@ -271,6 +271,31 @@ async fn playing_an_unknown_channel_is_404() {
     assert_eq!(r.status, StatusCode::NOT_FOUND);
 }
 
+#[tokio::test]
+async fn sync_imports_txt_playlist_with_genres() {
+    let (st, tok, dir) = state().await;
+    let txt = "📺央视频道,#genre#\nCCTV-1,http://example.com/cctv1.m3u8\n📡卫视频道,#genre#\n广东卫视,http://example.com/gd.m3u8\n";
+    let p = dir.path().join("sub.txt");
+    std::fs::write(&p, txt).unwrap();
+
+    let id = add_source(&st, &tok, p.to_str().unwrap()).await;
+    let r = send(
+        &st,
+        post_json(&tok, &format!("/api/v1/live/sources/{id}/sync"), json!({})),
+    )
+    .await;
+    assert_eq!(r.status, StatusCode::OK);
+    assert_eq!(r.json()["channels"], 2);
+
+    let chs = send(&st, get(&tok, "/api/v1/live/channels")).await.json();
+    let arr = chs.as_array().unwrap();
+    assert_eq!(arr.len(), 2);
+    assert_eq!(arr[0]["name"], "CCTV-1");
+    assert_eq!(arr[0]["group"], "📺央视频道");
+    assert_eq!(arr[1]["name"], "广东卫视");
+    assert_eq!(arr[1]["group"], "📡卫视频道");
+}
+
 // 这条依赖 `openapi` feature；不开 feature 的 `cargo test` 会连符号都没有，
 // 所以整条测试都 gate 掉，而不是让它编译失败。
 #[cfg(feature = "openapi")]

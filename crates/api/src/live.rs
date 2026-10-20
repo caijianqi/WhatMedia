@@ -374,7 +374,7 @@ pub async fn sync_source(State(state): State<AppState>, AxumPath(id): AxumPath<I
         }
     };
 
-    let drafts = match whatmedia_live::parse_m3u(&text) {
+    let drafts = match whatmedia_live::parse_playlist(&text) {
         Ok(d) => d,
         Err(e) => {
             let msg = format!("{e}");

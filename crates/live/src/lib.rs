@@ -14,7 +14,7 @@ pub mod m3u;
 pub mod model;
 pub mod xmltv;
 
-pub use m3u::parse_m3u;
+pub use m3u::{parse_m3u, parse_playlist, parse_txt};
 pub use model::{
     ChannelDraft, LiveSourceKind, ProgramDraft, SourceDraft, StreamKind, TunableChannel,
 };
@@ -26,7 +26,7 @@ pub use xmltv::parse_xmltv;
 /// "这个订阅本身是坏的，别重试了" 与 "网络抖了一下，下次再来"。
 #[derive(Debug, thiserror::Error)]
 pub enum LiveError {
-    #[error("订阅内容不是 M3U：缺少 #EXTM3U 头")]
+    #[error("订阅内容不是合法播放列表：缺少 #EXTM3U 头或有效的频道行")]
     NotAPlaylist,
     #[error("订阅是空的：一个频道都没有")]
     EmptyPlaylist,
@@ -34,11 +34,20 @@ pub enum LiveError {
     BadXml(String),
 }
 
-/// 判断一个订阅文本是不是 M3U。
-///
-/// 单独抽出来自 `parse_m3u` 是因为 API 层要在**下载完之后、入库之前**先判一次，
-/// 给用户一个"你贴的这不是 M3U"的明确反馈，而不是"同步成功，0 个频道"。
+/// 判断一个订阅文本是不是合法的播放列表（M3U 或 TXT）。
+pub fn looks_like_playlist(text: &str) -> bool {
+    let head = text.trim_start_matches('\u{feff}').trim_start();
+    if head.starts_with("#EXTM3U") || head.contains("#genre#") {
+        return true;
+    }
+    head.lines().take(20).any(|l| {
+        let l = l.trim();
+        (l.contains(',') || l.contains('，'))
+            && (l.contains("http://") || l.contains("https://") || l.contains("rtmp://"))
+    })
+}
+
+/// 判断一个订阅文本是不是播放列表（向后兼容）。
 pub fn looks_like_m3u(text: &str) -> bool {
-    let head = text.trim_start_matches('\u{feff}');
-    head.starts_with("#EXTM3U")
+    looks_like_playlist(text)
 }

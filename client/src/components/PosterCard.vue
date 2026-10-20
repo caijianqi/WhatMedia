@@ -188,7 +188,9 @@ async function toggleFavorite(e: Event) {
     <div class="poster-info">
       <div style="min-width: 0; flex: 1">
         <div class="poster-name">{{ item.title }}</div>
-        <div class="poster-year">{{ item.year ?? '—' }} · {{ kindLabel || '影视' }}</div>
+        <div class="poster-year">
+          {{ item.year ? `${item.year} · ` : '' }}{{ (item as any).episode_count ? `全 ${(item as any).episode_count} 集` : (kindLabel || '影视') }}
+        </div>
       </div>
     </div>
   </RouterLink>

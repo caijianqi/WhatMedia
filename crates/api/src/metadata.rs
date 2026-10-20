@@ -585,7 +585,30 @@ pub async fn item_image(
         .flatten()
         .map(|d| d.item.title)
         .unwrap_or_default();
-    let svg = placeholder_svg(&title, 300, 450);
+    let clean_title = title.replace('\u{FFFD}', "");
+    let clean_title = if clean_title.trim().is_empty() {
+        "WhatMedia".to_string()
+    } else {
+        clean_title
+    };
+
+    let svg = if kind == "backdrop" {
+        format!(
+            r##"<svg xmlns="http://www.w3.org/2000/svg" width="1280" height="720" viewBox="0 0 1280 720">
+  <defs>
+    <radialGradient id="bg" cx="75%" cy="25%" r="75%">
+      <stop offset="0%" stop-color="#1e293b" stop-opacity="0.6"/>
+      <stop offset="50%" stop-color="#0f172a" stop-opacity="0.8"/>
+      <stop offset="100%" stop-color="#080d1a" stop-opacity="1"/>
+    </radialGradient>
+  </defs>
+  <rect width="1280" height="720" fill="url(#bg)"/>
+</svg>"##
+        )
+    } else {
+        placeholder_svg(&clean_title, 300, 450)
+    };
+
     (
         StatusCode::OK,
         [(header::CONTENT_TYPE, "image/svg+xml")],
@@ -707,6 +730,7 @@ pub fn build_scraper(
     let chain = whatmedia_metadata::ProviderChainConfig {
         tmdb_api_key: cfg.metadata.tmdb_api_key.clone(),
         tmdb_bearer: cfg.metadata.tmdb_bearer.clone(),
+        tmdb_base_url: cfg.metadata.tmdb_base_url.clone(),
         bangumi_enabled: cfg.metadata.bangumi_enabled,
         language: cfg.metadata.language.clone(),
         requests_per_second: cfg.metadata.requests_per_second,

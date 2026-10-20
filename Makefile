@@ -11,7 +11,7 @@ help:
 	@grep -E '^[a-zA-Z_-]+:.*?# .*$$' $(MAKEFILE_LIST) | awk 'BEGIN{FS=":.*?# "}{printf "  \033[36m%-14s\033[0m %s\n", $$1, $$2}'
 
 dev:            # 本地开发：监听 8080，日志为 pretty
-	RUST_LOG=info WHATMEDIA_LOG_FORMAT=pretty cargo run --bin whatmedia-server
+	RUST_LOG=info WHATMEDIA_LOG_FORMAT=pretty cargo run -p whatmedia -- serve
 
 seed-demo:      # 往开发库灌一批演示数据：没有真媒体文件时也要能评审界面
 #   只写浏览用的元数据（条目/演职员/季集/续播点），不造假 media_file。
@@ -20,7 +20,7 @@ seed-demo:      # 往开发库灌一批演示数据：没有真媒体文件时�
 dev-user:       # 首次安装：按环境变量建管理员（否则走 Web 的首次安装向导）
 #   WHATMEDIA_BOOTSTRAP_USER=admin WHATMEDIA_BOOTSTRAP_PASSWORD=xxxx make dev-user
 # 建议只在本地开发用。生产交给 /api/v1/auth/bootstrap 的首次安装向导。
-	RUST_LOG=info WHATMEDIA_LOG_FORMAT=pretty WHATMEDIA_BOOTSTRAP_USER="$(WHATMEDIA_BOOTSTRAP_USER)" WHATMEDIA_BOOTSTRAP_PASSWORD="$(WHATMEDIA_BOOTSTRAP_PASSWORD)" cargo run --bin whatmedia-server
+	RUST_LOG=info WHATMEDIA_LOG_FORMAT=pretty WHATMEDIA_BOOTSTRAP_USER="$(WHATMEDIA_BOOTSTRAP_USER)" WHATMEDIA_BOOTSTRAP_PASSWORD="$(WHATMEDIA_BOOTSTRAP_PASSWORD)" cargo run -p whatmedia -- serve
 
 test:           # 全量测试（CI 在 amd64 与 arm64 各跑一遍）
 	cargo test --workspace

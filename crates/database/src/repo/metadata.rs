@@ -124,7 +124,42 @@ pub async fn credits_of(db: &Db, item_id: Id) -> Result<Vec<CreditRow>> {
     .bind(item_id.to_string())
     .fetch_all(db.pool())
     .await?;
-    Ok(rows
+    if !rows.is_empty() {
+        return Ok(rows
+            .iter()
+            .map(|r| CreditRow {
+                person: r.get("person"),
+                role: r.get("role"),
+                character: r.get("character"),
+                sort_order: r.get("sort_order"),
+            })
+            .collect());
+    }
+
+    // 若当前条目（如电视剧单集）本身无独立演职员，向上回溯同剧集的演职员
+    let parent_rows = sqlx::query(
+        "SELECT p.name AS person, c.role, c.character, c.sort_order
+         FROM credit c
+         JOIN person p ON p.id = c.person_id
+         WHERE c.item_id IN (
+             SELECT ep2.item_id FROM episode ep2
+             WHERE ep2.season_id IN (
+                 SELECT se.id FROM season se
+                 WHERE se.series_id = (
+                     SELECT se2.series_id FROM episode ep
+                     JOIN season se2 ON se2.id = ep.season_id
+                     WHERE ep.item_id = ?
+                 )
+             )
+         )
+         GROUP BY p.name, c.role
+         ORDER BY c.sort_order",
+    )
+    .bind(item_id.to_string())
+    .fetch_all(db.pool())
+    .await?;
+
+    Ok(parent_rows
         .iter()
         .map(|r| CreditRow {
             person: r.get("person"),

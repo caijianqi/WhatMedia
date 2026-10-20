@@ -46,7 +46,12 @@ use whatmedia_storage::LocalStorage;
 
 #[derive(Clone, Default)]
 pub struct ScanRegistry {
-    inner: Arc<Mutex<HashMap<Uuid, ScanTaskView>>>,
+    inner: Arc<Mutex<HashMap<Uuid, RegistryEntry>>>,
+}
+
+struct RegistryEntry {
+    view: ScanTaskView,
+    finished_at: Option<std::time::Instant>,
 }
 
 #[derive(Clone, Serialize)]
@@ -59,17 +64,36 @@ pub struct ScanTaskView {
 
 impl ScanRegistry {
     pub fn insert(&self, view: ScanTaskView) {
-        self.inner.lock().unwrap().insert(view.id, view);
+        let id = view.id;
+        self.inner.lock().unwrap().insert(
+            id,
+            RegistryEntry {
+                view,
+                finished_at: None,
+            },
+        );
     }
 
     pub fn update(&self, id: Uuid, progress: ScanProgress) {
-        if let Some(v) = self.inner.lock().unwrap().get_mut(&id) {
-            v.progress = progress;
+        if let Some(entry) = self.inner.lock().unwrap().get_mut(&id) {
+            if progress.finished && entry.finished_at.is_none() {
+                entry.finished_at = Some(std::time::Instant::now());
+            }
+            entry.view.progress = progress;
         }
     }
 
     pub fn list(&self) -> Vec<ScanTaskView> {
-        self.inner.lock().unwrap().values().cloned().collect()
+        let mut map = self.inner.lock().unwrap();
+        // 自动清理完成超过 30 秒的历史扫描任务，防止内存无限累加
+        map.retain(|_, entry| {
+            if let Some(fin) = entry.finished_at {
+                fin.elapsed().as_secs() < 30
+            } else {
+                true
+            }
+        });
+        map.values().map(|e| e.view.clone()).collect()
     }
 }
 
@@ -359,6 +383,13 @@ async fn create_library(
     if !std::path::Path::new(&body.path).is_dir() {
         return bad_request(format!("目录不存在：{}", body.path));
     }
+    let canonical = match std::path::Path::new(&body.path).canonicalize() {
+        Ok(p) => whatmedia_storage::clean_path(&p).to_string_lossy().to_string(),
+        Err(_) => body.path.clone(),
+    };
+    if let Ok(Some(existing)) = whatmedia_database::repo::find_library_by_root(&db, "local", &canonical).await {
+        return (StatusCode::OK, Json(existing)).into_response();
+    }
     match whatmedia_database::repo::insert_library(
         &db,
         &body.name,
@@ -387,6 +418,7 @@ async fn create_library(
         ("order" = Option<String>, Query, description = "desc | asc"),
         ("page" = Option<u32>, Query, description = "从 1 开始"),
         ("page_size" = Option<u32>, Query, description = "上限 200"),
+        ("aggregate_series" = Option<bool>, Query, description = "是否聚合剧集为单张卡片，默认 true"),
         ),
         responses(
             (status = 200, description = "成功", body = whatmedia_core::Page<whatmedia_database::repo::ItemSummary>),
@@ -395,11 +427,14 @@ async fn create_library(
         tag = "media"
     )
 )]
-async fn list_media(State(state): State<AppState>, Query(q): Query<ItemQuery>) -> Response {
+async fn list_media(State(state): State<AppState>, Query(mut q): Query<ItemQuery>) -> Response {
     let db = match state.db_or_503() {
         Ok(d) => d,
         Err(r) => return *r,
     };
+    if q.aggregate_series.is_none() {
+        q.aggregate_series = Some(true);
+    }
     match whatmedia_database::repo::list_items(&db, &q).await {
         Ok(page) => Json(page).into_response(),
         Err(e) => internal(e),
@@ -1061,8 +1096,9 @@ fn guarded_routes(state: AppState) -> Router {
         .route("/api/v1/settings", get(social::get_settings))
         .route("/api/v1/settings", put(social::put_setting))
         .route("/api/v1/settings/{key}", delete(social::reset_setting))
-        // ── 存储统计 ──────────────────────────────────────────
+        // ── 存储统计与文件系统浏览 ────────────────────────────
         .route("/api/v1/system/storage", get(social::storage_stats))
+        .route("/api/v1/system/fs-browse", get(social::browse_fs_dir))
         // 鉴权中间件放在with_state之前 —— 它需要自己持有 State，
         // 于是这条 router 里此后新增的路由**默认被保护**。
         .layer(axum::middleware::from_fn_with_state(

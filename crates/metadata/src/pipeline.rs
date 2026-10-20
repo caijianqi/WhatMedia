@@ -469,6 +469,14 @@ impl Scraper {
             crate::merge::merge_record(&mut meta, record, &mut ctx, false);
         }
 
+        // 剧集单集若无独立简介或评分，自动继承所属剧集的数据
+        if meta.overview.is_none() {
+            meta.overview = record.overview.clone();
+        }
+        if meta.rating.is_none() {
+            meta.rating = record.rating;
+        }
+
         repo::metadata::update_item_meta(
             &self.db,
             target.id,
@@ -488,15 +496,9 @@ impl Scraper {
         )
         .await?;
 
-        if !is_episode {
-            repo::metadata::set_genres(&self.db, target.id, &record.genres).await?;
-            repo::metadata::set_credits(&self.db, target.id, &record.provider, &record.credits)
-                .await?;
-            self.cache_images(target.id, record).await?;
-        } else {
-            // 剧集的类型/演职员挂在剧集上，这里借 item 行存一份便于海报墙查询
-            repo::metadata::set_genres(&self.db, target.id, &record.genres).await?;
-        }
+        repo::metadata::set_genres(&self.db, target.id, &record.genres).await?;
+        repo::metadata::set_credits(&self.db, target.id, &record.provider, &record.credits).await?;
+        self.cache_images(target.id, record).await?;
 
         Ok(())
     }

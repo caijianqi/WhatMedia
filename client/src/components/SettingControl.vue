@@ -9,7 +9,7 @@
  * 保存失败的提示就地显示在这一行下面，而不是弹全局 toast：
  * 出错时用户的眼睛正在看这一行，把原因放在这里才找得到。
  */
-import { ref, watch } from 'vue'
+import { computed, ref, watch } from 'vue'
 import type { SettingEntry } from '../api/client'
 
 const props = defineProps<{ entry: SettingEntry }>()
@@ -18,6 +18,12 @@ const emit = defineEmits<{ (e: 'save', value: string): void; (e: 'reset'): void 
 const draft = ref(props.entry.value)
 const saving = ref(false)
 const err = ref<string | null>(null)
+const showSecret = ref(false)
+
+const isSecretKey = computed(() => {
+  const k = props.entry.key.toLowerCase()
+  return k.includes('key') || k.includes('bearer') || k.includes('token') || k.includes('secret')
+})
 
 // 服务端返回了新值时同步过来（保存成功 / 重新拉取）。
 watch(
@@ -95,7 +101,28 @@ defineExpose({ fail })
           @change="commit(($event.target as HTMLInputElement).value)"
         />
 
-        <!-- 文本 -->
+        <!-- 敏感密钥文本 -->
+        <div v-else-if="isSecretKey" class="secret-input-wrap">
+          <input
+            class="input setting-text-input secret-input"
+            :type="showSecret ? 'text' : 'password'"
+            :value="draft"
+            :placeholder="entry.default || '请输入密钥…'"
+            autocomplete="off"
+            spellcheck="false"
+            @change="commit(($event.target as HTMLInputElement).value)"
+          />
+          <button
+            type="button"
+            class="secret-toggle-btn"
+            :title="showSecret ? '隐藏' : '显示明文'"
+            @click="showSecret = !showSecret"
+          >
+            {{ showSecret ? '🙈' : '👁️' }}
+          </button>
+        </div>
+
+        <!-- 常规文本 -->
         <input
           v-else
           class="input setting-text-input"
@@ -208,6 +235,33 @@ defineExpose({ fail })
 }
 .status-restart {
   color: #fbbf24;
+}
+.secret-input-wrap {
+  position: relative;
+  display: flex;
+  align-items: center;
+}
+.secret-input-wrap .secret-input {
+  width: 220px;
+  padding-right: 32px;
+  font-family: monospace;
+}
+.secret-toggle-btn {
+  position: absolute;
+  right: 6px;
+  top: 50%;
+  transform: translateY(-50%);
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  padding: 2px 4px;
+  font-size: 13px;
+  opacity: 0.7;
+  transition: opacity 0.15s ease;
+  user-select: none;
+}
+.secret-toggle-btn:hover {
+  opacity: 1;
 }
 </style>
 

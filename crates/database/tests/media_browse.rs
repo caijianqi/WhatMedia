@@ -98,6 +98,43 @@ async fn kind_counts_is_empty_on_a_fresh_library() {
 }
 
 #[tokio::test]
+async fn kind_counts_reports_series_when_episodes_are_linked() {
+    let db = db().await;
+    let lib = library(&db, "剧", MediaKind::Series).await;
+    let ep1 = add_item(&db, lib, "第一集", MediaKind::Episode).await;
+    let ep2 = add_item(&db, lib, "第二集", MediaKind::Episode).await;
+
+    let series = tv::upsert_series(&db, "早春晴朗", None).await.unwrap();
+    let season = tv::upsert_season(&db, series.id, 1).await.unwrap();
+    tv::upsert_episode(&db, season.id, 1, ep1, None).await.unwrap();
+    tv::upsert_episode(&db, season.id, 2, ep2, None).await.unwrap();
+
+    let counts = kind_counts(&db).await.unwrap();
+    assert_eq!(counts.len(), 1);
+    assert_eq!(counts[0].kind, MediaKind::Series);
+    assert_eq!(counts[0].count, 1);
+
+    // 显式聚合查询列表时，聚合为 1 个 series 卡片
+    let page = list_items(&db, &ItemQuery { aggregate_series: Some(true), ..Default::default() }).await.unwrap();
+    assert_eq!(page.page.total, 1);
+    assert_eq!(page.data[0].kind, MediaKind::Series);
+    assert_eq!(page.data[0].title, "早春晴朗");
+    assert_eq!(page.data[0].episode_count, Some(2));
+
+    // 按 Series 过滤时，自动聚合为 1 个 series 卡片
+    let series_page = list_items(&db, &ItemQuery { kind: Some(MediaKind::Series), ..Default::default() }).await.unwrap();
+    assert_eq!(series_page.page.total, 1);
+    assert_eq!(series_page.data[0].kind, MediaKind::Series);
+    assert_eq!(series_page.data[0].title, "早春晴朗");
+    assert_eq!(series_page.data[0].episode_count, Some(2));
+
+    // 默认底层查询返回 2 个原始 episode 记录
+    let raw_page = list_items(&db, &ItemQuery::default()).await.unwrap();
+    assert_eq!(raw_page.page.total, 2);
+    assert_eq!(raw_page.data[0].kind, MediaKind::Episode);
+}
+
+#[tokio::test]
 async fn item_detail_carries_genres_and_empty_array_when_never_scraped() {
     let db = db().await;
     let lib = library(&db, "影", MediaKind::Movie).await;

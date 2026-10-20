@@ -29,8 +29,8 @@ use crate::playback::{
     SessionView, SubtitleConvertBody, SubtitleItemView, SubtitleView,
 };
 use crate::social::{
-    FavoritePage, FavoriteState, NotificationList, ReadAllResult, SetFavoriteInput, SettingEntry,
-    SetSettingInput, SettingsView, StorageView,
+    BrowseDirView, DirEntryView, FavoritePage, FavoriteState, NotificationList, ReadAllResult,
+    SetFavoriteInput, SettingEntry, SetSettingInput, SettingsView, StorageView,
 };
 use crate::{
     CreateLibrary, CreditsView, EpisodeParams, ErrorBody, ErrorDetail, Paging, ScanAccepted,
@@ -141,6 +141,7 @@ use crate::{
         crate::social::put_setting,
         crate::social::reset_setting,
         crate::social::storage_stats,
+        crate::social::browse_fs_dir,
     ),
     components(schemas(
         // ── 传输层 ────────────────────────────────────────
@@ -208,6 +209,8 @@ use crate::{
         SetSettingInput,
         SettingsView,
         StorageView,
+        DirEntryView,
+        BrowseDirView,
         whatmedia_database::repo::CreditRow,
         // ── 元数据 ────────────────────────────────────────
         ScrapeRequest,

@@ -44,11 +44,3 @@ path = "src/lib.rs"
 [[bin]]
 name = "whatmedia"
 path = "src/main.rs"
-
-[[bin]]
-name = "whatmedia-server"
-path = "src/bin/whatmedia_server.rs"
-
-[[bin]]
-name = "whatmedia-cli"
-path = "src/bin/whatmedia_cli.rs"

@@ -21,6 +21,7 @@ pub enum ProviderKind {
     DeepSeek,
     Qwen,
     Glm,
+    MiniMax,
     /// 不走这个文件 —— 形状不同。列在这里只是为了配置与文档的统一。
     Ollama,
     Vllm,
@@ -36,6 +37,7 @@ impl ProviderKind {
             ProviderKind::DeepSeek => "deepseek",
             ProviderKind::Qwen => "qwen",
             ProviderKind::Glm => "glm",
+            ProviderKind::MiniMax => "minimax",
             ProviderKind::Ollama => "ollama",
             ProviderKind::Vllm => "vllm",
             ProviderKind::LlamaCpp => "llama_cpp",
@@ -49,6 +51,7 @@ impl ProviderKind {
             "deepseek" => Some(ProviderKind::DeepSeek),
             "qwen" | "tongyi" | "dashscope" => Some(ProviderKind::Qwen),
             "glm" | "zhipu" | "bigmodel" => Some(ProviderKind::Glm),
+            "minimax" | "abab" => Some(ProviderKind::MiniMax),
             "ollama" => Some(ProviderKind::Ollama),
             "vllm" => Some(ProviderKind::Vllm),
             "llama_cpp" | "llamacpp" | "llama.cpp" => Some(ProviderKind::LlamaCpp),
@@ -65,6 +68,7 @@ impl ProviderKind {
             // 通义千问的 OpenAI 兼容模式，注意不是 /api/v1。
             ProviderKind::Qwen => Some("https://dashscope.aliyuncs.com/compatible-mode/v1"),
             ProviderKind::Glm => Some("https://open.bigmodel.cn/api/paas/v4"),
+            ProviderKind::MiniMax => Some("https://api.minimax.chat/v1"),
             ProviderKind::Ollama => Some("http://localhost:11434"),
             ProviderKind::Vllm => Some("http://localhost:8000/v1"),
             ProviderKind::LlamaCpp => Some("http://localhost:8080/v1"),
@@ -77,7 +81,11 @@ impl ProviderKind {
     pub fn requires_api_key(self) -> bool {
         matches!(
             self,
-            ProviderKind::OpenAi | ProviderKind::DeepSeek | ProviderKind::Qwen | ProviderKind::Glm
+            ProviderKind::OpenAi
+                | ProviderKind::DeepSeek
+                | ProviderKind::Qwen
+                | ProviderKind::Glm
+                | ProviderKind::MiniMax
         )
     }
 
@@ -87,6 +95,7 @@ impl ProviderKind {
             ProviderKind::DeepSeek => "deepseek-chat",
             ProviderKind::Qwen => "qwen-plus",
             ProviderKind::Glm => "glm-4-flash",
+            ProviderKind::MiniMax => "MiniMax-Text-01",
             ProviderKind::Ollama => "qwen2.5:7b",
             ProviderKind::Vllm => "Qwen/Qwen2.5-7B-Instruct",
             ProviderKind::LlamaCpp => "local",
@@ -100,6 +109,7 @@ impl ProviderKind {
             ProviderKind::DeepSeek => "DeepSeek",
             ProviderKind::Qwen => "通义千问",
             ProviderKind::Glm => "智谱 GLM",
+            ProviderKind::MiniMax => "MiniMax",
             ProviderKind::Ollama => "Ollama",
             ProviderKind::Vllm => "vLLM",
             ProviderKind::LlamaCpp => "llama.cpp",
@@ -335,6 +345,7 @@ mod tests {
             ("deepseek", ProviderKind::DeepSeek),
             ("qwen", ProviderKind::Qwen),
             ("glm", ProviderKind::Glm),
+            ("minimax", ProviderKind::MiniMax),
             ("ollama", ProviderKind::Ollama),
             ("vllm", ProviderKind::Vllm),
             ("llama_cpp", ProviderKind::LlamaCpp),

@@ -61,3 +61,10 @@
 {"name": "A.Movie.4K.2160p.BluRay.mkv", "year": null, "resolution": "2160p"}
 {"name": "Sample.Movie.2021.1080p-sample.mkv", "year": 2021}
 {"name": "Just.A.Title.mkv", "title": "Just A Title"}
+{"name": "01.mkv", "dir": "早春晴朗", "title": "早春晴朗", "season": 1, "episode": 1}
+{"name": "02.mkv", "dir": "早春晴朗", "title": "早春晴朗", "season": 1, "episode": 2}
+{"name": "01.相遇.mkv", "dir": "早春晴朗", "title": "早春晴朗", "season": 1, "episode": 1, "episode_title": "相遇"}
+{"name": "02.mkv", "dir": "电视剧/早春晴朗/第一季", "title": "早春晴朗", "season": 1, "episode": 2}
+{"name": "第03集.mkv", "dir": "电视剧/早春晴朗/第二季", "title": "早春晴朗", "season": 2, "episode": 3}
+{"name": "EP01-EP02.mkv", "dir": "早春晴朗", "title": "早春晴朗", "season": 1, "episode": 1, "episode_end": 2}
+{"name": "第01-02集.mkv", "dir": "早春晴朗", "title": "早春晴朗", "season": 1, "episode": 1, "episode_end": 2}

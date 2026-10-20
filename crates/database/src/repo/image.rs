@@ -224,7 +224,42 @@ pub async fn list_for_item(db: &Db, item_id: Id) -> Result<Vec<ItemImage>> {
     .bind(item_id.to_string())
     .fetch_all(db.pool())
     .await?;
-    Ok(rows
+    if !rows.is_empty() {
+        return Ok(rows
+            .iter()
+            .map(|r| ItemImage {
+                kind: r.get("kind"),
+                url: r.get("url"),
+                cached_path: r.get("cached_path"),
+                width: r.get("width"),
+                height: r.get("height"),
+            })
+            .collect());
+    }
+
+    // 若当前条目（如电视剧单集）本身无独立海报或背景图，回溯查找所属剧集的其他兄弟单集图片
+    let parent_rows = sqlx::query(
+        "SELECT img.kind, img.url, img.cached_path, img.width, img.height
+         FROM image img
+         WHERE img.item_id IN (
+             SELECT ep2.item_id FROM episode ep2
+             WHERE ep2.season_id IN (
+                 SELECT se.id FROM season se
+                 WHERE se.series_id = (
+                     SELECT se2.series_id FROM episode ep
+                     JOIN season se2 ON se2.id = ep.season_id
+                     WHERE ep.item_id = ?
+                 )
+             )
+         )
+         GROUP BY img.kind
+         ORDER BY img.kind",
+    )
+    .bind(item_id.to_string())
+    .fetch_all(db.pool())
+    .await?;
+
+    Ok(parent_rows
         .iter()
         .map(|r| ItemImage {
             kind: r.get("kind"),

@@ -542,3 +542,91 @@ export type LibraryStorage = components['schemas']['LibraryStorage']
 export function storageStats(): Promise<StorageView> {
   return request<StorageView>('/system/storage')
 }
+
+// ─────────────────────────────────────────────────────────────
+// 服务端目录浏览与扫盘入库
+// ─────────────────────────────────────────────────────────────
+
+export type BrowseDirView = components['schemas']['BrowseDirView']
+export type DirEntryView = components['schemas']['DirEntryView']
+export type ScanRequest = components['schemas']['ScanRequest']
+export type ScanAccepted = components['schemas']['ScanAccepted']
+export type ScanTaskView = components['schemas']['ScanTaskView']
+export type ScanProgress = components['schemas']['ScanProgress']
+
+/**
+ * 浏览服务端物理目录树。
+ *
+ * @param path 目标绝对路径，留空时列出根驱动器（Windows）或根目录（Linux/macOS）
+ */
+export function browseFsDir(path?: string): Promise<BrowseDirView> {
+  return request<BrowseDirView>(`/system/fs-browse${qs({ path })}`)
+}
+
+/**
+ * 触发指定路径的后台扫描入库任务。
+ */
+export function startScan(req: ScanRequest): Promise<ScanAccepted> {
+  return post<ScanAccepted>('/scan', req)
+}
+
+/**
+ * 查询服务端当前所有在途后台任务（如媒体扫描任务）。
+ */
+export function listTasks(): Promise<ScanTaskView[]> {
+  return request<ScanTaskView[]>('/tasks')
+}
+
+export interface CreateLibraryRequest {
+  name: string
+  path: string
+  kind?: MediaKind
+}
+
+/**
+ * 列出所有已配置的媒体库。
+ */
+export function listLibraries(): Promise<Library[]> {
+  return request<Library[]>('/libraries')
+}
+
+/**
+ * 创建并持久化保存一个新的媒体库物理路径。
+ */
+export function createLibrary(req: CreateLibraryRequest): Promise<Library> {
+  return post<Library>('/libraries', req)
+}
+
+// ─────────────────────────────────────────────────────────────
+// 元数据刮削（Scrape）
+// ─────────────────────────────────────────────────────────────
+
+export type ScrapeRequest = components['schemas']['ScrapeRequest']
+export type ScrapeAccepted = components['schemas']['ScrapeAccepted']
+export type ScrapeRunView = components['schemas']['ScrapeRunView']
+export type ScrapeStats = components['schemas']['ScrapeStats']
+export type JobStats = components['schemas']['JobStats']
+
+/**
+ * 触发元数据刮削任务。
+ *
+ * 可针对全部或单个媒体库；支持仅重试失败项。
+ */
+export function startScrape(req: ScrapeRequest = {}): Promise<ScrapeAccepted> {
+  return post<ScrapeAccepted>('/scrape', req)
+}
+
+/**
+ * 列出所有刮削批次及运行状态。
+ */
+export function listScrapeRuns(): Promise<ScrapeRunView[]> {
+  return request<ScrapeRunView[]>('/scrape/runs')
+}
+
+/**
+ * 查询指定媒体库或全库的刮削作业统计数据。
+ */
+export function getScrapeStats(libraryId?: string): Promise<JobStats> {
+  return request<JobStats>(`/scrape/stats${qs({ library_id: libraryId })}`)
+}
+

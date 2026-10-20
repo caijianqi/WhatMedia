@@ -88,7 +88,7 @@ async function load() {
     loading.value = false
   }
 
-  // 附属数据并行加载，失败静默：没有演职员不是错误，是"还没刮削"。
+// 附属数据并行加载，失败静默：没有演职员不是错误，是"还没刮削"。
   const [c, s] = await Promise.all([
     api.itemCredits(id.value).catch(() => null),
     api.itemSeries(id.value).catch(() => null),
@@ -96,12 +96,15 @@ async function load() {
   ])
   credits.value = c
   series.value = s
+  posterError.value = false
 }
 
 onMounted(load)
 watch(id, load)
 
 const backdrop = computed(() => `/api/v1/items/${id.value}/images/backdrop`)
+const poster = computed(() => `/api/v1/items/${id.value}/images/poster`)
+const posterError = ref(false)
 
 const strategyLabel: Record<string, string> = {
   direct_play: '直接播放',
@@ -110,10 +113,10 @@ const strategyLabel: Record<string, string> = {
   unsupported: '无法播放',
 }
 
-
 const kindLabels: Record<string, string> = {
   movie: '电影',
-  series: '剧集',
+  series: '电视剧',
+  episode: '电视剧',
   anime: '动画',
   documentary: '纪录片',
   variety: '综艺',
@@ -121,10 +124,59 @@ const kindLabels: Record<string, string> = {
   music: '音乐',
 }
 
+const displayTitle = computed(() => {
+  if (series.value?.title) {
+    return series.value.title
+  }
+  return detail.value?.title ?? ''
+})
+
+const displaySubtitle = computed(() => {
+  if (series.value && detail.value?.title && detail.value.title !== series.value.title) {
+    return detail.value.title
+  }
+  if (detail.value?.original_title && detail.value.original_title !== displayTitle.value) {
+    return detail.value.original_title
+  }
+  if (series.value?.original_title && series.value.original_title !== displayTitle.value) {
+    return series.value.original_title
+  }
+  return null
+})
+
+const displayOverview = computed(() => {
+  const o = detail.value?.overview?.trim()
+  if (o) return o
+  const so = series.value?.overview?.trim()
+  if (so) return so
+  return ''
+})
+
+const metaItems = computed(() => {
+  if (!detail.value) return []
+  const items: Array<{ text: string; isRating?: boolean; isQuality?: boolean }> = []
+  if (detail.value.rating) {
+    items.push({ text: `★ ${detail.value.rating.toFixed(1)}`, isRating: true })
+  }
+  const yr = detail.value.year ?? series.value?.year
+  if (yr) {
+    items.push({ text: String(yr) })
+  }
+  if (detail.value.runtime_ms) {
+    items.push({ text: fmtMs(detail.value.runtime_ms) })
+  }
+  if (detail.value.genres?.length) {
+    items.push({ text: detail.value.genres.join(' / ') })
+  }
+  if (mainQuality.value) {
+    items.push({ text: mainQuality.value, isQuality: true })
+  }
+  return items
+})
+
 /**
- * 演员头像位置是**没有人物头像图**的（person 表只存名字）。
- * 用姓名首字做一个圆形色块：一排灰色圆圈比一排文字更像"演职员表"，
- * 而且 10 英尺距离下也认得出。
+ * 演员头像位置是没有人物头像图的（person 表只存名字）。
+ * 用姓名首字做一个圆形色块。
  */
 function initialOf(name: string): string {
   const t = name.trim()
@@ -176,7 +228,7 @@ const mainQuality = computed(() => {
     </p>
 
     <div v-else-if="loading" class="detail-loading">
-      <div class="skeleton" style="height: 320px; border-radius: 20px;"></div>
+      <div class="skeleton" style="height: 360px; border-radius: 20px;"></div>
       <div class="skeleton" style="height: 28px; width: 35%; margin-top: 20px; border-radius: 8px;"></div>
       <div class="skeleton" style="height: 16px; width: 60%; margin-top: 12px; border-radius: 6px;"></div>
     </div>
@@ -184,76 +236,82 @@ const mainQuality = computed(() => {
     <div v-else-if="detail" class="detail-wrapper animate-fade-in">
       <!-- 顶部英雄背景区 -->
       <section class="detail-hero" :style="{ '--detailbg': `url('${backdrop}')` }">
-        <div class="detail-content">
-          <div class="hero-tags" style="margin-bottom: 12px;">
-            <span v-if="kindLabels[detail.kind]" class="tag">{{ kindLabels[detail.kind] }}</span>
-            <span v-if="detail.year" class="tag">{{ detail.year }}</span>
+        <div class="hero-inner">
+          <!-- 经典竖版海报封套 -->
+          <div v-if="!posterError" class="hero-poster-box">
+            <img
+              :src="poster"
+              :alt="displayTitle"
+              class="hero-poster-img"
+              loading="lazy"
+              @error="posterError = true"
+            />
           </div>
 
-          <h1>{{ detail.title }}</h1>
-          <p v-if="detail.original_title && detail.original_title !== detail.title" class="detail-orig-title">
-            {{ detail.original_title }}
-          </p>
+          <div class="detail-content">
+            <div class="hero-tags">
+              <span class="tag tag-kind">{{ series ? '电视剧' : (kindLabels[detail.kind] ?? detail.kind) }}</span>
+              <span v-if="detail.year ?? series?.year" class="tag tag-year">{{ detail.year ?? series?.year }}</span>
+              <span v-if="series" class="tag tag-series">全剧集</span>
+            </div>
 
-          <div class="hero-meta">
-            <span v-if="detail.rating" class="rating">
-              <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m12 3 2.8 5.7 6.2.9-4.5 4.4 1.1 6.2-5.6-3-5.6 3 1.1-6.2L3 9.6l6.2-.9z"/></svg>
-              ★ {{ detail.rating.toFixed(1) }}
-            </span>
-            <span v-if="detail.rating && detail.year" class="meta-sep"></span>
-            <span v-if="detail.year">{{ detail.year }}</span>
-            <span class="meta-sep"></span>
-            <span v-if="detail.runtime_ms">{{ fmtMs(detail.runtime_ms) }}</span>
-            <span v-if="detail.runtime_ms" class="meta-sep"></span>
-            <span v-if="detail.genres.length">{{ detail.genres.join(' / ') }}</span>
-            <span class="meta-sep"></span>
-            <span>{{ mainQuality }}</span>
-          </div>
+            <h1>{{ displayTitle }}</h1>
+            <p v-if="displaySubtitle" class="detail-orig-title">
+              {{ displaySubtitle }}
+            </p>
 
-          <p v-if="detail.overview" class="detail-desc">
-            {{ detail.overview }}
-          </p>
+            <div v-if="metaItems.length" class="hero-meta">
+              <template v-for="(m, idx) in metaItems" :key="idx">
+                <span v-if="idx > 0" class="meta-sep"></span>
+                <span :class="{ 'meta-rating': m.isRating, 'meta-quality': m.isQuality }">{{ m.text }}</span>
+              </template>
+            </div>
 
-          <!-- 动作交互按钮 -->
-          <div class="actions">
-            <RouterLink
-              :to="{ name: 'play', params: { id: detail.id }, query: { start: resumeMs ?? 0 } }"
-              class="btn btn-primary"
-            >
-              <svg viewBox="0 0 24 24" aria-hidden="true">
-                <path d="m8 5 12 7-12 7z" />
-              </svg>
-              {{ resumeMs ? '继续播放' : '立即播放' }}
-            </RouterLink>
+            <p v-if="displayOverview" class="detail-desc">
+              {{ displayOverview }}
+            </p>
 
-            <RouterLink
-              v-if="resumeMs"
-              :to="{ name: 'play', params: { id: detail.id }, query: { start: 0 } }"
-              class="btn btn-secondary"
-            >
-              从头播放
-            </RouterLink>
-
-            <!-- 收藏按钮 -->
-            <button
-              v-if="favAvailable"
-              type="button"
-              class="btn btn-secondary fav-toggle-btn"
-              :class="{ 'is-active': favorite }"
-              :aria-pressed="favorite"
-              :title="favorite ? '取消收藏' : '加入收藏'"
-              @click="toggleFavorite"
-            >
-              <svg
-                viewBox="0 0 24 24"
-                aria-hidden="true"
-                :style="{ fill: favorite ? '#ff799e' : 'none', stroke: favorite ? '#ff799e' : 'currentColor' }"
+            <!-- 动作交互按钮 -->
+            <div class="actions">
+              <RouterLink
+                :to="{ name: 'play', params: { id: detail.id }, query: { start: resumeMs ?? 0 } }"
+                class="btn btn-primary"
               >
-                <path d="M20.8 4.6a5.5 5.5 0 0 0-7.8 0L12 5.7l-1.1-1.1a5.5 5.5 0 0 0-7.8 7.8l1.1 1.1L12 21l7.8-7.5 1.1-1.1a5.5 5.5 0 0 0-.1-7.8Z" />
-              </svg>
-              <span>{{ favorite ? '已收藏' : '加入收藏' }}</span>
-              <span v-if="favoriteCount > 0" class="fav-count">({{ favoriteCount }})</span>
-            </button>
+                <svg viewBox="0 0 24 24" aria-hidden="true">
+                  <path d="m8 5 12 7-12 7z" />
+                </svg>
+                {{ resumeMs ? '继续播放' : '立即播放' }}
+              </RouterLink>
+
+              <RouterLink
+                v-if="resumeMs"
+                :to="{ name: 'play', params: { id: detail.id }, query: { start: 0 } }"
+                class="btn btn-secondary"
+              >
+                从头播放
+              </RouterLink>
+
+              <!-- 收藏按钮 -->
+              <button
+                v-if="favAvailable"
+                type="button"
+                class="btn btn-secondary fav-toggle-btn"
+                :class="{ 'is-active': favorite }"
+                :aria-pressed="favorite"
+                :title="favorite ? '取消收藏' : '加入收藏'"
+                @click="toggleFavorite"
+              >
+                <svg
+                  viewBox="0 0 24 24"
+                  aria-hidden="true"
+                  :style="{ fill: favorite ? '#ff799e' : 'none', stroke: favorite ? '#ff799e' : 'currentColor' }"
+                >
+                  <path d="M20.8 4.6a5.5 5.5 0 0 0-7.8 0L12 5.7l-1.1-1.1a5.5 5.5 0 0 0-7.8 7.8l1.1 1.1L12 21l7.8-7.5 1.1-1.1a5.5 5.5 0 0 0-.1-7.8Z" />
+                </svg>
+                <span>{{ favorite ? '已收藏' : '加入收藏' }}</span>
+                <span v-if="favoriteCount > 0" class="fav-count">({{ favoriteCount }})</span>
+              </button>
+            </div>
           </div>
         </div>
       </section>
@@ -261,11 +319,14 @@ const mainQuality = computed(() => {
       <!-- 详情下半部分内容区 -->
       <div class="detail-body">
         <!-- 播放策略预览（Decide 决策报告） -->
-        <div v-if="decision" class="card decision-card">
+        <div v-if="decision" class="card decision-card" :class="decision.strategy">
           <div class="decision-head">
-            <span class="decision-tag" :class="decision.strategy">
-              {{ strategyLabel[decision.strategy] ?? decision.strategy }}
-            </span>
+            <div class="decision-badge" :class="decision.strategy">
+              <span class="decision-dot"></span>
+              <span class="decision-tag" :class="decision.strategy">
+                {{ strategyLabel[decision.strategy] ?? decision.strategy }}
+              </span>
+            </div>
             <span class="decision-reason">{{ decision.reason }}</span>
           </div>
 
@@ -285,11 +346,11 @@ const mainQuality = computed(() => {
         <div class="detail-facts">
           <div class="fact">
             <span>年份</span>
-            <strong>{{ detail.year ?? '—' }}</strong>
+            <strong>{{ detail.year ?? (series?.year ?? '—') }}</strong>
           </div>
           <div class="fact">
             <span>内容类型</span>
-            <strong>{{ kindLabels[detail.kind] ?? detail.kind }}</strong>
+            <strong>{{ series ? '电视剧' : (kindLabels[detail.kind] ?? detail.kind) }}</strong>
           </div>
           <div class="fact">
             <span>片长 / 规格</span>
@@ -297,7 +358,7 @@ const mainQuality = computed(() => {
           </div>
           <div class="fact">
             <span>媒体质量</span>
-            <strong style="color: var(--cyan);">{{ mainQuality }}</strong>
+            <strong class="quality-highlight">{{ mainQuality }}</strong>
           </div>
         </div>
 
@@ -410,51 +471,194 @@ const mainQuality = computed(() => {
   color: var(--muted);
 }
 
-/* 决策卡片 */
-.decision-card {
-  margin: 18px 0;
-  padding: 16px 20px;
+/* 英雄榜区域微调 */
+.detail-hero {
+  border-radius: 20px;
+  overflow: hidden;
+  box-shadow: 0 20px 50px rgba(0, 0, 0, 0.4);
 }
-.decision-head {
+.hero-inner {
+  display: flex;
+  align-items: flex-end;
+  gap: 30px;
+  width: 100%;
+  position: relative;
+  z-index: 1;
+}
+.hero-poster-box {
+  width: 175px;
+  flex-shrink: 0;
+  border-radius: 14px;
+  overflow: hidden;
+  box-shadow: 0 16px 36px rgba(0, 0, 0, 0.65), 0 0 0 1px rgba(255, 255, 255, 0.12);
+  aspect-ratio: 2 / 3;
+  background: #0d1627;
+  display: flex;
+}
+.hero-poster-img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  transition: transform 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+}
+.hero-poster-box:hover .hero-poster-img {
+  transform: scale(1.04);
+}
+.detail-orig-title {
+  font-size: 14px;
+  color: var(--muted);
+  margin: -4px 0 10px;
+  font-style: italic;
+}
+.detail-desc {
+  font-size: 13px;
+  line-height: 1.75;
+  color: #cbd5e1;
+  max-width: 680px;
+  margin: 12px 0 20px;
+  display: -webkit-box;
+  -webkit-line-clamp: 4;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+@media (max-width: 720px) {
+  .hero-inner {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 16px;
+  }
+  .hero-poster-box {
+    width: 130px;
+  }
+}
+.hero-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-bottom: 14px;
+}
+.hero-tags .tag {
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.5px;
+  padding: 4px 10px;
+  border-radius: 6px;
+  background: rgba(255, 255, 255, 0.08);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  color: #cbd5e1;
+}
+.hero-tags .tag-kind {
+  background: rgba(121, 91, 255, 0.2);
+  border-color: rgba(121, 91, 255, 0.4);
+  color: #c4b5fd;
+}
+.hero-tags .tag-series {
+  background: rgba(87, 200, 245, 0.15);
+  border-color: rgba(87, 200, 245, 0.35);
+  color: #7dd3fc;
+}
+
+.hero-meta {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
+  gap: 10px;
+  font-size: 13px;
+  color: #cbd5e1;
+  margin: 12px 0 16px;
+}
+.hero-meta .meta-sep {
+  width: 3px;
+  height: 3px;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.3);
+}
+.hero-meta .meta-rating {
+  color: #fbbf24;
+  font-weight: 700;
+}
+.hero-meta .meta-quality {
+  color: var(--cyan);
+  font-weight: 600;
+}
+
+/* 决策卡片重塑 */
+.decision-card {
+  margin: 16px 0;
+  padding: 12px 18px;
+  border-radius: 12px;
+  background: rgba(16, 24, 42, 0.5);
+  border: 1px solid var(--line);
+  transition: all 0.2s ease;
+}
+.decision-card.direct_play {
+  background: rgba(16, 185, 129, 0.06);
+  border-color: rgba(16, 185, 129, 0.22);
+}
+.decision-card.remux {
+  background: rgba(14, 165, 233, 0.06);
+  border-color: rgba(14, 165, 233, 0.22);
+}
+.decision-card.transcode {
+  background: rgba(245, 158, 11, 0.06);
+  border-color: rgba(245, 158, 11, 0.22);
+}
+.decision-card.unsupported {
+  background: rgba(239, 68, 68, 0.06);
+  border-color: rgba(239, 68, 68, 0.22);
+}
+.decision-head {
+  display: flex;
+  align-items: center;
   gap: 12px;
+}
+.decision-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  font-weight: 600;
+  padding: 3px 10px;
+  border-radius: 6px;
+}
+.decision-badge.direct_play {
+  background: rgba(16, 185, 129, 0.15);
+  color: #6ee7b7;
+}
+.decision-badge.remux {
+  background: rgba(14, 165, 233, 0.15);
+  color: #7dd3fc;
+}
+.decision-badge.transcode {
+  background: rgba(245, 158, 11, 0.15);
+  color: #fcd34d;
+}
+.decision-badge.unsupported {
+  background: rgba(239, 68, 68, 0.15);
+  color: #fca5a5;
+}
+.decision-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: currentColor;
 }
 .decision-tag {
   font-size: 11px;
   font-weight: 700;
-  padding: 4px 10px;
-  border-radius: 7px;
-  border: 1px solid var(--line);
-}
-.decision-tag.direct_play {
-  background: rgba(16, 185, 129, 0.15);
-  border-color: rgba(16, 185, 129, 0.35);
-  color: #6ee7b7;
-}
-.decision-tag.remux {
-  background: rgba(14, 165, 233, 0.15);
-  border-color: rgba(14, 165, 233, 0.35);
-  color: #7dd3fc;
-}
-.decision-tag.transcode {
-  background: rgba(245, 158, 11, 0.15);
-  border-color: rgba(245, 158, 11, 0.35);
-  color: #fcd34d;
-}
-.decision-tag.unsupported {
-  background: rgba(239, 68, 68, 0.15);
-  border-color: rgba(239, 68, 68, 0.35);
-  color: #fca5a5;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: inherit;
 }
 .decision-reason {
   font-size: 13px;
   color: var(--muted);
 }
 .decision-list {
-  margin: 14px 0 0;
-  padding-top: 12px;
+  margin: 12px 0 0;
+  padding-top: 10px;
   border-top: 1px solid var(--line);
   list-style: none;
   display: flex;
@@ -473,9 +677,46 @@ const mainQuality = computed(() => {
   color: var(--muted);
 }
 .unsupported-hint {
-  margin-top: 12px;
+  margin-top: 10px;
   font-size: 12px;
   color: #fca5a5;
+}
+
+/* 4 宫格事实参数矩阵 */
+.detail-facts {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 12px;
+  margin: 18px 0;
+}
+.fact {
+  background: rgba(20, 31, 52, 0.6);
+  border: 1px solid rgba(174, 193, 226, 0.09);
+  border-radius: 12px;
+  padding: 14px 18px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  backdrop-filter: blur(8px);
+  transition: transform 0.2s ease, border-color 0.2s ease;
+}
+.fact:hover {
+  transform: translateY(-2px);
+  border-color: rgba(174, 193, 226, 0.2);
+}
+.fact span {
+  font-size: 11px;
+  color: var(--muted2);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+.fact strong {
+  font-size: 15px;
+  font-weight: 700;
+  color: var(--text);
+}
+.quality-highlight {
+  color: var(--cyan) !important;
 }
 
 /* 标签行 */

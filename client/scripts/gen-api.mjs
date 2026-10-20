@@ -2,7 +2,7 @@
  * 从服务端导出的 OpenAPI 契约生成前端类型。
  *
  * 这个脚本**不做**契约生成，只做类型生成 —— 契约本身由
- * `cargo run --features openapi --bin whatmedia-cli -- openapi` 产出并签入
+ * `cargo run --features openapi -p whatmedia -- openapi` 产出并签入
  * `docs/openapi/openapi.json`。之所以分开：前端工具链不该依赖 Rust 工具链，
  * 而"契约与代码是否同步"由 `make openapi-check` 单独守。
  *

@@ -26,7 +26,9 @@ pub struct SeriesRef {
     #[cfg_attr(feature = "openapi", schema(value_type = uuid::Uuid))]
     pub id: Id,
     pub title: String,
+    pub original_title: Option<String>,
     pub year: Option<i32>,
+    pub overview: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -314,8 +316,8 @@ pub async fn list_episodes(db: &Db, q: &EpisodeQuery) -> Result<Page<EpisodeSumm
 /// 没有"整部剧"的条目。所以从条目出发要倒着走 episode → season → series。
 /// 电影之类没挂在任何剧上的条目返回 `None` —— 那时详情页就不渲染季列表。
 pub async fn series_of_item(db: &Db, item_id: Id) -> Result<Option<SeriesRef>> {
-    let row = sqlx::query_as::<_, (String, String, Option<i32>)>(
-        "SELECT sr.id, sr.title, sr.year
+    let row = sqlx::query_as::<_, (String, String, Option<String>, Option<i32>, Option<String>)>(
+        "SELECT sr.id, sr.title, sr.original_title, sr.year, sr.overview
            FROM episode e
            JOIN season se ON se.id = e.season_id
            JOIN series sr ON sr.id = se.series_id
@@ -326,7 +328,7 @@ pub async fn series_of_item(db: &Db, item_id: Id) -> Result<Option<SeriesRef>> {
     .fetch_optional(db.pool())
     .await?;
 
-    let Some((id, title, year)) = row else {
+    let Some((id, title, original_title, year, overview)) = row else {
         return Ok(None);
     };
     // id 存坏了就当"不属于任何剧"，而不是让详情页 500：
@@ -334,7 +336,13 @@ pub async fn series_of_item(db: &Db, item_id: Id) -> Result<Option<SeriesRef>> {
     let Some(id) = crate::rows::to_id(&id) else {
         return Ok(None);
     };
-    Ok(Some(SeriesRef { id, title, year }))
+    Ok(Some(SeriesRef {
+        id,
+        title,
+        original_title,
+        year,
+        overview,
+    }))
 }
 
 /// 一部剧的季列表（详情页的"季"tab 用它）。

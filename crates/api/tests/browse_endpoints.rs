@@ -157,7 +157,7 @@ async fn kinds_only_lists_kinds_with_content() {
     let json = get_json(&h, "/api/v1/media/kinds").await;
     let arr = json.as_array().unwrap();
 
-    // 库里只有 movie 与 episode 各一条。
+    // 库里有一条 movie 与一条已成剧的 series（电视剧聚合）。
     let mut got: Vec<(String, i64)> = arr
         .iter()
         .map(|v| {
@@ -170,8 +170,8 @@ async fn kinds_only_lists_kinds_with_content() {
     got.sort();
     assert_eq!(
         got,
-        vec![("episode".to_string(), 1), ("movie".to_string(), 1)],
-        "库里只有 movie 与 episode：{json}"
+        vec![("movie".to_string(), 1), ("series".to_string(), 1)],
+        "库里只有 movie 与 series：{json}"
     );
 }
 

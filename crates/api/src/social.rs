@@ -765,3 +765,149 @@ fn dir_usage(dir: &std::path::Path) -> (i64, i64, bool) {
     }
     (bytes, entries, false)
 }
+
+// ─────────────────────────────────────────────────────────────
+// 服务端文件系统目录浏览
+// ─────────────────────────────────────────────────────────────
+
+#[derive(Debug, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::IntoParams))]
+pub struct BrowseDirQuery {
+    /// 目标路径，留空时列出根驱动器或根目录
+    pub path: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
+pub struct DirEntryView {
+    /// 文件夹名称
+    pub name: String,
+    /// 规范化后的绝对物理路径
+    pub path: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
+pub struct BrowseDirView {
+    /// 当前所处路径
+    pub current: String,
+    /// 上一级目录路径（若已在根层级则为 None）
+    pub parent: Option<String>,
+    /// 当前路径下的子文件夹列表
+    pub directories: Vec<DirEntryView>,
+}
+
+#[cfg_attr(
+    feature = "openapi",
+    utoipa::path(
+        get,
+        path = "/api/v1/system/fs-browse",
+        params(BrowseDirQuery),
+        responses(
+            (status = 200, description = "目录结构", body = BrowseDirView),
+            (status = 400, description = "路径非法或不是目录", body = crate::ErrorBody),
+            (status = 401, description = "未认证", body = crate::ErrorBody),
+            (status = 403, description = "只有管理员能浏览服务端文件系统目录", body = crate::ErrorBody),
+        ),
+        tag = "social"
+    )
+)]
+pub async fn browse_fs_dir(
+    State(_state): State<AppState>,
+    Current(p): Current,
+    Query(query): Query<BrowseDirQuery>,
+) -> Response {
+    use whatmedia_auth::Ability;
+    if !p.can(Ability::ManageSettings) {
+        return deny(
+            "FORBIDDEN",
+            "只有管理员能浏览服务端文件系统目录",
+            StatusCode::FORBIDDEN,
+        );
+    }
+
+    let raw = query.path.unwrap_or_default().trim().to_string();
+    let res = tokio::task::spawn_blocking(move || list_server_dir(&raw)).await;
+    match res {
+        Ok(Ok(view)) => Json(view).into_response(),
+        Ok(Err(msg)) => bad_request(msg),
+        Err(e) => internal(e),
+    }
+}
+
+fn list_server_dir(raw: &str) -> std::result::Result<BrowseDirView, String> {
+    if raw.is_empty() {
+        #[cfg(windows)]
+        {
+            let mut drives = Vec::new();
+            for c in b'A'..=b'Z' {
+                let drive_str = format!("{}:\\", c as char);
+                let p = std::path::Path::new(&drive_str);
+                if p.exists() {
+                    drives.push(DirEntryView {
+                        name: format!("本地磁盘 ({}:)", c as char),
+                        path: drive_str,
+                    });
+                }
+            }
+            return Ok(BrowseDirView {
+                current: "".to_string(),
+                parent: None,
+                directories: drives,
+            });
+        }
+        #[cfg(not(windows))]
+        {
+            return list_dir_contents(std::path::Path::new("/"), None);
+        }
+    }
+
+    let target = std::path::Path::new(raw);
+    if !target.exists() {
+        return Err(format!("目录不存在：{}", raw));
+    }
+    if !target.is_dir() {
+        return Err(format!("指定路径不是有效文件夹：{}", raw));
+    }
+
+    let clean = whatmedia_storage::clean_path(target);
+    let parent = clean
+        .parent()
+        .map(|p| whatmedia_storage::clean_path(p).to_string_lossy().to_string());
+    list_dir_contents(&clean, parent)
+}
+
+fn list_dir_contents(
+    current: &std::path::Path,
+    parent: Option<String>,
+) -> std::result::Result<BrowseDirView, String> {
+    let mut directories = Vec::new();
+    let entries = std::fs::read_dir(current)
+        .map_err(|e| format!("读取目录失败 {}：{e}", current.display()))?;
+    for entry in entries.flatten() {
+        if let Ok(ft) = entry.file_type() {
+            if ft.is_dir() {
+                let name = entry.file_name().to_string_lossy().to_string();
+                if name.starts_with('.')
+                    || name.starts_with('$')
+                    || name.eq_ignore_ascii_case("System Volume Information")
+                {
+                    continue;
+                }
+                let path = whatmedia_storage::clean_path(&entry.path());
+                directories.push(DirEntryView {
+                    name,
+                    path: path.to_string_lossy().to_string(),
+                });
+            }
+        }
+    }
+    directories.sort_by(|a, b| a.name.to_lowercase().cmp(&b.name.to_lowercase()));
+
+    Ok(BrowseDirView {
+        current: whatmedia_storage::clean_path(current).to_string_lossy().to_string(),
+        parent,
+        directories,
+    })
+}
+

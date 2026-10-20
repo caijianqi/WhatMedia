@@ -329,7 +329,7 @@ async fn ingest_one(
         .map(|p| p.to_string_lossy().to_string())
         .unwrap_or_default();
 
-    let mut parsed: ParsedName = parse_file_in_dir(&stem, &series_hint(&dir));
+    let mut parsed: ParsedName = parse_file_in_dir(&stem, &dir);
 
     // NFO 优先级最高（§32）：用户显式写的，文件名只是 fallback。
     if let Some(nfo) = load_nfo(storage, &dir, &stem).await {
@@ -414,35 +414,6 @@ fn apply_nfo(parsed: &mut ParsedName, nfo: NfoKind) {
                 parsed.year = s.year;
             }
         }
-    }
-}
-
-/// 剧名来自哪一级目录。
-///
-/// `TV/Breaking Bad/Season 01/ep.mkv` 的剧名在**祖父**目录，
-/// `TV/Breaking Bad/ep.mkv` 的剧名在**父**目录。父目录本身是 `Season N` 时要再上一级。
-fn series_hint(dir: &str) -> String {
-    let path = Path::new(dir);
-    let parent = path
-        .file_name()
-        .map(|n| n.to_string_lossy().to_string())
-        .unwrap_or_default();
-
-    let lower = parent.to_lowercase();
-    let is_season_dir = {
-        let compact: String = lower.chars().filter(|c| !c.is_whitespace()).collect();
-        let digits: String = compact.chars().filter(|c| c.is_ascii_digit()).collect();
-        let alpha: String = compact.chars().filter(|c| c.is_alphabetic()).collect();
-        !digits.is_empty() && (alpha == "s" || alpha == "season" || alpha == "se")
-    };
-
-    if is_season_dir {
-        path.parent()
-            .and_then(|p| p.file_name())
-            .map(|n| n.to_string_lossy().to_string())
-            .unwrap_or_default()
-    } else {
-        parent
     }
 }
 

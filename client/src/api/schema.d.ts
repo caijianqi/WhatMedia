@@ -1164,6 +1164,22 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/system/fs-browse": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["browse_fs_dir"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/system/storage": {
         parameters: {
             query?: never;
@@ -1248,6 +1264,14 @@ export interface components {
             display_name?: string | null;
             password: string;
             username: string;
+        };
+        BrowseDirView: {
+            /** @description 当前所处路径 */
+            current: string;
+            /** @description 当前路径下的子文件夹列表 */
+            directories: components["schemas"]["DirEntryView"][];
+            /** @description 上一级目录路径（若已在根层级则为 None） */
+            parent?: string | null;
         };
         CacheStats: {
             /** Format: int64 */
@@ -1366,6 +1390,12 @@ export interface components {
             name: string;
             platform?: string | null;
             user_id: string;
+        };
+        DirEntryView: {
+            /** @description 文件夹名称 */
+            name: string;
+            /** @description 规范化后的绝对物理路径 */
+            path: string;
         };
         EpisodeParams: {
             /** Format: int32 */
@@ -1982,8 +2012,10 @@ export interface components {
             /** Format: uuid */
             id: string;
             title: string;
+            original_title?: string | null;
             /** Format: int32 */
             year?: number | null;
+            overview?: string | null;
         };
         SeriesSummary: {
             /** Format: int64 */
@@ -4902,6 +4934,56 @@ export interface operations {
             };
             /** @description 字幕不存在或不在库内 */
             404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+        };
+    };
+    browse_fs_dir: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description 目标路径，留空时列出根驱动器或根目录 */
+                path: string | null;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description 目录结构 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BrowseDirView"];
+                };
+            };
+            /** @description 路径非法或不是目录 */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description 未认证 */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description 只有管理员能浏览服务端文件系统目录 */
+            403: {
                 headers: {
                     [name: string]: unknown;
                 };

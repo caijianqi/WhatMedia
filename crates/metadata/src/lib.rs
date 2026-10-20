@@ -46,19 +46,33 @@ pub fn build_providers(cfg: &ProviderChainConfig) -> Vec<Arc<dyn MetadataProvide
     let mut out: Vec<Arc<dyn MetadataProvider>> = Vec::new();
 
     if let Some(key) = &cfg.tmdb_api_key {
-        out.push(Arc::new(TmdbProvider::new(TmdbConfig {
+        let mut tmdb_cfg = TmdbConfig {
             api_key: Some(key.clone()),
             language: cfg.language.clone(),
             requests_per_second: cfg.requests_per_second,
             ..Default::default()
-        })));
+        };
+        if let Some(base) = &cfg.tmdb_base_url {
+            let b = base.trim();
+            if !b.is_empty() {
+                tmdb_cfg.base_url = b.trim_end_matches('/').to_string();
+            }
+        }
+        out.push(Arc::new(TmdbProvider::new(tmdb_cfg)));
     } else if let Some(token) = &cfg.tmdb_bearer {
-        out.push(Arc::new(TmdbProvider::new(TmdbConfig {
+        let mut tmdb_cfg = TmdbConfig {
             bearer: Some(token.clone()),
             language: cfg.language.clone(),
             requests_per_second: cfg.requests_per_second,
             ..Default::default()
-        })));
+        };
+        if let Some(base) = &cfg.tmdb_base_url {
+            let b = base.trim();
+            if !b.is_empty() {
+                tmdb_cfg.base_url = b.trim_end_matches('/').to_string();
+            }
+        }
+        out.push(Arc::new(TmdbProvider::new(tmdb_cfg)));
     }
 
     if cfg.bangumi_enabled {
@@ -76,7 +90,10 @@ pub struct ProviderChainConfig {
     pub tmdb_api_key: Option<String>,
     /// v4 Bearer Token。两个都配时 TMDB 用 bearer。
     pub tmdb_bearer: Option<String>,
+    /// TMDB 自定义代理/镜像 Base URL。
+    pub tmdb_base_url: Option<String>,
     pub bangumi_enabled: bool,
     pub language: String,
     pub requests_per_second: f64,
 }
+

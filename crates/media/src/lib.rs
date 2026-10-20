@@ -7,7 +7,10 @@ pub mod naming;
 pub mod nfo;
 pub mod probe;
 
-pub use naming::{apply_series_hint, parse_file_in_dir, parse_filename, parse_stem, ParsedName};
+pub use naming::{
+    apply_series_hint, extract_path_hint, parse_file_in_dir, parse_filename, parse_season_dir,
+    parse_stem, ParsedName, PathHint,
+};
 pub use nfo::{parse_nfo, NfoEpisode, NfoKind, NfoMovie, NfoSeries};
 pub use probe::{parse_probe_json, FfprobeRunner, ProbeResult, ProbeStream, DEFAULT_TIMEOUT};
 

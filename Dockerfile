@@ -64,8 +64,6 @@ RUN groupadd -r -g 1000 whatmedia && useradd -r -u 1000 -g whatmedia whatmedia \
     && chown -R whatmedia:whatmedia /config /data /cache /logs
 
 COPY --from=builder /src/target/release/whatmedia /usr/local/bin/whatmedia
-COPY --from=builder /src/target/release/whatmedia-server /usr/local/bin/whatmedia-server
-COPY --from=builder /src/target/release/whatmedia-cli /usr/local/bin/whatmedia-cli
 COPY --from=ffmpeg  /usr/local/bin/ffmpeg  /usr/local/bin/ffmpeg
 COPY --from=ffmpeg  /usr/local/bin/ffprobe /usr/local/bin/ffprobe
 COPY migrations /usr/local/share/whatmedia/migrations

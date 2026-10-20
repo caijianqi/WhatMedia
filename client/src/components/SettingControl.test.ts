@@ -66,6 +66,18 @@ describe('SettingControl', () => {
     expect(w.get('input').attributes('type')).toBe('text')
   })
 
+  it('带有 key/token/bearer 的敏感文本默认以 password 渲染并支持明文切换', async () => {
+    const w = mountWith(
+      entry({ key: 'metadata.tmdb_api_key', kind: 'text', value: 'secret123' }),
+    )
+    const input = w.get('input')
+    expect(input.attributes('type')).toBe('password')
+
+    const toggle = w.get('.secret-toggle-btn')
+    await toggle.trigger('click')
+    expect(input.attributes('type')).toBe('text')
+  })
+
   it('需要重启时必须明说', () => {
     expect(mountWith(entry({ restart_required: true })).text()).toContain('重启')
     // 用户级偏好是立刻生效的，写"要重启"就是误导。

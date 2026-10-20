@@ -178,7 +178,91 @@ pub async fn replace_streams(db: &Db, file_id: Id, streams: &[MediaStream]) -> R
 // 读取
 // ─────────────────────────────────────────────────────────────
 
+type ItemSummaryRow = (
+    String,
+    String,
+    String,
+    Option<String>,
+    Option<i32>,
+    Option<f64>,
+    Option<i64>,
+    String,
+    Option<i64>,
+);
+
 pub async fn count_items(db: &Db, q: &ItemQuery) -> Result<i64> {
+    if let Some(kind) = q.kind {
+        if kind == MediaKind::Series {
+            let mut b = QueryBuilder::<sqlx::Sqlite>::new(
+                "SELECT COUNT(*) FROM series s WHERE EXISTS (
+                    SELECT 1 FROM season se
+                    JOIN episode e ON e.season_id = se.id
+                    JOIN media_item m ON m.id = e.item_id
+                    WHERE se.series_id = s.id",
+            );
+            if let Some(lib_id) = q.library_id {
+                b.push(" AND m.library_id = ").push_bind(lib_id.to_string());
+            }
+            b.push(")");
+            if let Some(year) = q.year {
+                b.push(" AND s.year = ").push_bind(year);
+            }
+            let total: (i64,) = b.build_query_as().fetch_one(db.pool()).await?;
+            return Ok(total.0);
+        }
+
+        let mut b = QueryBuilder::<sqlx::Sqlite>::new("SELECT COUNT(*) FROM media_item WHERE 1=1");
+        apply_filters(&mut b, q);
+        let total: (i64,) = b.build_query_as().fetch_one(db.pool()).await?;
+        return Ok(total.0);
+    }
+
+    if q.aggregate_series == Some(true) {
+        // 全部（All）：非单集条目 + 聚合电视剧 + 孤立单集
+        let mut b1 = QueryBuilder::<sqlx::Sqlite>::new(
+            "SELECT COUNT(*) FROM media_item WHERE kind != 'episode'",
+        );
+        if let Some(id) = q.library_id {
+            b1.push(" AND library_id = ").push_bind(id.to_string());
+        }
+        if let Some(year) = q.year {
+            b1.push(" AND year = ").push_bind(year);
+        }
+        let non_episode_total: (i64,) = b1.build_query_as().fetch_one(db.pool()).await?;
+
+        let mut b2 = QueryBuilder::<sqlx::Sqlite>::new(
+            "SELECT COUNT(*) FROM series s WHERE EXISTS (
+                SELECT 1 FROM season se
+                JOIN episode e ON e.season_id = se.id
+                JOIN media_item m ON m.id = e.item_id
+                WHERE se.series_id = s.id",
+        );
+        if let Some(lib_id) = q.library_id {
+            b2.push(" AND m.library_id = ").push_bind(lib_id.to_string());
+        }
+        b2.push(")");
+        if let Some(year) = q.year {
+            b2.push(" AND s.year = ").push_bind(year);
+        }
+        let series_total: (i64,) = b2.build_query_as().fetch_one(db.pool()).await?;
+
+        let mut b3 = QueryBuilder::<sqlx::Sqlite>::new(
+            "SELECT COUNT(*) FROM media_item m
+              WHERE m.kind = 'episode'
+                AND NOT EXISTS (SELECT 1 FROM episode e WHERE e.item_id = m.id)",
+        );
+        if let Some(id) = q.library_id {
+            b3.push(" AND m.library_id = ").push_bind(id.to_string());
+        }
+        if let Some(year) = q.year {
+            b3.push(" AND m.year = ").push_bind(year);
+        }
+        let orphan_total: (i64,) = b3.build_query_as().fetch_one(db.pool()).await?;
+
+        return Ok(non_episode_total.0 + series_total.0 + orphan_total.0);
+    }
+
+    // 默认底层查询：直接统计 media_item
     let mut b = QueryBuilder::<sqlx::Sqlite>::new("SELECT COUNT(*) FROM media_item WHERE 1=1");
     apply_filters(&mut b, q);
     let total: (i64,) = b.build_query_as().fetch_one(db.pool()).await?;
@@ -187,29 +271,65 @@ pub async fn count_items(db: &Db, q: &ItemQuery) -> Result<i64> {
 
 /// 每个类型的条目数（首页"分类 tab"用它决定显示哪几个 tab）。
 ///
-/// **只返回数量大于 0 的类型**。硬编码一份"电影 / 剧集 / 动画 / 纪录片"的
-/// tab 列表，在只有电影的库里会留下三个点进去永远是空的 tab ——
-/// 那种空 tab 比没有 tab 更糟，它让人以为自己的库坏了。
-///
-/// 顺序按数量降序：最常用的类型在最前面。
+/// **只返回数量大于 0 的类型**。剧集按聚合的 Series 数量统计，避免单集分散平铺。
 pub async fn kind_counts(db: &Db) -> Result<Vec<KindCount>> {
     let rows = sqlx::query_as::<_, (String, i64)>(
         "SELECT kind, COUNT(*) AS n FROM media_item
-          GROUP BY kind HAVING n > 0
-          ORDER BY n DESC, kind",
+          WHERE kind != 'episode'
+          GROUP BY kind HAVING n > 0",
     )
     .fetch_all(db.pool())
     .await?;
 
-    Ok(rows
+    let mut counts: Vec<KindCount> = rows
         .into_iter()
         .map(|(kind, n)| KindCount {
-            // `to_kind` 不认识的串会落回 Mixed。这里不因此丢行：
-            // 库里真有 `mixed` 时它也是一个可点的分类，只是标签不好看而已。
             kind: crate::rows::to_kind(&kind),
             count: n,
         })
-        .collect())
+        .collect();
+
+    // 统计剧集（按 Series 实体聚合，有单集的才算）
+    let series_total: (i64,) = sqlx::query_as(
+        "SELECT COUNT(*) FROM series s
+          WHERE EXISTS (
+              SELECT 1 FROM season se
+              JOIN episode e ON e.season_id = se.id
+              WHERE se.series_id = s.id
+          )",
+    )
+    .fetch_one(db.pool())
+    .await?;
+
+    if series_total.0 > 0 {
+        counts.push(KindCount {
+            kind: MediaKind::Series,
+            count: series_total.0,
+        });
+    }
+
+    // 统计不属于任何 series 的孤立单集
+    let orphan_episodes: (i64,) = sqlx::query_as(
+        "SELECT COUNT(*) FROM media_item m
+          WHERE m.kind = 'episode'
+            AND NOT EXISTS (SELECT 1 FROM episode e WHERE e.item_id = m.id)",
+    )
+    .fetch_one(db.pool())
+    .await?;
+
+    if orphan_episodes.0 > 0 {
+        counts.push(KindCount {
+            kind: MediaKind::Episode,
+            count: orphan_episodes.0,
+        });
+    }
+
+    counts.sort_by(|a, b| {
+        b.count
+            .cmp(&a.count)
+            .then_with(|| format!("{:?}", a.kind).cmp(&format!("{:?}", b.kind)))
+    });
+    Ok(counts)
 }
 
 /// 一个类型有多少条目。
@@ -224,7 +344,242 @@ pub async fn list_items(db: &Db, q: &ItemQuery) -> Result<Page<ItemSummary>> {
     let total = count_items(db, q).await?;
     let (_, size) = q.clamp();
 
-    let mut b = QueryBuilder::<sqlx::Sqlite>::new("SELECT * FROM media_item WHERE 1=1");
+    if let Some(kind) = q.kind {
+        if kind == MediaKind::Series {
+            let mut b = QueryBuilder::<sqlx::Sqlite>::new(
+                "SELECT 
+                    (SELECT e.item_id 
+                     FROM episode e 
+                     JOIN season se ON se.id = e.season_id 
+                     JOIN media_item m ON m.id = e.item_id
+                     WHERE se.series_id = s.id 
+                     ORDER BY se.season_number ASC, e.episode_number ASC 
+                     LIMIT 1) AS id,
+                    'series' AS kind,
+                    s.title AS title,
+                    s.original_title AS original_title,
+                    s.year AS year,
+                    NULL AS rating,
+                    NULL AS runtime_ms,
+                    COALESCE(
+                        (SELECT m.added_at 
+                         FROM episode e 
+                         JOIN season se ON se.id = e.season_id 
+                         JOIN media_item m ON m.id = e.item_id
+                         WHERE se.series_id = s.id 
+                         ORDER BY m.added_at DESC 
+                         LIMIT 1),
+                        '1970-01-01T00:00:00Z'
+                    ) AS added_at,
+                    (SELECT COUNT(*) 
+                     FROM episode e 
+                     JOIN season se ON se.id = e.season_id 
+                     WHERE se.series_id = s.id) AS episode_count
+                FROM series s
+                WHERE EXISTS (
+                    SELECT 1 FROM season se
+                    JOIN episode e ON e.season_id = se.id
+                    JOIN media_item m ON m.id = e.item_id
+                    WHERE se.series_id = s.id",
+            );
+            if let Some(lib_id) = q.library_id {
+                b.push(" AND m.library_id = ").push_bind(lib_id.to_string());
+            }
+            b.push(")");
+            if let Some(year) = q.year {
+                b.push(" AND s.year = ").push_bind(year);
+            }
+            b.push(" ORDER BY ");
+            b.push(q.sort.sql());
+            b.push(" ");
+            b.push(q.order.sql());
+            b.push(" LIMIT ");
+            b.push_bind(size as i64);
+            b.push(" OFFSET ");
+            b.push_bind(q.offset());
+
+            let rows = b.build_query_as::<ItemSummaryRow>().fetch_all(db.pool()).await?;
+            let data = rows
+                .into_iter()
+                .filter_map(|r| {
+                    Some(ItemSummary {
+                        id: to_id(&r.0)?,
+                        kind: crate::rows::to_kind(&r.1),
+                        title: r.2,
+                        original_title: r.3,
+                        year: r.4,
+                        rating: r.5,
+                        runtime_ms: r.6,
+                        added_at: r.7,
+                        episode_count: r.8,
+                    })
+                })
+                .collect();
+            return Ok(page_of(data, total, q));
+        }
+
+        // 其它具体类型（包括用户显式点选的 episode 单集）
+        let mut b = QueryBuilder::<sqlx::Sqlite>::new(
+            "SELECT id, kind, title, original_title, year, rating, runtime_ms, added_at, NULL AS episode_count
+             FROM media_item WHERE 1=1",
+        );
+        apply_filters(&mut b, q);
+        b.push(" ORDER BY ");
+        b.push(q.sort.sql());
+        b.push(" ");
+        b.push(q.order.sql());
+        b.push(" LIMIT ");
+        b.push_bind(size as i64);
+        b.push(" OFFSET ");
+        b.push_bind(q.offset());
+
+        let rows = b.build_query_as::<ItemSummaryRow>().fetch_all(db.pool()).await?;
+        let data = rows
+            .into_iter()
+            .filter_map(|r| {
+                Some(ItemSummary {
+                    id: to_id(&r.0)?,
+                    kind: crate::rows::to_kind(&r.1),
+                    title: r.2,
+                    original_title: r.3,
+                    year: r.4,
+                    rating: r.5,
+                    runtime_ms: r.6,
+                    added_at: r.7,
+                    episode_count: r.8,
+                })
+            })
+            .collect();
+        return Ok(page_of(data, total, q));
+    }
+
+    if q.aggregate_series == Some(true) {
+        // 全部（All）：非单集 + 聚合剧集 + 孤立单集
+        let mut b = QueryBuilder::<sqlx::Sqlite>::new(
+            "SELECT id, kind, title, original_title, year, rating, runtime_ms, added_at, episode_count FROM (
+                SELECT 
+                    m.id AS id,
+                    m.kind AS kind,
+                    m.title AS title,
+                    m.original_title AS original_title,
+                    m.year AS year,
+                    m.rating AS rating,
+                    m.runtime_ms AS runtime_ms,
+                    m.added_at AS added_at,
+                    NULL AS episode_count
+                FROM media_item m
+                WHERE m.kind != 'episode'",
+        );
+        if let Some(id) = q.library_id {
+            b.push(" AND m.library_id = ").push_bind(id.to_string());
+        }
+        if let Some(year) = q.year {
+            b.push(" AND m.year = ").push_bind(year);
+        }
+
+        b.push(
+            " UNION ALL
+            SELECT 
+                (SELECT e.item_id 
+                 FROM episode e 
+                 JOIN season se ON se.id = e.season_id 
+                 JOIN media_item m ON m.id = e.item_id
+                 WHERE se.series_id = s.id 
+                 ORDER BY se.season_number ASC, e.episode_number ASC 
+                 LIMIT 1) AS id,
+                'series' AS kind,
+                s.title AS title,
+                s.original_title AS original_title,
+                s.year AS year,
+                NULL AS rating,
+                NULL AS runtime_ms,
+                COALESCE(
+                    (SELECT m.added_at 
+                     FROM episode e 
+                     JOIN season se ON se.id = e.season_id 
+                     JOIN media_item m ON m.id = e.item_id
+                     WHERE se.series_id = s.id 
+                     ORDER BY m.added_at DESC 
+                     LIMIT 1),
+                    '1970-01-01T00:00:00Z'
+                ) AS added_at,
+                (SELECT COUNT(*) 
+                 FROM episode e 
+                 JOIN season se ON se.id = e.season_id 
+                 WHERE se.series_id = s.id) AS episode_count
+            FROM series s
+            WHERE EXISTS (
+                SELECT 1 FROM season se
+                JOIN episode e ON e.season_id = se.id
+                JOIN media_item m ON m.id = e.item_id
+                WHERE se.series_id = s.id",
+        );
+        if let Some(lib_id) = q.library_id {
+            b.push(" AND m.library_id = ").push_bind(lib_id.to_string());
+        }
+        b.push(")");
+        if let Some(year) = q.year {
+            b.push(" AND s.year = ").push_bind(year);
+        }
+
+        b.push(
+            " UNION ALL
+            SELECT 
+                m.id AS id,
+                m.kind AS kind,
+                m.title AS title,
+                m.original_title AS original_title,
+                m.year AS year,
+                m.rating AS rating,
+                m.runtime_ms AS runtime_ms,
+                m.added_at AS added_at,
+                NULL AS episode_count
+            FROM media_item m
+            WHERE m.kind = 'episode'
+              AND NOT EXISTS (SELECT 1 FROM episode e WHERE e.item_id = m.id)",
+        );
+        if let Some(id) = q.library_id {
+            b.push(" AND m.library_id = ").push_bind(id.to_string());
+        }
+        if let Some(year) = q.year {
+            b.push(" AND m.year = ").push_bind(year);
+        }
+
+        b.push(") ORDER BY ");
+        b.push(q.sort.sql());
+        b.push(" ");
+        b.push(q.order.sql());
+        b.push(" LIMIT ");
+        b.push_bind(size as i64);
+        b.push(" OFFSET ");
+        b.push_bind(q.offset());
+
+        let rows = b.build_query_as::<ItemSummaryRow>().fetch_all(db.pool()).await?;
+        let data = rows
+            .into_iter()
+            .filter_map(|r| {
+                Some(ItemSummary {
+                    id: to_id(&r.0)?,
+                    kind: crate::rows::to_kind(&r.1),
+                    title: r.2,
+                    original_title: r.3,
+                    year: r.4,
+                    rating: r.5,
+                    runtime_ms: r.6,
+                    added_at: r.7,
+                    episode_count: r.8,
+                })
+            })
+            .collect();
+
+        return Ok(page_of(data, total, q));
+    }
+
+    // 默认底层查询：直接查询 media_item
+    let mut b = QueryBuilder::<sqlx::Sqlite>::new(
+        "SELECT id, kind, title, original_title, year, rating, runtime_ms, added_at, NULL AS episode_count
+         FROM media_item WHERE 1=1",
+    );
     apply_filters(&mut b, q);
     b.push(" ORDER BY ");
     b.push(q.sort.sql());
@@ -235,11 +590,22 @@ pub async fn list_items(db: &Db, q: &ItemQuery) -> Result<Page<ItemSummary>> {
     b.push(" OFFSET ");
     b.push_bind(q.offset());
 
-    let rows = b.build_query_as::<ItemRow>().fetch_all(db.pool()).await?;
+    let rows = b.build_query_as::<ItemSummaryRow>().fetch_all(db.pool()).await?;
     let data = rows
         .into_iter()
-        .filter_map(|r| r.into_domain())
-        .map(|i| ItemSummary::from_row(&i))
+        .filter_map(|r| {
+            Some(ItemSummary {
+                id: to_id(&r.0)?,
+                kind: crate::rows::to_kind(&r.1),
+                title: r.2,
+                original_title: r.3,
+                year: r.4,
+                rating: r.5,
+                runtime_ms: r.6,
+                added_at: r.7,
+                episode_count: r.8,
+            })
+        })
         .collect();
 
     Ok(page_of(data, total, q))

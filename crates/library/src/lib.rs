@@ -62,7 +62,14 @@ pub async fn ingest_file(db: &Db, req: &IngestRequest) -> Result<IngestOutcome> 
         } else {
             MediaKind::Movie
         },
-        title: req.parsed.title.clone(),
+        title: if !req.parsed.title.trim().is_empty() {
+            req.parsed.title.clone()
+        } else {
+            std::path::Path::new(&req.path)
+                .file_stem()
+                .map(|s| s.to_string_lossy().to_string())
+                .unwrap_or_else(|| "未知标题".to_string())
+        },
         original_title: None,
         sort_title: None,
         year: req.parsed.year,
@@ -136,7 +143,12 @@ pub async fn ingest_file(db: &Db, req: &IngestRequest) -> Result<IngestOutcome> 
 
 /// 把剧集挂到 series / season / episode 结构上。
 async fn link_episode(db: &Db, item_id: Id, parsed: &ParsedName) -> Result<()> {
-    let series = repo::tv::upsert_series(db, &parsed.title, parsed.year).await?;
+    let series_title = if !parsed.title.trim().is_empty() {
+        &parsed.title
+    } else {
+        "未知剧集"
+    };
+    let series = repo::tv::upsert_series(db, series_title, parsed.year).await?;
     let season = repo::tv::upsert_season(db, series.id, parsed.season.unwrap_or(1)).await?;
     repo::tv::upsert_episode(
         db,

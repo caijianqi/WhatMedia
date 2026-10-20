@@ -90,6 +90,21 @@ const uptime = computed(() => {
       </RouterLink>
 
       <RouterLink
+        :to="{ name: 'live' }"
+        active-class=""
+        exact-active-class=""
+        :class="{ active: $route.name === 'live' }"
+      >
+        <span class="ico">
+          <svg viewBox="0 0 24 24">
+            <rect x="2" y="7" width="20" height="13" rx="2" fill="none" stroke="currentColor" stroke-width="1.8" />
+            <path d="m17 2-5 5-5-5" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" />
+          </svg>
+        </span>
+        <span class="nav-text">电视直播</span>
+      </RouterLink>
+
+      <RouterLink
         :to="{ name: 'library', query: { filter: 'continue' } }"
         active-class=""
         exact-active-class=""

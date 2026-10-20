@@ -63,7 +63,7 @@ impl Db {
         Ok(Self { pool })
     }
 
-    /// 内存数据库。仅供测试与 `whatmedia-cli` 的一次性诊断使用。
+    /// 内存数据库。仅供单元测试与临时诊断使用。
     pub async fn open_in_memory() -> Result<Self> {
         Self::open("sqlite::memory:").await
     }

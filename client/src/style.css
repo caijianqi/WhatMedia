@@ -1370,8 +1370,20 @@ a {
   display: grid;
   grid-template-columns: 205px minmax(0, 1fr);
   gap: 18px;
+  align-items: start;
 }
-.settings-nav, .settings-content {
+.settings-nav {
+  position: sticky;
+  top: 80px;
+  align-self: start;
+  max-height: calc(100vh - 100px);
+  overflow-y: auto;
+  border: 1px solid var(--line);
+  background: #111a2c;
+  border-radius: 15px;
+  padding: 12px;
+}
+.settings-content {
   border: 1px solid var(--line);
   background: #111a2c;
   border-radius: 15px;
@@ -1641,8 +1653,20 @@ a {
   display: grid;
   grid-template-columns: 205px minmax(0, 1fr);
   gap: 18px;
+  align-items: start;
 }
-.settings-nav, .settings-content {
+.settings-nav {
+  position: sticky;
+  top: 80px;
+  align-self: start;
+  max-height: calc(100vh - 100px);
+  overflow-y: auto;
+  border: 1px solid var(--line);
+  background: #111a2c;
+  border-radius: 15px;
+  padding: 14px;
+}
+.settings-content {
   border: 1px solid var(--line);
   background: #111a2c;
   border-radius: 15px;
@@ -1966,6 +1990,8 @@ a {
     grid-template-columns: 1fr;
   }
   .settings-nav {
+    position: static;
+    max-height: none;
     display: flex;
     overflow: auto;
     gap: 4px;
@@ -2058,6 +2084,8 @@ a {
     grid-template-columns: 1fr;
   }
   .settings-nav {
+    position: static;
+    max-height: none;
     display: flex;
     overflow-x: auto;
     gap: 4px;

@@ -123,6 +123,8 @@ pub struct ItemQuery {
     pub page: u32,
     #[serde(default = "default_page_size")]
     pub page_size: u32,
+    #[serde(default)]
+    pub aggregate_series: Option<bool>,
 }
 
 fn default_page() -> u32 {
@@ -143,6 +145,7 @@ impl Default for ItemQuery {
             order: SortOrder::default(),
             page: 1,
             page_size: 50,
+            aggregate_series: None,
         }
     }
 }
@@ -174,6 +177,8 @@ pub struct ItemSummary {
     pub rating: Option<f64>,
     pub runtime_ms: Option<i64>,
     pub added_at: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub episode_count: Option<i64>,
 }
 
 impl ItemSummary {
@@ -187,6 +192,7 @@ impl ItemSummary {
             rating: item.rating,
             runtime_ms: item.runtime_ms,
             added_at: item.added_at.to_rfc3339(),
+            episode_count: None,
         }
     }
 }

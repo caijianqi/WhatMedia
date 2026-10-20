@@ -121,3 +121,16 @@ fn spec_has_all_status_codes_declared() {
         }
     }
 }
+
+#[test]
+fn export_openapi_json() {
+    let json = whatmedia_api::openapi::openapi_json();
+    let out = std::path::PathBuf::from(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/../../docs/openapi/openapi.json"
+    ));
+    if let Some(parent) = out.parent() {
+        let _ = std::fs::create_dir_all(parent);
+    }
+    std::fs::write(&out, format!("{json}\n")).expect("写入 openapi.json 失败");
+}

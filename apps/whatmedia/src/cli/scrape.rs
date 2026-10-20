@@ -18,6 +18,7 @@ pub fn build_scraper(
     let chain = whatmedia_metadata::ProviderChainConfig {
         tmdb_api_key: cfg.metadata.tmdb_api_key.clone(),
         tmdb_bearer: cfg.metadata.tmdb_bearer.clone(),
+        tmdb_base_url: cfg.metadata.tmdb_base_url.clone(),
         bangumi_enabled: cfg.metadata.bangumi_enabled,
         language: cfg.metadata.language.clone(),
         requests_per_second: cfg.metadata.requests_per_second,

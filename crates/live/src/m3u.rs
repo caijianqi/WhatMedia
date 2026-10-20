@@ -70,6 +70,101 @@ pub fn parse_m3u(text: &str) -> Result<Vec<ChannelDraft>, LiveError> {
     Ok(out)
 }
 
+/// 解析一份国内通用 TXT 格式的直播订阅（如 `频道名,URL` 或 `分组,#genre#`）。
+pub fn parse_txt(text: &str) -> Result<Vec<ChannelDraft>, LiveError> {
+    let body = text.trim_start_matches('\u{feff}');
+    let mut out: Vec<ChannelDraft> = Vec::new();
+    let mut current_group: Option<String> = None;
+
+    for raw in body.lines() {
+        let line = raw.trim().trim_end_matches('\r');
+        if line.is_empty() {
+            continue;
+        }
+
+        // 分组标记：形如 `📺央视频道,#genre#` 或 `卫视频道，#genre#`
+        let is_genre = line.ends_with(",#genre#")
+            || line.ends_with("，#genre#")
+            || line.ends_with(",#genre")
+            || line.ends_with("，#genre");
+        if is_genre {
+            let genre_name = line
+                .trim_end_matches("#genre#")
+                .trim_end_matches("#genre")
+                .trim_end_matches(',')
+                .trim_end_matches('，')
+                .trim();
+            // 忽略更新时间元数据分组（如 `🕘️更新时间,#genre#`）
+            if !genre_name.is_empty() && !genre_name.contains("更新时间") {
+                current_group = Some(genre_name.to_string());
+            } else {
+                current_group = None;
+            }
+            continue;
+        }
+
+        // 频道与流地址：以逗号切分（支持英文逗号与中文逗号）
+        let parts = if let Some(idx) = line.find(',') {
+            Some((&line[..idx], &line[idx + 1..]))
+        } else if let Some(idx) = line.find('，') {
+            Some((&line[..idx], &line[idx + '，'.len_utf8()..]))
+        } else {
+            None
+        };
+
+        if let Some((name_part, url_part)) = parts {
+            let name = name_part.trim();
+            let url = url_part.trim();
+            if name.is_empty() || url.is_empty() {
+                continue;
+            }
+            // 忽略时间戳元数据行（如 `2026-10-12 11:25:50,http://...`）
+            if name.contains("更新时间") || name.starts_with("202") {
+                continue;
+            }
+            // 检查 URL 协议合法性
+            let is_stream_url = url.starts_with("http://")
+                || url.starts_with("https://")
+                || url.starts_with("rtmp://")
+                || url.starts_with("rtsp://")
+                || url.starts_with("udp://")
+                || url.starts_with("srt://");
+            if !is_stream_url {
+                continue;
+            }
+
+            out.push(ChannelDraft {
+                name: name.to_string(),
+                stream_url: url.to_string(),
+                logo_url: None,
+                group_title: current_group.clone(),
+                epg_channel_id: None,
+                number: None,
+                sort_order: out.len() as i64,
+            });
+        }
+    }
+
+    if out.is_empty() {
+        return Err(LiveError::EmptyPlaylist);
+    }
+    Ok(out)
+}
+
+/// 解析播放列表文本。自适应 M3U 与 TXT 格式。
+pub fn parse_playlist(text: &str) -> Result<Vec<ChannelDraft>, LiveError> {
+    let body = text.trim_start_matches('\u{feff}');
+    if body.trim_start().starts_with("#EXTM3U") {
+        parse_m3u(text)
+    } else {
+        // 如果包含 #genre# 或频道逗号行，尝试作为 TXT 解析
+        parse_txt(text).map_err(|e| match e {
+            LiveError::EmptyPlaylist => LiveError::NotAPlaylist,
+            other => other,
+        })
+    }
+}
+
 /// 解析 `#EXTINF:` 之后的那一段。
 ///
 /// 形如：`-1 tvg-id="cctv1" tvg-logo="http://x/y.png" group-title="央视",CCTV-1 综合`
@@ -310,5 +405,51 @@ http://example.com/hunan.ts
         let raw = "#EXTM3U\nhttp://a/%E4%B8%AD%E5%A4%AE.m3u8\n";
         let ch = parse_m3u(raw).unwrap();
         assert_eq!(ch[0].name, "中央");
+    }
+
+    #[test]
+    fn parses_txt_playlist_with_genres() {
+        let raw = r#"
+🕘️更新时间,#genre#
+2026-10-12 11:25:50,http://example.com/cctv1hd.m3u8
+
+📺央视频道,#genre#
+CCTV-1,http://example.com/cctv1_line1.m3u8
+CCTV-1,http://example.com/cctv1_line2.m3u8
+CCTV-2,http://example.com/cctv2.m3u8
+
+📡卫视频道,#genre#
+广东卫视,http://example.com/gd.m3u8
+"#;
+        let list = parse_txt(raw).unwrap();
+        assert_eq!(list.len(), 4);
+
+        assert_eq!(list[0].name, "CCTV-1");
+        assert_eq!(list[0].stream_url, "http://example.com/cctv1_line1.m3u8");
+        assert_eq!(list[0].group_title.as_deref(), Some("📺央视频道"));
+
+        assert_eq!(list[1].name, "CCTV-1");
+        assert_eq!(list[1].stream_url, "http://example.com/cctv1_line2.m3u8");
+        assert_eq!(list[1].group_title.as_deref(), Some("📺央视频道"));
+
+        assert_eq!(list[2].name, "CCTV-2");
+        assert_eq!(list[2].group_title.as_deref(), Some("📺央视频道"));
+
+        assert_eq!(list[3].name, "广东卫视");
+        assert_eq!(list[3].group_title.as_deref(), Some("📡卫视频道"));
+    }
+
+    #[test]
+    fn adaptive_playlist_detects_m3u_and_txt() {
+        let m3u_sample = "#EXTM3U\n#EXTINF:-1,测试\nhttp://test.m3u8\n";
+        let res1 = parse_playlist(m3u_sample).unwrap();
+        assert_eq!(res1.len(), 1);
+        assert_eq!(res1[0].name, "测试");
+
+        let txt_sample = "央视频道,#genre#\nCCTV-1,http://test.m3u8\n";
+        let res2 = parse_playlist(txt_sample).unwrap();
+        assert_eq!(res2.len(), 1);
+        assert_eq!(res2[0].name, "CCTV-1");
+        assert_eq!(res2[0].group_title.as_deref(), Some("央视频道"));
     }
 }

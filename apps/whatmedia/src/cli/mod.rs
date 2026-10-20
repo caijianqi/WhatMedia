@@ -1,6 +1,4 @@
-//! WhatMedia 运维诊断命令行子模块。
-//!
-//! 整合了原 `whatmedia-cli` 的所有子命令，包含：
+//! WhatMedia 运维与诊断命令行工具集，包含：
 //! - 媒体库增删查与入库扫描（`scan`, `list`, `search`, `libraries`）
 //! - 元数据刮削与审核确认（`scrape`, `scrape-stats`, `review`, `candidates`, `identify`, `lock`）
 //! - 硬件诊断与播放决策模拟（`hardware`, `play`, `subtitles`, `resume`, `config`, `migrations`）

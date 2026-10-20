@@ -69,6 +69,9 @@ pub struct MetadataConfig {
     pub tmdb_api_key: Option<String>,
     /// TMDB v4 Bearer Token。两个都配时用它。
     pub tmdb_bearer: Option<String>,
+    /// TMDB API 自定义代理/镜像 Base URL（留空使用官方默认 https://api.themoviedb.org/3）。
+    #[serde(default)]
+    pub tmdb_base_url: Option<String>,
     /// 启用 Bangumi（动漫）。中文日番在 Bangumi 上命中率更高。
     pub bangumi_enabled: bool,
     pub language: String,
@@ -159,6 +162,9 @@ pub struct AiConfig {
     pub model: String,
     /// **存环境变量名，不存密钥本身** —— TOML 常被误提交，环境变量不会。
     pub api_key_env: String,
+    /// 直接配置的 API Key（支持在 Web 界面直接配置，优先级高于 api_key_env）。
+    #[serde(default)]
+    pub api_key: Option<String>,
     /// 单次模型请求超时（秒）。家庭网络里模型可能跑在本地小主机上，别设太短。
     pub timeout_secs: u64,
     /// 一次对话里最多允许几轮工具调用。这是防失控的硬闸：
@@ -182,6 +188,7 @@ impl Default for AiConfig {
             base_url: None,
             model: "gpt-4o-mini".into(),
             api_key_env: "WHATMEDIA_AI_API_KEY".into(),
+            api_key: None,
             timeout_secs: 30,
             max_tool_rounds: 6,
             allow_dangerous: false,
@@ -192,9 +199,15 @@ impl Default for AiConfig {
 }
 
 impl AiConfig {
-    /// 读 API Key。环境变量缺失视为"未配置"，不报错 ——
-    /// Ollama / llama.cpp 本来就不需要 Key。
+    /// 读 API Key。优先读直接配置的 api_key，其次读环境变量。
+    /// 环境变量缺失视为"未配置"，不报错 —— Ollama / llama.cpp 本来就不需要 Key。
     pub fn api_key(&self) -> Option<String> {
+        if let Some(key) = &self.api_key {
+            let k = key.trim();
+            if !k.is_empty() {
+                return Some(k.to_string());
+            }
+        }
         std::env::var(&self.api_key_env)
             .ok()
             .filter(|s| !s.is_empty())
@@ -237,6 +250,7 @@ impl Default for AppConfig {
             metadata: MetadataConfig {
                 tmdb_api_key: None,
                 tmdb_bearer: None,
+                tmdb_base_url: None,
                 bangumi_enabled: false,
                 language: "zh-CN".into(),
                 requests_per_second: 4.0,
@@ -317,6 +331,9 @@ impl AppConfig {
         if let Ok(v) = std::env::var("WHATMEDIA_METADATA_TMDB_BEARER") {
             self.metadata.tmdb_bearer = Some(v);
         }
+        if let Ok(v) = std::env::var("WHATMEDIA_METADATA_TMDB_BASE_URL") {
+            self.metadata.tmdb_base_url = Some(v);
+        }
         if let Ok(v) = std::env::var("WHATMEDIA_METADATA_BANGUMI") {
             self.metadata.bangumi_enabled =
                 matches!(v.to_lowercase().as_str(), "1" | "true" | "yes" | "on");
@@ -394,6 +411,9 @@ impl AppConfig {
         }
         if let Ok(v) = std::env::var("WHATMEDIA_AI_API_KEY_ENV") {
             self.ai.api_key_env = v;
+        }
+        if let Ok(v) = std::env::var("WHATMEDIA_AI_API_KEY") {
+            self.ai.api_key = Some(v);
         }
         if let Ok(v) = std::env::var("WHATMEDIA_AI_TIMEOUT_SECS") {
             if let Ok(n) = v.parse() {
@@ -536,6 +556,36 @@ pub const SETTING_SPECS: &[SettingSpec] = &[
         min: Some(0.1),
         max: Some(20.0),
     },
+    SettingSpec {
+        key: "metadata.tmdb_api_key",
+        label: "TMDB API 密钥 (v3 Key)",
+        hint: "The Movie Database (TMDB) v3 API Key。配置后解锁电影与剧集元数据刮削。",
+        scope: SettingScope::Server,
+        kind: SettingKind::Text,
+        choices: &[],
+        min: None,
+        max: Some(128.0),
+    },
+    SettingSpec {
+        key: "metadata.tmdb_bearer",
+        label: "TMDB 访问令牌 (v4 Bearer)",
+        hint: "TMDB v4 Bearer 读访问令牌。若同时配置 v3 Key 与 v4 Token，服务端优先采用 Bearer 认证。",
+        scope: SettingScope::Server,
+        kind: SettingKind::Text,
+        choices: &[],
+        min: None,
+        max: Some(512.0),
+    },
+    SettingSpec {
+        key: "metadata.tmdb_base_url",
+        label: "TMDB 代理地址 (Base URL)",
+        hint: "留空使用官方默认地址（https://api.themoviedb.org/3）。国内网络受限环境可配置反代镜像加速刮削。",
+        scope: SettingScope::Server,
+        kind: SettingKind::Text,
+        choices: &[],
+        min: None,
+        max: Some(256.0),
+    },
     // ── 图片缓存 ────────────────────────────────────────────
     SettingSpec {
         key: "images.max_bytes_mb",
@@ -592,7 +642,7 @@ pub const SETTING_SPECS: &[SettingSpec] = &[
     SettingSpec {
         key: "ai.enabled",
         label: "启用 AI 助手",
-        hint: "没配模型时打开也没用，端点会返回 AI_UNAVAILABLE。",
+        hint: "开启后可在全站唤起智能媒体助手，支持自然语言检索影视、对话问答与库管理。",
         scope: SettingScope::Server,
         kind: SettingKind::Bool,
         choices: &[],
@@ -600,9 +650,49 @@ pub const SETTING_SPECS: &[SettingSpec] = &[
         max: None,
     },
     SettingSpec {
+        key: "ai.provider",
+        label: "AI 服务商 (Provider)",
+        hint: "选择大模型提供商。内置 DeepSeek、OpenAI、阿里通义千问、智谱 GLM、本地 Ollama / vLLM / llama.cpp 或自定义网关。",
+        scope: SettingScope::Server,
+        kind: SettingKind::Enum,
+        choices: &[
+            "deepseek",
+            "openai",
+            "qwen",
+            "glm",
+            "minimax",
+            "ollama",
+            "vllm",
+            "llama_cpp",
+            "custom",
+        ],
+        min: None,
+        max: None,
+    },
+    SettingSpec {
+        key: "ai.base_url",
+        label: "AI 接口接入点 (Base URL)",
+        hint: "留空使用所选服务商官方地址（如 DeepSeek 为 https://api.deepseek.com/v1，Ollama 为 http://localhost:11434）。",
+        scope: SettingScope::Server,
+        kind: SettingKind::Text,
+        choices: &[],
+        min: None,
+        max: Some(256.0),
+    },
+    SettingSpec {
+        key: "ai.api_key",
+        label: "AI 接口密钥 (API Key)",
+        hint: "大模型调用 API 密钥。使用本地部署的 Ollama、vLLM 或 llama.cpp 时可留空。",
+        scope: SettingScope::Server,
+        kind: SettingKind::Text,
+        choices: &[],
+        min: None,
+        max: Some(512.0),
+    },
+    SettingSpec {
         key: "ai.model",
-        label: "AI 模型",
-        hint: "具体取值取决于 Provider，例如 gpt-4o-mini、deepseek-chat、qwen-plus。",
+        label: "AI 模型标识 (Model)",
+        hint: "具体调用的模型名，如 deepseek-chat、deepseek-reasoner、gpt-4o-mini、qwen-plus 等。",
         scope: SettingScope::Server,
         kind: SettingKind::Text,
         choices: &[],
@@ -612,7 +702,7 @@ pub const SETTING_SPECS: &[SettingSpec] = &[
     SettingSpec {
         key: "ai.fallback_to_rules",
         label: "模型不可用时降级为规则解析",
-        hint: "关掉则断网时 AI 助手直接报错，而不是用内置规则猜意图。",
+        hint: "关掉后若断网或模型不可用时 AI 助手直接报错，而不是通过本地规则猜测用户意图。",
         scope: SettingScope::Server,
         kind: SettingKind::Bool,
         choices: &[],
@@ -748,12 +838,18 @@ impl AppConfig {
             "metadata.bangumi_enabled" => Some(self.metadata.bangumi_enabled.to_string()),
             "metadata.fetch_images" => Some(self.metadata.fetch_images.to_string()),
             "metadata.requests_per_second" => Some(self.metadata.requests_per_second.to_string()),
+            "metadata.tmdb_api_key" => Some(self.metadata.tmdb_api_key.clone().unwrap_or_default()),
+            "metadata.tmdb_bearer" => Some(self.metadata.tmdb_bearer.clone().unwrap_or_default()),
+            "metadata.tmdb_base_url" => Some(self.metadata.tmdb_base_url.clone().unwrap_or_default()),
             "images.max_bytes_mb" => Some((self.images.max_bytes / (1024 * 1024)).to_string()),
             "images.max_age_days" => Some(self.images.max_age_days.to_string()),
             "transcode.max_concurrent" => Some(self.transcode.max_concurrent.to_string()),
             "transcode.hls_segment_seconds" => Some(self.transcode.hls_segment_seconds.to_string()),
             "transcode.ffmpeg_path" => Some(self.transcode.ffmpeg_path.clone().unwrap_or_default()),
             "ai.enabled" => Some(self.ai.enabled.to_string()),
+            "ai.provider" => Some(self.ai.provider.clone()),
+            "ai.base_url" => Some(self.ai.base_url.clone().unwrap_or_default()),
+            "ai.api_key" => Some(self.ai.api_key.clone().unwrap_or_default()),
             "ai.model" => Some(self.ai.model.clone()),
             "ai.fallback_to_rules" => Some(self.ai.fallback_to_rules.to_string()),
             _ => None,
@@ -773,6 +869,15 @@ impl AppConfig {
                 if let Ok(v) = raw.trim().parse::<f64>() {
                     self.metadata.requests_per_second = v;
                 }
+            }
+            "metadata.tmdb_api_key" => {
+                self.metadata.tmdb_api_key = Some(raw.trim().to_string()).filter(|s| !s.is_empty());
+            }
+            "metadata.tmdb_bearer" => {
+                self.metadata.tmdb_bearer = Some(raw.trim().to_string()).filter(|s| !s.is_empty());
+            }
+            "metadata.tmdb_base_url" => {
+                self.metadata.tmdb_base_url = Some(raw.trim().to_string()).filter(|s| !s.is_empty());
             }
             "images.max_bytes_mb" => {
                 if let Ok(v) = raw.trim().parse::<u64>() {
@@ -798,6 +903,13 @@ impl AppConfig {
                 self.transcode.ffmpeg_path = Some(raw.trim().to_string()).filter(|s| !s.is_empty())
             }
             "ai.enabled" => self.ai.enabled = parse_bool(raw).unwrap_or(false),
+            "ai.provider" => self.ai.provider = raw.trim().to_string(),
+            "ai.base_url" => {
+                self.ai.base_url = Some(raw.trim().to_string()).filter(|s| !s.is_empty());
+            }
+            "ai.api_key" => {
+                self.ai.api_key = Some(raw.trim().to_string()).filter(|s| !s.is_empty());
+            }
             "ai.model" => self.ai.model = raw.trim().to_string(),
             "ai.fallback_to_rules" => self.ai.fallback_to_rules = parse_bool(raw).unwrap_or(true),
             // 其余（user 域 / 未知键）不落在 AppConfig 上：
