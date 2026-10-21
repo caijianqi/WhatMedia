@@ -13,7 +13,13 @@ pub mod playback;
 pub mod scan;
 pub mod search;
 pub mod social;
+pub mod storage;
 pub mod tv;
+
+pub use storage::{
+    delete_storage_account, get_storage_account, insert_storage_account, list_storage_accounts,
+    update_storage_account, CreateStorageAccountInput, UpdateStorageAccountInput,
+};
 
 pub use auth::{
     count_users, decide_approval, delete_device, delete_user, find_device_by_name, get_approval,
@@ -30,15 +36,16 @@ pub use library::{find_library_by_root, get_library, insert_library, list_librar
 pub use live::{
     bump_live_session, current_program, delete_live_session, delete_live_source,
     find_channel_by_epg_id, get_live_channel, get_live_source, insert_live_source,
-    list_dead_live_sessions, list_live_channels, list_live_sources, live_ref_count,
-    release_live_session, replace_channels, replace_programs, set_source_sync_result,
-    upcoming_programs, LiveChannelRow, LiveSourceRow, ProgramRow,
+    list_channels_by_source, list_dead_live_sessions, list_live_channels, list_live_sources,
+    live_ref_count, release_live_session, replace_channels, replace_programs,
+    set_channel_enabled, set_channels_disabled, set_source_sync_result, upcoming_programs,
+    LiveChannelRow, LiveSourceRow, ProgramRow,
 };
 pub use media::{
     count_items, get_item, kind_counts, list_items, replace_streams, upsert_file, upsert_item,
     upsert_version, FileWithStreams, ItemDetail, KindCount, VersionWithFiles,
 };
-pub use metadata::{job_stats, CreditRow, JobStats, ScrapeTarget};
+pub use metadata::{job_stats, requeue_all, series_item_ids, CreditRow, JobStats, ScrapeTarget};
 pub use playback::{
     create_session, delete_stream_session, file_target, files_for_item, force_position,
     get_session, get_stream_session, get_transcode_job, heartbeat, insert_stream_session,

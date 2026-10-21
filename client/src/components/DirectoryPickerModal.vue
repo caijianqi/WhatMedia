@@ -1,11 +1,11 @@
 <script setup lang="ts">
 /**
- * 服务端文件系统物理路径选择弹窗。
+ * 服务端文件系统物理路径与云盘存储目录选择弹窗。
  *
- * 允许用户通过图形界面在 Web 端直接浏览服务端主机的磁盘驱动器和各级目录，
- * 无需手动敲击终端或手动输入易错的物理路径。
+ * 允许用户通过图形界面在 Web 端直接浏览服务端主机的磁盘驱动器或挂载的云盘存储源（如百度网盘、夸克网盘、AList WebDAV 等），
+ * 无需手动敲击终端或手动输入易错的路径。
  */
-import { computed, ref, watch } from 'vue'
+import { computed, onMounted, ref, watch } from 'vue'
 import * as api from '../api/client'
 
 const props = withDefaults(
@@ -13,21 +13,35 @@ const props = withDefaults(
     modelValue?: boolean
     open?: boolean
     initialPath?: string
+    storageId?: string
+    storageAccounts?: api.StorageAccount[]
   }>(),
   {
     modelValue: false,
     open: false,
     initialPath: '',
+    storageId: 'local',
+    storageAccounts: () => [],
   },
 )
 
 const emit = defineEmits<{
   (e: 'update:modelValue', value: boolean): void
-  (e: 'select', path: string): void
+  (e: 'select', path: string, storageId?: string): void
   (e: 'close'): void
 }>()
 
 const isVisible = computed(() => props.open || props.modelValue)
+
+const currentStorageId = ref<string>(props.storageId || 'local')
+const internalAccounts = ref<api.StorageAccount[]>([])
+
+const availableStorages = computed(() => {
+  const list = props.storageAccounts && props.storageAccounts.length > 0
+    ? props.storageAccounts
+    : internalAccounts.value
+  return list
+})
 
 const loading = ref(false)
 const error = ref<string | null>(null)
@@ -36,15 +50,71 @@ const parentPath = ref<string | null>(null)
 const directories = ref<api.DirEntryView[]>([])
 const selectedPath = ref('')
 
+// 同步 props.storageId 变更
+watch(
+  () => props.storageId,
+  (val) => {
+    if (val && val !== currentStorageId.value) {
+      currentStorageId.value = val
+      if (isVisible.value) {
+        void fetchDirectory(props.initialPath || undefined)
+      }
+    }
+  },
+)
+
+async function loadAccountList(): Promise<void> {
+  if (props.storageAccounts && props.storageAccounts.length > 0) return
+  try {
+    const list = await api.listStorageAccounts()
+    internalAccounts.value = list
+  } catch {
+    // 静默降级
+  }
+}
+
+onMounted(() => {
+  void loadAccountList()
+})
+
+function getParentPathForRemote(path: string): string | null {
+  const trimmed = path.trim().replace(/\/+$/, '')
+  if (!trimmed || trimmed === '/') {
+    return null
+  }
+  const lastSlash = trimmed.lastIndexOf('/')
+  if (lastSlash <= 0) {
+    return '/'
+  }
+  return trimmed.slice(0, lastSlash)
+}
+
 async function fetchDirectory(targetPath?: string): Promise<void> {
   loading.value = true
   error.value = null
+  const isLocal = !currentStorageId.value || currentStorageId.value === 'local'
+
   try {
-    const res = await api.browseFsDir(targetPath)
-    currentPath.value = res.current
-    parentPath.value = res.parent ?? null
-    directories.value = res.directories
-    selectedPath.value = res.current || (res.directories[0]?.path ?? '')
+    if (isLocal) {
+      const res = await api.browseFsDir(targetPath)
+      currentPath.value = res.current
+      parentPath.value = res.parent ?? null
+      directories.value = res.directories
+      selectedPath.value = res.current || (res.directories[0]?.path ?? '')
+    } else {
+      const p = targetPath !== undefined ? targetPath : (props.initialPath || '/')
+      const entries = await api.browseStorage(currentStorageId.value, p)
+      const dirs: api.DirEntryView[] = entries
+        .filter((e) => e.is_dir)
+        .map((e) => ({
+          name: e.name,
+          path: e.path,
+        }))
+      currentPath.value = p
+      parentPath.value = getParentPathForRemote(p)
+      directories.value = dirs
+      selectedPath.value = p
+    }
   } catch (err) {
     error.value = err instanceof api.ApiError ? err.detail.message : String(err)
   } finally {
@@ -56,11 +126,19 @@ watch(
   () => isVisible.value,
   (visible) => {
     if (visible) {
+      void loadAccountList()
       void fetchDirectory(props.initialPath || undefined)
     }
   },
   { immediate: true },
 )
+
+function handleStorageChange(newStorageId: string): void {
+  currentStorageId.value = newStorageId
+  selectedPath.value = ''
+  currentPath.value = ''
+  void fetchDirectory(newStorageId === 'local' ? undefined : '/')
+}
 
 function handleSelectEntry(entry: api.DirEntryView): void {
   selectedPath.value = entry.path
@@ -88,7 +166,7 @@ function handleClose(): void {
 function handleConfirm(): void {
   const chosen = selectedPath.value || currentPath.value
   if (!chosen) return
-  emit('select', chosen)
+  emit('select', chosen, currentStorageId.value)
   handleClose()
 }
 </script>
@@ -99,12 +177,36 @@ function handleConfirm(): void {
       <!-- 弹窗标题栏 -->
       <div class="picker-header">
         <div>
-          <h2 id="picker-title" class="picker-title">选择服务端媒体文件夹</h2>
-          <p class="picker-sub">直接浏览服务端主机上的磁盘与目录，一键选定入库路径</p>
+          <h2 id="picker-title" class="picker-title">选择媒体文件夹</h2>
+          <p class="picker-sub">直接浏览本地磁盘或云盘挂载目录，一键选定入库路径</p>
         </div>
         <button type="button" class="close-btn" aria-label="关闭弹窗" @click="handleClose">
           ✕
         </button>
+      </div>
+
+      <!-- 存储源切换栏 -->
+      <div class="storage-selector-bar">
+        <label class="selector-label">存储源：</label>
+        <select
+          :value="currentStorageId"
+          class="storage-select"
+          :disabled="loading"
+          @change="handleStorageChange(($event.target as HTMLSelectElement).value)"
+        >
+          <option value="local">💻 本地服务器磁盘 (Local)</option>
+          <optgroup v-if="availableStorages.length > 0" label="云盘与 WebDAV 存储源">
+            <option
+              v-for="acc in availableStorages"
+              :key="acc.id"
+              :value="acc.id"
+            >
+              ☁️ {{ acc.name }} ({{ acc.driver.toUpperCase() }})
+            </option>
+          </optgroup>
+        </select>
+        <span v-if="currentStorageId !== 'local'" class="storage-badge">云端存储</span>
+        <span v-else class="storage-badge local">本地存储</span>
       </div>
 
       <!-- 当前路径导航与操作栏 -->
@@ -123,7 +225,7 @@ function handleConfirm(): void {
         <div class="current-path-box">
           <span class="path-label">位置:</span>
           <span class="path-text font-mono" :title="currentPath || '根目录'">
-            {{ currentPath ? currentPath : '（系统根目录 / 磁盘分区）' }}
+            {{ currentPath ? currentPath : (currentStorageId === 'local' ? '（系统根目录 / 磁盘分区）' : '/') }}
           </span>
         </div>
 
@@ -142,7 +244,7 @@ function handleConfirm(): void {
       <div class="picker-body">
         <div v-if="loading" class="picker-loading">
           <span class="spinner" />
-          <span>正在读取服务端目录...</span>
+          <span>正在读取{{ currentStorageId === 'local' ? '服务端物理' : '云端' }}目录...</span>
         </div>
 
         <div v-else-if="error" class="picker-error">
@@ -183,7 +285,7 @@ function handleConfirm(): void {
       <!-- 底部选中结果与确认操作 -->
       <div class="picker-footer">
         <div class="selected-path-info">
-          <span class="muted-label">已选物理路径：</span>
+          <span class="muted-label">已选路径：</span>
           <span class="chosen-path font-mono">{{ selectedPath || currentPath || '（未选择）' }}</span>
         </div>
         <div class="footer-actions">
@@ -270,6 +372,53 @@ function handleConfirm(): void {
 .close-btn:hover {
   color: var(--text);
   background: rgba(255, 255, 255, 0.08);
+}
+
+.storage-selector-bar {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 24px;
+  background: rgba(87, 200, 245, 0.04);
+  border-bottom: 1px solid var(--line);
+}
+
+.selector-label {
+  font-size: 13px;
+  color: var(--muted);
+  flex-shrink: 0;
+}
+
+.storage-select {
+  flex: 1;
+  background: var(--bg);
+  border: 1px solid var(--line);
+  color: var(--text);
+  padding: 6px 12px;
+  border-radius: 8px;
+  font-size: 13px;
+  outline: none;
+  cursor: pointer;
+}
+
+.storage-select:focus {
+  border-color: var(--cyan);
+}
+
+.storage-badge {
+  font-size: 11px;
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: rgba(121, 91, 255, 0.18);
+  color: var(--purple);
+  border: 1px solid rgba(121, 91, 255, 0.35);
+  white-space: nowrap;
+}
+
+.storage-badge.local {
+  background: rgba(87, 200, 245, 0.15);
+  color: var(--cyan);
+  border-color: rgba(87, 200, 245, 0.3);
 }
 
 .picker-nav-bar {

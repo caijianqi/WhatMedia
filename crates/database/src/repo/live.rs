@@ -172,6 +172,44 @@ pub async fn get_live_channel(db: &crate::Db, id: Id) -> Result<Option<LiveChann
     Ok(row)
 }
 
+pub async fn list_channels_by_source(
+    db: &crate::Db,
+    source_id: Id,
+) -> Result<Vec<LiveChannelRow>> {
+    let rows = sqlx::query_as::<_, LiveChannelRow>(
+        "SELECT * FROM live_channel WHERE source_id = ? ORDER BY number IS NULL, number, sort_order",
+    )
+    .bind(source_id.to_string())
+    .fetch_all(db.pool())
+    .await?;
+    Ok(rows)
+}
+
+pub async fn set_channel_enabled(db: &crate::Db, id: Id, enabled: bool) -> Result<()> {
+    sqlx::query("UPDATE live_channel SET enabled = ? WHERE id = ?")
+        .bind(if enabled { 1 } else { 0 })
+        .bind(id.to_string())
+        .execute(db.pool())
+        .await?;
+    Ok(())
+}
+
+pub async fn set_channels_disabled(db: &crate::Db, ids: &[Id]) -> Result<()> {
+    if ids.is_empty() {
+        return Ok(());
+    }
+    let mut tx = db.pool().begin().await?;
+    for id in ids {
+        sqlx::query("UPDATE live_channel SET enabled = 0 WHERE id = ?")
+            .bind(id.to_string())
+            .execute(&mut *tx)
+            .await?;
+    }
+    tx.commit().await?;
+    Ok(())
+}
+
+
 // ───────────────── 节目单 ─────────────────
 
 /// 替换一个频道的节目单。EPG 每次抓取都是全量覆盖。

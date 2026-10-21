@@ -69,6 +69,9 @@ pub struct ScrapeRequest {
     /// 只重跑失败项。
     #[serde(default)]
     pub retry_failed: bool,
+    /// 强制全量重新刮削所有条目（无论是否已完成），用于凭据变更或重新刷新图片与演职员。
+    #[serde(default)]
+    pub force: bool,
 }
 
 #[derive(Debug, Serialize)]
@@ -146,6 +149,10 @@ pub async fn start_scrape(
     State(state): State<AppState>,
     Json(body): Json<ScrapeRequest>,
 ) -> Response {
+    let db = match state.db_or_503() {
+        Ok(d) => d,
+        Err(r) => return *r,
+    };
     let scraper = match &state.scraper {
         Some(s) => s.clone(),
         None => {
@@ -158,16 +165,37 @@ pub async fn start_scrape(
     };
 
     let library_id = body.library_id;
-    let queued = match library_id {
-        Some(l) if body.retry_failed => match scraper.requeue_failed(l).await {
+    let queued = if body.force {
+        match scraper.requeue_all(library_id).await {
             Ok(n) => n,
             Err(e) => return internal(e),
-        },
-        Some(l) => match scraper.enqueue(l).await {
-            Ok(n) => n,
-            Err(e) => return internal(e),
-        },
-        None => 0,
+        }
+    } else {
+        match library_id {
+            Some(l) if body.retry_failed => match scraper.requeue_failed(l).await {
+                Ok(n) => n,
+                Err(e) => return internal(e),
+            },
+            Some(l) => match scraper.enqueue(l).await {
+                Ok(n) => n,
+                Err(e) => return internal(e),
+            },
+            None => {
+                let mut total = 0u64;
+                if let Ok(libs) = whatmedia_database::repo::list_libraries(&db).await {
+                    for lib in libs {
+                        if let Ok(n) = if body.retry_failed {
+                            scraper.requeue_failed(lib.id).await
+                        } else {
+                            scraper.enqueue(lib.id).await
+                        } {
+                            total += n;
+                        }
+                    }
+                }
+                total
+            }
+        }
     };
 
     // 先把崩溃遗留的 running 捞回来，再开跑
@@ -563,11 +591,23 @@ pub async fn item_image(
     if let (Some(img), Some(cache)) = (wanted, &state.images) {
         if let Some(url) = &img.url {
             if let Some(p) = download_into(cache, url, &kind).await {
+                let path_str = p.to_string_lossy().to_string();
+                let db_clone = db.clone();
+                let url_clone = url.clone();
+                let p_clone = path_str.clone();
+                tokio::spawn(async move {
+                    let _ = sqlx::query("UPDATE image SET cached_path = ? WHERE url = ?")
+                        .bind(&p_clone)
+                        .bind(&url_clone)
+                        .execute(db_clone.pool())
+                        .await;
+                });
+
                 if let Ok(bytes) = tokio::fs::read(&p).await {
                     return (
                         StatusCode::OK,
                         [
-                            (header::CONTENT_TYPE, content_type_of(&p.to_string_lossy())),
+                            (header::CONTENT_TYPE, content_type_of(&path_str)),
                             (header::CACHE_CONTROL, "public, max-age=86400"),
                         ],
                         bytes,

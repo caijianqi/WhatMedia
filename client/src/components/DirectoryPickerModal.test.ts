@@ -8,6 +8,8 @@ vi.mock('../api/client', async () => {
   return {
     ...actual,
     browseFsDir: vi.fn(),
+    browseStorage: vi.fn(),
+    listStorageAccounts: vi.fn().mockResolvedValue([]),
   }
 })
 
@@ -66,7 +68,7 @@ describe('DirectoryPickerModal', () => {
     await confirmBtn.trigger('click')
 
     expect(w.emitted('select')).toBeTruthy()
-    expect(w.emitted('select')![0]).toEqual(['D:\\Media\\Movies'])
+    expect(w.emitted('select')![0]).toEqual(['D:\\Media\\Movies', 'local'])
     expect(w.emitted('close')).toBeTruthy()
   })
 
@@ -96,5 +98,29 @@ describe('DirectoryPickerModal', () => {
     await flushPromises()
 
     expect(api.browseFsDir).toHaveBeenLastCalledWith('D:\\')
+  })
+
+  it('指定 storageId 时浏览远程云盘目录树', async () => {
+    vi.mocked(api.browseStorage).mockResolvedValueOnce([
+      { name: '电影', path: '/电影', is_dir: true },
+      { name: '电视剧', path: '/电视剧', is_dir: true },
+      { name: 'readme.txt', path: '/readme.txt', is_dir: false },
+    ])
+
+    const w = mount(DirectoryPickerModal, {
+      props: {
+        open: true,
+        storageId: 'storage-123',
+        initialPath: '/',
+      },
+    })
+
+    await flushPromises()
+
+    expect(api.browseStorage).toHaveBeenCalledWith('storage-123', '/')
+    expect(w.text()).toContain('电影')
+    expect(w.text()).toContain('电视剧')
+    // 非目录文件不应被列入文件夹列表
+    expect(w.text()).not.toContain('readme.txt')
   })
 })

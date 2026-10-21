@@ -56,9 +56,21 @@ pub fn parse_m3u(text: &str) -> Result<Vec<ChannelDraft>, LiveError> {
             number: None,
             sort_order: 0,
         });
+
+        // 过滤协议非法或明显无法播放的链接（如 javascript、本地占位符、非流媒体文件）
+        if !is_valid_stream_url(line) {
+            continue;
+        }
+
         if draft.name.is_empty() {
             draft.name = name_from_url(line);
         }
+
+        // 过滤广告、交流群、纯更新时间等垃圾通告条目
+        if is_junk_channel_name(&draft.name) {
+            continue;
+        }
+
         draft.stream_url = line.to_string();
         draft.sort_order = out.len() as i64;
         out.push(draft);
@@ -68,6 +80,94 @@ pub fn parse_m3u(text: &str) -> Result<Vec<ChannelDraft>, LiveError> {
         return Err(LiveError::EmptyPlaylist);
     }
     Ok(out)
+}
+
+/// 判定是否为合规且可播放的流媒体链接。
+pub fn is_valid_stream_url(url: &str) -> bool {
+    let trimmed = url.trim();
+    if trimmed.is_empty() {
+        return false;
+    }
+
+    // 1. 协议白名单
+    let is_valid_scheme = trimmed.starts_with("http://")
+        || trimmed.starts_with("https://")
+        || trimmed.starts_with("rtmp://")
+        || trimmed.starts_with("rtsp://")
+        || trimmed.starts_with("udp://")
+        || trimmed.starts_with("rtp://")
+        || trimmed.starts_with("srt://");
+    if !is_valid_scheme {
+        return false;
+    }
+
+    // 2. 提取 host，过滤回环或空 host
+    let lower = trimmed.to_ascii_lowercase();
+    let after_scheme = if let Some(pos) = lower.find("://") {
+        &lower[pos + 3..]
+    } else {
+        return false;
+    };
+
+    let host_part = after_scheme
+        .split(['/', ':', '?', '#'])
+        .next()
+        .unwrap_or("")
+        .trim();
+    if host_part.is_empty() {
+        return false;
+    }
+
+    let invalid_hosts = ["127.0.0.1", "localhost", "0.0.0.0", "null", "undefined"];
+    if invalid_hosts.contains(&host_part) {
+        return false;
+    }
+
+    // 3. 过滤明显不是流媒体的文件扩展名（静态网页、安装包等）
+    let path_part = after_scheme.split('?').next().unwrap_or("").trim_end_matches('/');
+    let invalid_exts = [
+        ".html", ".htm", ".apk", ".zip", ".rar", ".7z", ".exe", ".iso",
+        ".pdf", ".docx", ".xlsx", ".doc", ".txt", ".tar", ".gz",
+    ];
+    for ext in invalid_exts {
+        if path_part.ends_with(ext) {
+            return false;
+        }
+    }
+
+    true
+}
+
+/// 判定频道名称是否为广告、通告、更新时间等垃圾信息。
+pub fn is_junk_channel_name(name: &str) -> bool {
+    let trimmed = name.trim();
+    if trimmed.is_empty() {
+        return true;
+    }
+    let lower = trimmed.to_ascii_lowercase();
+    let junk_keywords = [
+        "更新时间",
+        "广告招租",
+        "商务合作",
+        "进群交流",
+        "交流群",
+        "免责声明",
+        "失效请联系",
+        "购买请联系",
+        "微信群",
+        "qq群",
+        "备用发布页",
+    ];
+    for kw in junk_keywords {
+        if lower.contains(kw) {
+            return true;
+        }
+    }
+    // 过滤形如纯日期戳的名称 "2026-10-12"
+    if trimmed.starts_with("202") && trimmed.contains('-') && trimmed.len() <= 20 {
+        return true;
+    }
+    false
 }
 
 /// 解析一份国内通用 TXT 格式的直播订阅（如 `频道名,URL` 或 `分组,#genre#`）。
@@ -95,7 +195,7 @@ pub fn parse_txt(text: &str) -> Result<Vec<ChannelDraft>, LiveError> {
                 .trim_end_matches('，')
                 .trim();
             // 忽略更新时间元数据分组（如 `🕘️更新时间,#genre#`）
-            if !genre_name.is_empty() && !genre_name.contains("更新时间") {
+            if !genre_name.is_empty() && !is_junk_channel_name(genre_name) {
                 current_group = Some(genre_name.to_string());
             } else {
                 current_group = None;
@@ -118,18 +218,10 @@ pub fn parse_txt(text: &str) -> Result<Vec<ChannelDraft>, LiveError> {
             if name.is_empty() || url.is_empty() {
                 continue;
             }
-            // 忽略时间戳元数据行（如 `2026-10-12 11:25:50,http://...`）
-            if name.contains("更新时间") || name.starts_with("202") {
+            if is_junk_channel_name(name) {
                 continue;
             }
-            // 检查 URL 协议合法性
-            let is_stream_url = url.starts_with("http://")
-                || url.starts_with("https://")
-                || url.starts_with("rtmp://")
-                || url.starts_with("rtsp://")
-                || url.starts_with("udp://")
-                || url.starts_with("srt://");
-            if !is_stream_url {
+            if !is_valid_stream_url(url) {
                 continue;
             }
 
@@ -451,5 +543,27 @@ CCTV-2,http://example.com/cctv2.m3u8
         assert_eq!(res2.len(), 1);
         assert_eq!(res2[0].name, "CCTV-1");
         assert_eq!(res2[0].group_title.as_deref(), Some("央视频道"));
+    }
+
+    #[test]
+    fn filters_out_invalid_urls_and_junk_channels() {
+        let raw = r#"#EXTM3U
+#EXTINF:-1,广告招租联系客服
+http://my-live.com/ad.m3u8
+#EXTINF:-1,合法频道A
+http://my-live.com/live1.m3u8
+#EXTINF:-1,非法协议频道
+javascript:alert(1)
+#EXTINF:-1,非媒体文件
+http://my-live.com/player.apk
+#EXTINF:-1,回环占位
+http://127.0.0.1/test.m3u8
+#EXTINF:-1,合法频道B
+rtmp://my-live.com/live/stream
+"#;
+        let list = parse_m3u(raw).unwrap();
+        assert_eq!(list.len(), 2);
+        assert_eq!(list[0].name, "合法频道A");
+        assert_eq!(list[1].name, "合法频道B");
     }
 }

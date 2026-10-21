@@ -126,6 +126,10 @@ impl Scraper {
         repo::metadata::requeue_failed(&self.db, library_id).await
     }
 
+    pub async fn requeue_all(&self, library_id: Option<Id>) -> Result<u64> {
+        repo::metadata::requeue_all(&self.db, library_id).await
+    }
+
     pub async fn stats(&self, library_id: Option<Id>) -> Result<repo::JobStats> {
         repo::metadata::job_stats(&self.db, library_id).await
     }
@@ -499,6 +503,19 @@ impl Scraper {
         repo::metadata::set_genres(&self.db, target.id, &record.genres).await?;
         repo::metadata::set_credits(&self.db, target.id, &record.provider, &record.credits).await?;
         self.cache_images(target.id, record).await?;
+
+        // 剧集：将电视剧封面海报与背景图广播同步给所属剧集下的所有分集，保证各分集与卡片全部有封面
+        if is_episode {
+            if let Some(series_id) = target.series_id {
+                if let Ok(siblings) = repo::metadata::series_item_ids(&self.db, series_id).await {
+                    for sib_id in siblings {
+                        if sib_id != target.id {
+                            let _ = self.cache_images(sib_id, record).await;
+                        }
+                    }
+                }
+            }
+        }
 
         Ok(())
     }

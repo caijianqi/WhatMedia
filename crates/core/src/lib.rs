@@ -15,8 +15,8 @@ pub use ids::deterministic_id;
 pub use model::{
     AudioCodec, ByteRange, Container, Episode, HdrType, Id, Library, MediaFile, MediaItem,
     MediaKind, MediaStream, MediaVersion, PlaybackSession, PlaybackSource, PlaybackStrategy,
-    Season, Series, StreamType, SubtitleCodec, Task, TaskKind, TaskPriority, TaskState,
-    TranscodeJob, TranscodeState, VideoCodec,
+    Season, Series, StorageAccount, StreamType, SubtitleCodec, Task, TaskKind, TaskPriority,
+    TaskState, TranscodeJob, TranscodeState, VideoCodec,
 };
 pub use page::{Page, PageInfo};
 pub use provider::{

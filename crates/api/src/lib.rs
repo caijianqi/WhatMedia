@@ -14,6 +14,7 @@ pub mod live;
 pub mod metadata;
 pub mod playback;
 pub mod social;
+pub mod storage;
 
 #[cfg(feature = "openapi")]
 pub mod openapi;
@@ -287,6 +288,14 @@ pub fn bad_request(msg: impl Into<String>) -> Response {
     error_response(StatusCode::BAD_REQUEST, "BAD_REQUEST", msg)
 }
 
+pub fn not_found(entity: &'static str, id: impl std::fmt::Display) -> Response {
+    error_response(
+        StatusCode::NOT_FOUND,
+        "NOT_FOUND",
+        format!("{entity} 未找到：{id}"),
+    )
+}
+
 pub fn unavailable(msg: impl Into<String>) -> Response {
     error_response(StatusCode::SERVICE_UNAVAILABLE, "DB_UNAVAILABLE", msg)
 }
@@ -356,6 +365,8 @@ pub struct CreateLibrary {
     pub path: String,
     #[serde(default)]
     pub kind: Option<MediaKind>,
+    #[serde(default)]
+    pub storage_provider: Option<String>,
 }
 
 #[cfg_attr(
@@ -380,28 +391,49 @@ async fn create_library(
         Ok(d) => d,
         Err(r) => return *r,
     };
-    if !std::path::Path::new(&body.path).is_dir() {
-        return bad_request(format!("目录不存在：{}", body.path));
-    }
-    let canonical = match std::path::Path::new(&body.path).canonicalize() {
-        Ok(p) => whatmedia_storage::clean_path(&p).to_string_lossy().to_string(),
-        Err(_) => body.path.clone(),
-    };
-    if let Ok(Some(existing)) = whatmedia_database::repo::find_library_by_root(&db, "local", &canonical).await {
-        return (StatusCode::OK, Json(existing)).into_response();
-    }
-    match whatmedia_database::repo::insert_library(
-        &db,
-        &body.name,
-        body.kind.unwrap_or(MediaKind::Mixed),
-        "local",
-        &body.path,
-        &[],
-    )
-    .await
-    {
-        Ok(lib) => (StatusCode::CREATED, Json(lib)).into_response(),
-        Err(e) => internal(e),
+    let provider = body.storage_provider.as_deref().unwrap_or("local").trim();
+    if provider == "local" {
+        if !std::path::Path::new(&body.path).is_dir() {
+            return bad_request(format!("目录不存在：{}", body.path));
+        }
+        let canonical = match std::path::Path::new(&body.path).canonicalize() {
+            Ok(p) => whatmedia_storage::clean_path(&p).to_string_lossy().to_string(),
+            Err(_) => body.path.clone(),
+        };
+        if let Ok(Some(existing)) = whatmedia_database::repo::find_library_by_root(&db, "local", &canonical).await {
+            return (StatusCode::OK, Json(existing)).into_response();
+        }
+        match whatmedia_database::repo::insert_library(
+            &db,
+            &body.name,
+            body.kind.unwrap_or(MediaKind::Mixed),
+            "local",
+            &body.path,
+            &[],
+        )
+        .await
+        {
+            Ok(lib) => (StatusCode::CREATED, Json(lib)).into_response(),
+            Err(e) => internal(e),
+        }
+    } else {
+        // 远程存储（WebDAV / 云盘中转）
+        if let Ok(Some(existing)) = whatmedia_database::repo::find_library_by_root(&db, provider, &body.path).await {
+            return (StatusCode::OK, Json(existing)).into_response();
+        }
+        match whatmedia_database::repo::insert_library(
+            &db,
+            &body.name,
+            body.kind.unwrap_or(MediaKind::Mixed),
+            provider,
+            &body.path,
+            &[],
+        )
+        .await
+        {
+            Ok(lib) => (StatusCode::CREATED, Json(lib)).into_response(),
+            Err(e) => internal(e),
+        }
     }
 }
 
@@ -996,7 +1028,8 @@ fn guarded_routes(state: AppState) -> Router {
         .route("/api/v1/auth/devices/{id}", delete(auth::revoke_device))
         .route("/api/v1/auth/approvals", get(auth::list_approvals))
         .route("/api/v1/auth/approvals/{id}", post(auth::decide))
-        // 媒体库
+        // 媒体库与存储源
+        .merge(storage::router())
         .route(
             "/api/v1/libraries",
             get(list_libraries).post(create_library),
@@ -1080,9 +1113,11 @@ fn guarded_routes(state: AppState) -> Router {
         )
         .route("/api/v1/live/sources/{id}", delete(live::delete_source))
         .route("/api/v1/live/sources/{id}/sync", post(live::sync_source))
+        .route("/api/v1/live/sources/{id}/probe", post(live::probe_source))
         .route("/api/v1/live/channels", get(live::list_channels))
         .route("/api/v1/live/channels/{id}/play", post(live::play_channel))
         .route("/api/v1/live/channels/{id}/stop", post(live::stop_channel))
+        .route("/api/v1/live/proxy", get(live::proxy_stream))
         // ── 收藏 ──────────────────────────────────────────────
         .route("/api/v1/me/favorites", get(social::list_my_favorites))
         .route("/api/v1/items/{id}/favorite", get(social::get_favorite))

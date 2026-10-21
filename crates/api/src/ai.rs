@@ -291,9 +291,11 @@ pub async fn confirm(
     )
 )]
 pub async fn list_tools(State(state): State<AppState>) -> Response {
-    let rt = match runtime_or_503(&state) {
-        Ok(r) => r,
-        Err(r) => return *r,
+    if !state.config.ai.enabled {
+        return (StatusCode::OK, Json(ToolListReply { data: vec![] })).into_response();
+    }
+    let Some(rt) = state.ai.clone() else {
+        return (StatusCode::OK, Json(ToolListReply { data: vec![] })).into_response();
     };
     let data = rt.tools().into_iter().map(tool_view).collect();
     (StatusCode::OK, Json(ToolListReply { data })).into_response()

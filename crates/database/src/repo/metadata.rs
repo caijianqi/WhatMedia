@@ -309,6 +309,83 @@ pub async fn requeue_failed(db: &Db, library_id: Id) -> Result<u64> {
     Ok(r.rows_affected())
 }
 
+/// 强制全量重新入队。无论先前状态是 done、failed、skipped 还是 pending，
+/// 全部重置为 pending 并补齐未入队的条目，用于凭据变更或重新刷新图片与演职员。
+pub async fn requeue_all(db: &Db, library_id: Option<Id>) -> Result<u64> {
+    let now = Utc::now().to_rfc3339();
+    let updated = match library_id {
+        Some(l) => {
+            sqlx::query(
+                "UPDATE metadata_job SET status = 'pending', attempts = 0, last_error = NULL, updated_at = ?
+                 WHERE library_id = ?",
+            )
+            .bind(&now)
+            .bind(l.to_string())
+            .execute(db.pool())
+            .await?
+            .rows_affected()
+        }
+        None => {
+            sqlx::query(
+                "UPDATE metadata_job SET status = 'pending', attempts = 0, last_error = NULL, updated_at = ?",
+            )
+            .bind(&now)
+            .execute(db.pool())
+            .await?
+            .rows_affected()
+        }
+    };
+
+    let inserted = match library_id {
+        Some(l) => {
+            sqlx::query(
+                "INSERT INTO metadata_job (item_id, library_id, kind, status, attempts, updated_at)
+                 SELECT i.id, i.library_id, i.kind, 'pending', 0, ?
+                 FROM media_item i
+                 WHERE i.library_id = ?
+                   AND NOT EXISTS (SELECT 1 FROM metadata_job j WHERE j.item_id = i.id)",
+            )
+            .bind(&now)
+            .bind(l.to_string())
+            .execute(db.pool())
+            .await?
+            .rows_affected()
+        }
+        None => {
+            sqlx::query(
+                "INSERT INTO metadata_job (item_id, library_id, kind, status, attempts, updated_at)
+                 SELECT i.id, i.library_id, i.kind, 'pending', 0, ?
+                 FROM media_item i
+                 WHERE NOT EXISTS (SELECT 1 FROM metadata_job j WHERE j.item_id = i.id)",
+            )
+            .bind(&now)
+            .execute(db.pool())
+            .await?
+            .rows_affected()
+        }
+    };
+
+    Ok(updated + inserted)
+}
+
+/// 查询所属剧集的所有单集 item_id
+pub async fn series_item_ids(db: &Db, series_id: Id) -> Result<Vec<Id>> {
+    let rows = sqlx::query(
+        "SELECT e.item_id
+         FROM episode e
+         JOIN season se ON se.id = e.season_id
+         WHERE se.series_id = ?",
+    )
+    .bind(series_id.to_string())
+    .fetch_all(db.pool())
+    .await?;
+
+    Ok(rows
+        .iter()
+        .filter_map(|r| r.get::<String, _>("item_id").parse().ok())
+        .collect())
+}
+
 #[derive(Debug, Clone)]
 pub struct JobRow {
     pub item_id: Id,

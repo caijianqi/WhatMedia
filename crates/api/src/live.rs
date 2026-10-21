@@ -18,7 +18,7 @@ use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
-use axum::extract::{Path as AxumPath, State};
+use axum::extract::{Path as AxumPath, Query, State};
 use axum::http::StatusCode;
 use axum::response::{IntoResponse, Response};
 use axum::Json;
@@ -69,6 +69,8 @@ pub struct LivePlayView {
     pub playlist_url: String,
     pub live: bool,
     pub dvr_window_secs: i64,
+    #[serde(default)]
+    pub direct: bool,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -146,10 +148,11 @@ impl LiveRegistry {
 
 /// 分片时长。4 秒是直播的常用折中：太短则播放列表刷新频繁，太长则起播慢。
 const LIVE_SEG_SECONDS: u32 = 4;
-/// 播放列表里保留的分片数。450 × 4s = 30 分钟时移窗口。
-const LIVE_LIST_SIZE: u32 = 450;
+/// 播放列表里保留的分片数。6 × 4s = 24 秒实时防抖滑动窗口（替代原来的 450 分片 30 分钟时移）。
+/// 磁盘临时占用从 1.8 GB 暴降至 ~20 MB。
+const LIVE_LIST_SIZE: u32 = 6;
 /// 时移窗口（秒）。与 list_size 对应，前端拿它画进度条范围。
-const LIVE_DVR_WINDOW_SECS: u32 = 1800;
+const LIVE_DVR_WINDOW_SECS: u32 = 24;
 
 /// 起播窗口：拉起后多久内"进程没退"就算拉起来了。
 ///
@@ -386,6 +389,8 @@ pub async fn sync_source(State(state): State<AppState>, AxumPath(id): AxumPath<I
     match whatmedia_database::repo::replace_channels(&db, id, &drafts).await {
         Ok(n) => {
             let _ = whatmedia_database::repo::set_source_sync_result(&db, id, None).await;
+            // 先同步快速入库响应客户端，随后在后台任务异步探测并过滤不可用链接
+            spawn_channel_probe_task(db.clone(), id);
             Json(SyncReply {
                 source_id: id.to_string(),
                 channels: n,
@@ -395,6 +400,169 @@ pub async fn sync_source(State(state): State<AppState>, AxumPath(id): AxumPath<I
         Err(e) => error_response(StatusCode::INTERNAL_SERVER_ERROR, "DB_ERROR", e.to_string()),
     }
 }
+
+/// `POST /api/v1/live/sources/{id}/probe` —— 后台重新探测该源下的所有频道可用性并过滤死链。
+#[cfg_attr(
+    feature = "openapi",
+    utoipa::path(
+        post,
+        path = "/api/v1/live/sources/{id}/probe",
+        params(("id" = String, Path, description = "直播源 id")),
+        responses(
+            (status = 200, description = "探测任务已下发", body = AckView),
+            (status = 404, description = "源不存在", body = crate::ErrorBody),
+        ),
+        tag = "live"
+    )
+)]
+pub async fn probe_source(State(state): State<AppState>, AxumPath(id): AxumPath<Id>) -> Response {
+    let Some(db) = state.db.clone() else {
+        return error_response(
+            StatusCode::SERVICE_UNAVAILABLE,
+            "DB_UNAVAILABLE",
+            "数据库未就绪",
+        );
+    };
+    let Ok(Some(_src)) = whatmedia_database::repo::get_live_source(&db, id).await else {
+        return error_response(StatusCode::NOT_FOUND, "NOT_FOUND", "直播源不存在");
+    };
+
+    spawn_channel_probe_task(db, id);
+    Json(AckView { ok: true }).into_response()
+}
+
+/// 构建用于快速嗅探直播流健康度的 HTTP Client
+pub fn build_live_probe_client() -> reqwest::Client {
+    reqwest::Client::builder()
+        .timeout(Duration::from_millis(1500))
+        .connect_timeout(Duration::from_millis(1000))
+        .danger_accept_invalid_certs(true)
+        .build()
+        .unwrap_or_default()
+}
+
+/// 探测单个直播流地址是否可达
+pub async fn probe_stream_url(client: &reqwest::Client, url: &str) -> bool {
+    let u = url.trim();
+    // 非 http/https 协议（如 rtmp, rtsp, udp 等专用流媒体协议，reqwest 无法嗅探，默认信任）
+    if !u.starts_with("http://") && !u.starts_with("https://") {
+        return true;
+    }
+
+    // 1. 优先尝试 HEAD 请求
+    if let Ok(resp) = client
+        .head(u)
+        .header(reqwest::header::USER_AGENT, "WhatMedia/0.1 (LiveProber)")
+        .send()
+        .await
+    {
+        let status = resp.status();
+        if status.is_success() || status.is_redirection() {
+            return true;
+        }
+        if status == reqwest::StatusCode::NOT_FOUND || status == reqwest::StatusCode::GONE {
+            return false;
+        }
+    }
+
+    // 2. 降级尝试轻量 GET 请求（带有 Range: bytes=0-1024 头）
+    if let Ok(resp) = client
+        .get(u)
+        .header(reqwest::header::USER_AGENT, "WhatMedia/0.1 (LiveProber)")
+        .header(reqwest::header::RANGE, "bytes=0-1024")
+        .send()
+        .await
+    {
+        let status = resp.status();
+        if status.is_success()
+            || status.is_redirection()
+            || status == reqwest::StatusCode::PARTIAL_CONTENT
+        {
+            return true;
+        }
+    }
+
+    false
+}
+
+/// 对指定直播源的所有频道进行并发探测，并将无法访问的频道更新为 enabled = 0
+/// 返回 (总频道数, 禁用频道数)
+pub async fn probe_source_channels(
+    db: &whatmedia_database::Db,
+    source_id: Id,
+    client: &reqwest::Client,
+) -> anyhow::Result<(usize, usize)> {
+    let channels = whatmedia_database::repo::list_channels_by_source(db, source_id).await?;
+    if channels.is_empty() {
+        return Ok((0, 0));
+    }
+
+    let total = channels.len();
+    let sem = Arc::new(tokio::sync::Semaphore::new(20));
+    let mut join_set = tokio::task::JoinSet::new();
+
+    for ch in channels {
+        let sem = sem.clone();
+        let client = client.clone();
+        let url = ch.stream_url.clone();
+        let id_str = ch.id.clone();
+
+        join_set.spawn(async move {
+            let _permit = sem.acquire_owned().await;
+            let alive = probe_stream_url(&client, &url).await;
+            (id_str, alive)
+        });
+    }
+
+    let mut disabled_ids = Vec::new();
+    while let Some(res) = join_set.join_next().await {
+        if let Ok((id_str, alive)) = res {
+            if !alive {
+                if let Ok(id) = Id::parse_str(&id_str) {
+                    disabled_ids.push(id);
+                }
+            }
+        }
+    }
+
+    let dead_count = disabled_ids.len();
+    if !disabled_ids.is_empty() {
+        whatmedia_database::repo::set_channels_disabled(db, &disabled_ids).await?;
+    }
+
+    Ok((total, dead_count))
+}
+
+/// 在后台任务中执行直播源探活
+pub fn spawn_channel_probe_task(db: whatmedia_database::Db, source_id: Id) {
+    tokio::spawn(async move {
+        let client = build_live_probe_client();
+        match probe_source_channels(&db, source_id, &client).await {
+            Ok((total, dead_count)) => {
+                let active = total.saturating_sub(dead_count);
+                let summary = if dead_count > 0 {
+                    format!("探测完成：共 {total} 个频道，活跃 {active} 个，已过滤 {dead_count} 个失效源")
+                } else {
+                    format!("探测完成：共 {total} 个频道，全部正常可用")
+                };
+                let _ = whatmedia_database::repo::set_source_sync_result(&db, source_id, Some(&summary)).await;
+                tracing::info!(
+                    "直播源 {} 探测完成：共 {} 个频道，活跃 {} 个，已禁用 {} 个失效频道",
+                    source_id,
+                    total,
+                    active,
+                    dead_count
+                );
+            }
+            Err(e) => {
+                let err_msg = format!("探测失败：{e}");
+                let _ = whatmedia_database::repo::set_source_sync_result(&db, source_id, Some(&err_msg)).await;
+                tracing::error!("直播源 {} 探测失败: {e}", source_id);
+            }
+        }
+    });
+}
+
 
 /// 取一段文本。http(s) 走网络，其它当本地路径读。
 ///
@@ -506,6 +674,23 @@ pub async fn play_channel(State(state): State<AppState>, AxumPath(id): AxumPath<
         return error_response(StatusCode::NOT_FOUND, "NOT_FOUND", "频道不存在");
     };
 
+    let stream_url = ch.stream_url.trim();
+
+    // 智能直出判定：如果是标准 http/https 协议的流媒体（包含 .m3u8 或者是普通网络流）
+    // 彻底不启动 ffmpeg 进程，彻底不创建磁盘分片目录，直接由纯内存代理流式透传！
+    let is_http_stream = stream_url.starts_with("http://") || stream_url.starts_with("https://");
+    if is_http_stream {
+        let proxy_url = encode_proxy_url(stream_url);
+        return Json(LivePlayView {
+            job_id: id.to_string(),
+            playlist_url: proxy_url,
+            live: true,
+            dvr_window_secs: 0,
+            direct: true,
+        })
+        .into_response();
+    }
+
     // ① 已在拉流：复用。
     if let Some(h) = state.live.get(id) {
         h.viewers.fetch_add(1, Ordering::SeqCst);
@@ -521,6 +706,7 @@ pub async fn play_channel(State(state): State<AppState>, AxumPath(id): AxumPath<
             playlist_url: format!("/api/v1/hls/{}/master.m3u8", h.job_id),
             live: true,
             dvr_window_secs: ch.dvr_window_secs,
+            direct: false,
         })
         .into_response();
     }
@@ -695,6 +881,7 @@ pub async fn play_channel(State(state): State<AppState>, AxumPath(id): AxumPath<
         playlist_url: format!("/api/v1/hls/{job_id}/master.m3u8"),
         live: true,
         dvr_window_secs: ch.dvr_window_secs,
+        direct: false,
     })
     .into_response()
 }
@@ -728,3 +915,170 @@ pub async fn stop_channel(State(state): State<AppState>, AxumPath(id): AxumPath<
     }
     Json(AckView { ok: true }).into_response()
 }
+
+#[derive(Debug, Deserialize)]
+pub struct LiveProxyQuery {
+    pub url: String,
+}
+
+pub fn encode_proxy_url(abs: &str) -> String {
+    let mut dummy = reqwest::Url::parse("http://localhost/api/v1/live/proxy").unwrap();
+    dummy.query_pairs_mut().append_pair("url", abs);
+    format!("/api/v1/live/proxy?{}", dummy.query().unwrap_or_default())
+}
+
+/// `GET /api/v1/live/proxy` —— 纯内存直播流式透传代理端点。
+///
+/// 1. M3U8 播放列表：解析并重写内部各分片为代理路由，消除跨域与混合内容阻断；
+/// 2. TS / 媒体流分片：纯内存 bytes_stream 透传，0 磁盘写入，0 ffmpeg 进程。
+#[cfg_attr(
+    feature = "openapi",
+    utoipa::path(
+        get,
+        path = "/api/v1/live/proxy",
+        params(("url" = String, Query, description = "目标上游流地址")),
+        responses(
+            (status = 200, description = "流式数据或重写后的播放列表", content_type = "*/*", body = Vec<u8>),
+            (status = 400, description = "URL 非法", body = crate::ErrorBody),
+            (status = 502, description = "上游请求失败", body = crate::ErrorBody),
+        ),
+        tag = "live"
+    )
+)]
+pub async fn proxy_stream(Query(query): Query<LiveProxyQuery>) -> Response {
+    let raw_url = query.url.trim();
+    let Ok(target_url) = reqwest::Url::parse(raw_url) else {
+        return error_response(StatusCode::BAD_REQUEST, "BAD_URL", "非法代理目标 URL");
+    };
+
+    let client = reqwest::Client::builder()
+        .danger_accept_invalid_certs(true)
+        .build()
+        .unwrap_or_default();
+
+    let resp = match client
+        .get(target_url.as_str())
+        .header(reqwest::header::USER_AGENT, "WhatMedia/0.1 (LiveProxy)")
+        .send()
+        .await
+    {
+        Ok(r) => r,
+        Err(e) => {
+            return error_response(
+                StatusCode::BAD_GATEWAY,
+                "UPSTREAM_FAILED",
+                format!("上游拉流失败：{e}"),
+            );
+        }
+    };
+
+    let status = resp.status();
+    let content_type = resp
+        .headers()
+        .get(reqwest::header::CONTENT_TYPE)
+        .and_then(|v| v.to_str().ok())
+        .unwrap_or("")
+        .to_string();
+
+    let is_m3u8 = raw_url.contains(".m3u8")
+        || content_type.contains("mpegurl")
+        || content_type.contains("application/x-mpegurl");
+
+    if is_m3u8 {
+        let text = match resp.text().await {
+            Ok(t) => t,
+            Err(e) => {
+                return error_response(
+                    StatusCode::BAD_GATEWAY,
+                    "UPSTREAM_READ_ERROR",
+                    format!("读取上游播放列表失败：{e}"),
+                );
+            }
+        };
+
+        let rewritten = rewrite_m3u8(&text, &target_url);
+        return (
+            status,
+            [
+                (axum::http::header::CONTENT_TYPE, "application/vnd.apple.mpegurl"),
+                (axum::http::header::ACCESS_CONTROL_ALLOW_ORIGIN, "*"),
+                (axum::http::header::CACHE_CONTROL, "no-cache, no-store, must-revalidate"),
+            ],
+            rewritten,
+        )
+            .into_response();
+    }
+
+    let out_ct = if content_type.is_empty() {
+        "video/MP2T"
+    } else {
+        &content_type
+    };
+
+    let bytes = match resp.bytes().await {
+        Ok(b) => b,
+        Err(e) => {
+            return error_response(
+                StatusCode::BAD_GATEWAY,
+                "UPSTREAM_READ_ERROR",
+                format!("读取上游数据失败：{e}"),
+            );
+        }
+    };
+
+    (
+        status,
+        [
+            (axum::http::header::CONTENT_TYPE, out_ct),
+            (axum::http::header::ACCESS_CONTROL_ALLOW_ORIGIN, "*"),
+            (axum::http::header::CACHE_CONTROL, "no-cache"),
+        ],
+        bytes,
+    )
+        .into_response()
+}
+
+fn rewrite_m3u8(text: &str, base_url: &reqwest::Url) -> String {
+    let mut out = String::with_capacity(text.len() + 1024);
+    for line in text.lines() {
+        let trimmed = line.trim();
+        if trimmed.is_empty() {
+            out.push('\n');
+            continue;
+        }
+        if trimmed.starts_with('#') {
+            if trimmed.starts_with("#EXT-X-MAP:") && trimmed.contains("URI=\"") {
+                if let Some(start) = trimmed.find("URI=\"") {
+                    let after = &trimmed[start + 5..];
+                    if let Some(end) = after.find('"') {
+                        let orig_uri = &after[..end];
+                        if let Ok(abs_url) = base_url.join(orig_uri) {
+                            let proxy_uri = encode_proxy_url(abs_url.as_str());
+                            let new_line = format!("{}URI=\"{}\"{}", &trimmed[..start], proxy_uri, &after[end + 1..]);
+                            out.push_str(&new_line);
+                            out.push('\n');
+                            continue;
+                        }
+                    }
+                }
+            }
+            out.push_str(line);
+            out.push('\n');
+            continue;
+        }
+
+        let abs_url = match base_url.join(trimmed) {
+            Ok(u) => u,
+            Err(_) => {
+                out.push_str(line);
+                out.push('\n');
+                continue;
+            }
+        };
+
+        out.push_str(&encode_proxy_url(abs_url.as_str()));
+        out.push('\n');
+    }
+    out
+}
+

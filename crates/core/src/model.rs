@@ -145,6 +145,26 @@ pub struct Library {
     pub created_at: DateTime<Utc>,
 }
 
+/// 存储源账号模型。管理本地磁盘、WebDAV、网盘中转 (AList/CD2) 等存储端点。
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
+pub struct StorageAccount {
+    #[cfg_attr(feature = "openapi", schema(value_type = uuid::Uuid))]
+    pub id: Id,
+    pub name: String,
+    pub driver: String,
+    pub endpoint: String,
+    pub auth_type: String,
+    pub username: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub password: Option<String>,
+    pub root_path: String,
+    pub direct_stream: bool,
+    pub extra_headers: serde_json::Value,
+    pub created_at: DateTime<Utc>,
+    pub updated_at: DateTime<Utc>,
+}
+
 /// 一部影视作品。**不等于一个文件。**
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]

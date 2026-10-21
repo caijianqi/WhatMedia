@@ -296,6 +296,88 @@ async fn sync_imports_txt_playlist_with_genres() {
     assert_eq!(arr[1]["group"], "📡卫视频道");
 }
 
+#[tokio::test]
+async fn probe_filters_out_unreachable_channels() {
+    let (st, tok, dir) = state().await;
+    let m3u = r#"#EXTM3U
+#EXTINF:-1 group-title="央视",坏流-1
+http://192.0.2.1:54321/live.ts
+#EXTINF:-1 group-title="央视",好流-RTMP
+rtmp://live.example.com/live/stream
+"#;
+    let p = dir.path().join("probe_test.m3u");
+    tokio::fs::write(&p, m3u).await.unwrap();
+
+    let id = add_source(&st, &tok, p.to_str().unwrap()).await;
+    let r = send(
+        &st,
+        post_json(&tok, &format!("/api/v1/live/sources/{id}/sync"), json!({})),
+    )
+    .await;
+    assert_eq!(r.status, StatusCode::OK);
+    assert_eq!(r.json()["channels"], 2);
+
+    // 确保 probe 端点响应 200
+    let r = send(
+        &st,
+        post_json(&tok, &format!("/api/v1/live/sources/{id}/probe"), json!({})),
+    )
+    .await;
+    assert_eq!(r.status, StatusCode::OK);
+
+    // 直接执行探测函数，验证死链过滤
+    let db = st.db.as_ref().unwrap();
+    let src_id = whatmedia_core::Id::parse_str(&id).unwrap();
+    let client = whatmedia_api::live::build_live_probe_client();
+    let (total, disabled) = whatmedia_api::live::probe_source_channels(db, src_id, &client)
+        .await
+        .unwrap();
+
+    assert_eq!(total, 2);
+    assert_eq!(disabled, 1); // 坏流被标记禁用，RTMP保留
+
+    // 获取频道列表，坏流已被过滤
+    let chs = send(&st, get(&tok, "/api/v1/live/channels")).await.json();
+    let arr = chs.as_array().unwrap();
+    assert_eq!(arr.len(), 1);
+    assert_eq!(arr[0]["name"], "好流-RTMP");
+}
+
+#[tokio::test]
+async fn play_http_channel_uses_direct_stream_without_ffmpeg() {
+    let (st, tok, dir) = state().await;
+    let m3u = r#"#EXTM3U
+#EXTINF:-1 group-title="央视",CCTV-1
+http://example.com/live/cctv1.m3u8
+"#;
+    let p = dir.path().join("direct_test.m3u");
+    tokio::fs::write(&p, m3u).await.unwrap();
+
+    let id = add_source(&st, &tok, p.to_str().unwrap()).await;
+    let _ = send(
+        &st,
+        post_json(&tok, &format!("/api/v1/live/sources/{id}/sync"), json!({})),
+    )
+    .await;
+
+    let chs = send(&st, get(&tok, "/api/v1/live/channels")).await.json();
+    let cid = chs[0]["id"].as_str().unwrap();
+
+    // 播放该 HTTP 直播频道：必须秒级返回 direct = true 且指向代理流，无需启动 ffmpeg
+    let r = send(
+        &st,
+        post_json(&tok, &format!("/api/v1/live/channels/{cid}/play"), json!({})),
+    )
+    .await;
+    assert_eq!(r.status, StatusCode::OK);
+    let view = r.json();
+    assert_eq!(view["direct"], true, "HTTP/M3U8 直播流必须走直出通道");
+    assert!(
+        view["playlist_url"].as_str().unwrap().starts_with("/api/v1/live/proxy?url="),
+        "必须返回轻量内存代理地址"
+    );
+}
+
 // 这条依赖 `openapi` feature；不开 feature 的 `cargo test` 会连符号都没有，
 // 所以整条测试都 gate 掉，而不是让它编译失败。
 #[cfg(feature = "openapi")]
@@ -308,10 +390,13 @@ async fn live_endpoints_are_in_the_openapi_contract() {
         "/api/v1/live/sources",
         "/api/v1/live/sources/{id}",
         "/api/v1/live/sources/{id}/sync",
+        "/api/v1/live/sources/{id}/probe",
         "/api/v1/live/channels",
         "/api/v1/live/channels/{id}/play",
         "/api/v1/live/channels/{id}/stop",
+        "/api/v1/live/proxy",
     ] {
         assert!(json.contains(&format!("\"{p}\"")), "契约里缺少 {p}");
     }
 }
+

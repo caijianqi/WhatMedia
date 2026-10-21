@@ -111,9 +111,11 @@ use crate::{
         crate::live::create_source,
         crate::live::delete_source,
         crate::live::sync_source,
+        crate::live::probe_source,
         crate::live::list_channels,
         crate::live::play_channel,
         crate::live::stop_channel,
+        crate::live::proxy_stream,
         // auth
         crate::auth::bootstrap,
         crate::auth::login,

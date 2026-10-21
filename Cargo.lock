@@ -2783,6 +2783,11 @@ name = "whatmedia-storage"
 version = "0.1.0"
 dependencies = [
  "async-trait",
+ "base64 0.22.1",
+ "chrono",
+ "reqwest",
+ "roxmltree",
+ "serde",
  "tempfile",
  "tokio",
  "tracing",

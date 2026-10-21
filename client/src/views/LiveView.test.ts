@@ -10,6 +10,17 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { flushPromises, mount } from '@vue/test-utils'
 
+vi.mock('vue-router', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('vue-router')>()
+  return {
+    ...actual,
+    useRouter: () => ({
+      push: vi.fn(),
+      back: vi.fn(),
+    }),
+  }
+})
+
 vi.mock('../api/client', () => ({
   ApiError: class ApiError extends Error {},
   listLiveChannels: vi.fn(),
@@ -103,6 +114,7 @@ async function mountView() {
 
 beforeEach(() => {
   vi.clearAllMocks()
+  localStorage.clear()
   listChannelsMock.mockResolvedValue(mockRawChannels as never)
   listSourcesMock.mockResolvedValue([] as never)
   stopLiveChannelMock.mockResolvedValue({ ok: true } as never)
@@ -176,4 +188,118 @@ describe('LiveView', () => {
 
     expect(playLiveChannelMock).toHaveBeenCalledWith('hn-l1')
   })
+
+  it('底部控制台支持停止播放与释放流资源', async () => {
+    const w = await mountView()
+    const stopBtn = w.find('[data-test="stop"]')
+    expect(stopBtn.exists()).toBe(true)
+
+    await stopBtn.trigger('click')
+    await flushPromises()
+
+    expect(stopLiveChannelMock).toHaveBeenCalledWith('cctv1-l1')
+  })
+
+  it('底部控制台多线路下拉切换可秒切线路', async () => {
+    const w = await mountView()
+    const select = w.find('select.ctl-select')
+    expect(select.exists()).toBe(true)
+
+    // CCTV-1 有 3 条线路，切换到线路 2
+    await select.setValue('1')
+    await flushPromises()
+
+    expect(playLiveChannelMock).toHaveBeenCalledWith('cctv1-l2')
+  })
+
+  it('频道抽屉采用树形分组展示，默认仅展开当前播中分组，其他折叠', async () => {
+    const w = await mountView()
+    // 呼出抽屉
+    await w.find('.tv-edge-sensor').trigger('mouseenter')
+    await flushPromises()
+
+    // 检查树形分组一级节点 (央视频道 + 卫视频道)
+    const groupHeaders = w.findAll('.tree-group-header')
+    expect(groupHeaders).toHaveLength(2)
+    expect(groupHeaders[0].text()).toContain('📺央视频道')
+    expect(groupHeaders[1].text()).toContain('📡卫视频道')
+
+    // 默认仅播放中的央视频道子列表展开，卫视频道折叠
+    expect(w.findAll('.tree-channels-sublist')[0].attributes('style') || '').not.toContain('display: none')
+    expect(w.findAll('.tree-channels-sublist')[1].attributes('style') || '').toContain('display: none')
+
+    // 点击全部折叠
+    const collapseBtn = w.findAll('.tree-action-btn').find((b) => b.text().includes('全部折叠'))
+    expect(collapseBtn).toBeDefined()
+    await collapseBtn!.trigger('click')
+    await flushPromises()
+
+    // 两个分组的子列表均隐藏 (style 包含 display: none)
+    expect(w.findAll('.tree-channels-sublist')[0].attributes('style')).toContain('display: none')
+    expect(w.findAll('.tree-channels-sublist')[1].attributes('style')).toContain('display: none')
+
+    // 单独点击展开第一个分组 (央视频道)
+    await w.findAll('.tree-group-header')[0].trigger('click')
+    await flushPromises()
+    expect(w.findAll('.drawer-tree-group')[0].classes()).toContain('is-expanded')
+    expect(w.findAll('.tree-channels-sublist')[0].attributes('style')).not.toContain('display: none')
+    expect(w.findAll('.tree-channels-sublist')[1].attributes('style')).toContain('display: none')
+
+    // 测试搜索：输入“湖南”，自动过滤并展开匹配的卫视频道
+    const searchInput = w.find('.drawer-search-input')
+    await searchInput.setValue('湖南')
+    await flushPromises()
+
+    const drawerTree = w.find('.drawer-channels-tree')
+    const filteredGroups = drawerTree.findAll('.tree-group-header')
+    expect(filteredGroups).toHaveLength(1)
+    expect(filteredGroups[0].text()).toContain('📡卫视频道')
+    expect(drawerTree.text()).toContain('湖南卫视')
+    expect(drawerTree.text()).not.toContain('CCTV-1')
+  })
+
+  it('支持频道收藏并置顶展示「⭐ 我的收藏」分组', async () => {
+    const w = await mountView()
+    // 呼出抽屉
+    await w.find('.tv-edge-sensor').trigger('mouseenter')
+    await flushPromises()
+
+    // 点击当前顶部导航栏上的收藏按钮
+    const topFavBtn = w.find('[data-test="topbar-fav-btn"]')
+    expect(topFavBtn.exists()).toBe(true)
+    await topFavBtn.trigger('click')
+    await flushPromises()
+
+    expect(topFavBtn.classes()).toContain('is-fav')
+
+    // 检查抽屉中置顶出现了「⭐ 我的收藏」
+    expect(w.text()).toContain('⭐ 我的收藏')
+
+    // 再次点击取消收藏
+    await topFavBtn.trigger('click')
+    await flushPromises()
+
+    expect(topFavBtn.classes()).not.toContain('is-fav')
+    expect(w.text()).not.toContain('⭐ 我的收藏')
+  })
+
+  it('记录上次播放频道，刷新或重新进入时自动起播历史频道', async () => {
+    // 模拟上次播放的是湖南卫视
+    localStorage.setItem('whatmedia_last_live_channel_key', '📡卫视频道__湖南卫视')
+
+    const w = await mountView()
+    // 自动起播湖南卫视
+    expect(playLiveChannelMock).toHaveBeenCalledWith('hn-l1')
+    expect(w.text()).toContain('湖南卫视')
+
+    // 并且默认展开的是卫视频道，央视频道折叠
+    await w.find('.tv-edge-sensor').trigger('mouseenter')
+    await flushPromises()
+
+    const sublists = w.findAll('.tree-channels-sublist')
+    expect(sublists[0].attributes('style') || '').toContain('display: none') // 央视频道折叠
+    expect(sublists[1].attributes('style') || '').not.toContain('display: none')  // 卫视频道展开
+  })
 })
+
+

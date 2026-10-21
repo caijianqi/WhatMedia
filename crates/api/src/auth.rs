@@ -48,10 +48,22 @@ pub const SESSION_COOKIE: &str = "wm_session";
 
 /// `/healthz` 之外，**发言人名单**。
 fn is_public(path: &str) -> bool {
-    matches!(
+    if matches!(
         path,
         "/healthz" | "/api/v1/health" | "/api/v1/auth/bootstrap" | "/api/v1/auth/login"
-    )
+    ) {
+        return true;
+    }
+    // 媒体图片资源放行：前端原生 <img> 和 CSS background 无法携带 Authorization 头
+    // 形如 /api/v1/items/{id}/images/{kind}
+    if path.starts_with("/api/v1/items/") && path.contains("/images/") {
+        return true;
+    }
+    // 直播纯内存代理端点放行：前端原生流播放器拉取分片时不携带 Authorization 头
+    if path.starts_with("/api/v1/live/proxy") {
+        return true;
+    }
+    false
 }
 
 /// 接受"HTTP 头带不出凭据"的播放器用签名 URL 访问的路径。

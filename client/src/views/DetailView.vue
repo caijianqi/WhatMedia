@@ -99,6 +99,38 @@ async function load() {
   posterError.value = false
 }
 
+const rescraping = ref(false)
+
+async function rescrapeCurrent(): Promise<void> {
+  if (!detail.value) return
+  rescraping.value = true
+  try {
+    const raw = detail.value as Record<string, unknown>
+    const provider = typeof raw.provider === 'string' ? raw.provider : null
+    const providerId = typeof raw.provider_id === 'string' ? raw.provider_id : null
+    const libId = typeof raw.library_id === 'string' ? raw.library_id : undefined
+    if (provider && providerId) {
+      await api.identify(id.value, {
+        provider,
+        provider_id: providerId,
+      })
+      toast('元数据与海报刷新成功', { type: 'info' })
+    } else {
+      await api.startScrape({
+        library_id: libId,
+        force: true,
+      } as any)
+      toast('已提交强制重新刮削任务，后台拉取中...', { type: 'info' })
+    }
+    posterError.value = false
+    await load()
+  } catch (err) {
+    toast(`重新刮削失败：${err instanceof Error ? err.message : String(err)}`, { type: 'error' })
+  } finally {
+    rescraping.value = false
+  }
+}
+
 onMounted(load)
 watch(id, load)
 
@@ -106,12 +138,6 @@ const backdrop = computed(() => `/api/v1/items/${id.value}/images/backdrop`)
 const poster = computed(() => `/api/v1/items/${id.value}/images/poster`)
 const posterError = ref(false)
 
-const strategyLabel: Record<string, string> = {
-  direct_play: '直接播放',
-  remux: '重新封装',
-  transcode: '需要转码',
-  unsupported: '无法播放',
-}
 
 const kindLabels: Record<string, string> = {
   movie: '电影',
@@ -237,15 +263,26 @@ const mainQuality = computed(() => {
       <!-- 顶部英雄背景区 -->
       <section class="detail-hero" :style="{ '--detailbg': `url('${backdrop}')` }">
         <div class="hero-inner">
-          <!-- 经典竖版海报封套 -->
-          <div v-if="!posterError" class="hero-poster-box">
+          <!-- 经典竖版海报封套（含背投微光） -->
+          <div class="hero-poster-box">
+            <div
+              v-if="!posterError"
+              class="poster-glow"
+              :style="{ backgroundImage: `url('${poster}')` }"
+            ></div>
             <img
+              v-if="!posterError"
               :src="poster"
               :alt="displayTitle"
               class="hero-poster-img"
               loading="lazy"
               @error="posterError = true"
             />
+            <div v-else class="hero-poster-fallback">
+              <span class="hero-fallback-char">
+                {{ displayTitle.trim() ? [...displayTitle.trim()][0]?.toUpperCase() : '🎬' }}
+              </span>
+            </div>
           </div>
 
           <div class="detail-content">
@@ -311,6 +348,27 @@ const mainQuality = computed(() => {
                 <span>{{ favorite ? '已收藏' : '加入收藏' }}</span>
                 <span v-if="favoriteCount > 0" class="fav-count">({{ favoriteCount }})</span>
               </button>
+
+              <!-- 重新刮削与海报刷新按钮 -->
+              <button
+                type="button"
+                class="btn btn-secondary btn-rescrape"
+                title="重新刮削并拉取最新海报与演职员"
+                :disabled="rescraping"
+                @click="rescrapeCurrent"
+              >
+                <svg
+                  viewBox="0 0 24 24"
+                  aria-hidden="true"
+                  style="width: 15px; height: 15px; fill: none; stroke: currentColor; stroke-width: 2;"
+                >
+                  <path d="M21 12a9 9 0 0 0-9-9 9.75 9.75 0 0 0-6.74 2.74L3 8" stroke-linecap="round" stroke-linejoin="round" />
+                  <path d="M3 3v5h5" stroke-linecap="round" stroke-linejoin="round" />
+                  <path d="M3 12a9 9 0 0 0 9 9 9.75 9.75 0 0 0 6.74-2.74L21 16" stroke-linecap="round" stroke-linejoin="round" />
+                  <path d="M16 21h5v-5" stroke-linecap="round" stroke-linejoin="round" />
+                </svg>
+                <span>{{ rescraping ? '刷新中...' : '重新刮削' }}</span>
+              </button>
             </div>
           </div>
         </div>
@@ -318,51 +376,35 @@ const mainQuality = computed(() => {
 
       <!-- 详情下半部分内容区 -->
       <div class="detail-body">
-        <!-- 播放策略预览（Decide 决策报告） -->
-        <div v-if="decision" class="card decision-card" :class="decision.strategy">
-          <div class="decision-head">
-            <div class="decision-badge" :class="decision.strategy">
-              <span class="decision-dot"></span>
-              <span class="decision-tag" :class="decision.strategy">
-                {{ strategyLabel[decision.strategy] ?? decision.strategy }}
-              </span>
-            </div>
-            <span class="decision-reason">{{ decision.reason }}</span>
-          </div>
-
-          <ul v-if="decision.reasons.length" class="decision-list">
-            <li v-for="r in decision.reasons" :key="r.code">
-              <code>{{ r.code }}</code>
-              {{ r.message }}
-            </li>
-          </ul>
-
-          <p v-if="decision.strategy === 'unsupported'" class="unsupported-hint">
-            这个片源在当前客户端上放不了。换桌面端（mpv）通常可以直出。
-          </p>
+        <!-- 仅当不可播放时极简警示，日常直接播放绝不冗余打扰 -->
+        <div v-if="decision?.strategy === 'unsupported'" class="unsupported-alert">
+          <svg viewBox="0 0 24 24" aria-hidden="true">
+            <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm1 15h-2v-2h2v2zm0-4h-2V7h2v6z" />
+          </svg>
+          <span>此片源格式在当前浏览器上暂不支持，推荐使用桌面客户端播放。</span>
         </div>
 
-        <!-- 4 宫格事实参数矩阵 (Facts Grid) -->
+        <!-- 4 宫格科技事实参数矩阵 (Facts Grid) -->
         <div class="detail-facts">
           <div class="fact">
-            <span>年份</span>
-            <strong>{{ detail.year ?? (series?.year ?? '—') }}</strong>
+            <span class="fact-label">上映年份</span>
+            <strong class="fact-value">{{ detail.year ?? (series?.year ?? '—') }}</strong>
           </div>
           <div class="fact">
-            <span>内容类型</span>
-            <strong>{{ series ? '电视剧' : (kindLabels[detail.kind] ?? detail.kind) }}</strong>
+            <span class="fact-label">内容类型</span>
+            <strong class="fact-value">{{ series ? '电视剧' : (kindLabels[detail.kind] ?? detail.kind) }}</strong>
           </div>
           <div class="fact">
-            <span>片长 / 规格</span>
-            <strong>{{ fmtMs(detail.runtime_ms) }}</strong>
+            <span class="fact-label">片长 / 规格</span>
+            <strong class="fact-value">{{ fmtMs(detail.runtime_ms) }}</strong>
           </div>
           <div class="fact">
-            <span>媒体质量</span>
-            <strong class="quality-highlight">{{ mainQuality }}</strong>
+            <span class="fact-label">媒体规格</span>
+            <strong class="fact-value quality-highlight">{{ mainQuality }}</strong>
           </div>
         </div>
 
-        <!-- 类型 Chips 展示（确保单元测试及多维标签正常展示） -->
+        <!-- 类型 Chips 展示 -->
         <div v-if="detail.genres.length" class="genre-chips-row">
           <span v-for="g in detail.genres" :key="g" class="chip">{{ g }}</span>
         </div>
@@ -399,45 +441,10 @@ const mainQuality = computed(() => {
         <!-- 剧集选集（所属某部剧时才渲染） -->
         <div v-if="series" class="section">
           <div class="section-head">
-            <div class="section-title">剧集</div>
+            <div class="section-title">剧集选集</div>
           </div>
           <EpisodeList :series-id="series.id" />
         </div>
-
-        <!-- 媒体版本与文件详情 -->
-        <section v-if="detail.versions.length" class="section">
-          <div class="section-head">
-            <div class="section-title">文件</div>
-          </div>
-
-          <div class="versions-list">
-            <div
-              v-for="v in detail.versions"
-              :key="v.id"
-              class="card version-card"
-            >
-              <div class="version-head">
-                <strong>{{ v.name }}</strong>
-                <span v-if="v.resolution" class="chip">{{ v.resolution }}</span>
-                <span v-if="isHdr(v.hdr_type)" class="chip hdr-chip">
-                  {{ hdrLabel(v.hdr_type) }}
-                </span>
-                <span v-if="v.is_default" class="chip default-chip">默认</span>
-              </div>
-
-              <div v-for="f in v.files" :key="f.id" class="file-item">
-                <div class="file-path">{{ f.path }}</div>
-                <div class="file-meta">
-                  <span>{{ (f.size_bytes / 1024 ** 3).toFixed(2) }} GB</span>
-                  <span v-if="f.duration_ms">{{ fmtMs(f.duration_ms) }}</span>
-                  <span :class="f.is_available ? 'status-online' : 'status-offline'">
-                    {{ f.is_available ? '在线' : '离线' }}
-                  </span>
-                </div>
-              </div>
-            </div>
-          </div>
-        </section>
       </div>
     </div>
   </div>
@@ -473,89 +480,161 @@ const mainQuality = computed(() => {
 
 /* 英雄榜区域微调 */
 .detail-hero {
-  border-radius: 20px;
+  border-radius: 24px;
   overflow: hidden;
-  box-shadow: 0 20px 50px rgba(0, 0, 0, 0.4);
+  box-shadow: 0 24px 60px rgba(0, 0, 0, 0.6);
+  background:
+    linear-gradient(180deg, rgba(8, 14, 26, 0.4) 0%, rgba(8, 14, 26, 0.95) 100%),
+    radial-gradient(ellipse at 80% 20%, rgba(56, 189, 248, 0.12) 0%, transparent 60%),
+    var(--detailbg) center/cover no-repeat;
+  position: relative;
+  border: 1px solid rgba(148, 163, 184, 0.1);
 }
 .hero-inner {
   display: flex;
   align-items: flex-end;
-  gap: 30px;
+  gap: 36px;
   width: 100%;
+  padding: 40px 36px;
   position: relative;
   z-index: 1;
 }
+
+/* 海报封套与科技背投光晕 */
 .hero-poster-box {
-  width: 175px;
+  width: 185px;
   flex-shrink: 0;
-  border-radius: 14px;
-  overflow: hidden;
-  box-shadow: 0 16px 36px rgba(0, 0, 0, 0.65), 0 0 0 1px rgba(255, 255, 255, 0.12);
+  border-radius: 16px;
   aspect-ratio: 2 / 3;
-  background: #0d1627;
+  position: relative;
   display: flex;
+  perspective: 1000px;
+}
+.poster-glow {
+  position: absolute;
+  inset: -8px;
+  border-radius: 20px;
+  background-size: cover;
+  background-position: center;
+  filter: blur(28px) brightness(1.2) saturate(1.4);
+  opacity: 0.45;
+  z-index: 0;
+  transition: opacity 0.3s ease;
+  pointer-events: none;
+}
+.hero-poster-box:hover .poster-glow {
+  opacity: 0.7;
 }
 .hero-poster-img {
+  position: relative;
+  z-index: 1;
   width: 100%;
   height: 100%;
   object-fit: cover;
-  transition: transform 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+  border-radius: 16px;
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  box-shadow: 0 16px 40px rgba(0, 0, 0, 0.8);
+  transition: transform 0.35s cubic-bezier(0.16, 1, 0.3, 1), box-shadow 0.35s ease;
 }
 .hero-poster-box:hover .hero-poster-img {
-  transform: scale(1.04);
+  transform: translateY(-4px) scale(1.02);
+  box-shadow: 0 24px 48px rgba(0, 0, 0, 0.9), 0 0 24px rgba(56, 189, 248, 0.2);
+}
+.hero-poster-fallback {
+  position: relative;
+  z-index: 1;
+  width: 100%;
+  height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 16px;
+  border: 1px solid rgba(56, 189, 248, 0.25);
+  background: linear-gradient(135deg, #0f172a 0%, #1e1b4b 60%, #0369a1 100%);
+  box-shadow: 0 16px 40px rgba(0, 0, 0, 0.8);
+}
+.hero-fallback-char {
+  font-size: 56px;
+  font-weight: 800;
+  color: #38bdf8;
+  text-shadow: 0 0 24px rgba(56, 189, 248, 0.6);
+  user-select: none;
+}
+
+.detail-content {
+  flex: 1;
+  min-width: 0;
+}
+.detail-content h1 {
+  font-size: 32px;
+  font-weight: 800;
+  color: #f8fafc;
+  line-height: 1.25;
+  margin: 0 0 6px 0;
+  letter-spacing: -0.5px;
 }
 .detail-orig-title {
   font-size: 14px;
-  color: var(--muted);
-  margin: -4px 0 10px;
+  color: #94a3b8;
+  margin: 0 0 12px;
   font-style: italic;
+  letter-spacing: 0.3px;
 }
 .detail-desc {
-  font-size: 13px;
+  font-size: 13.5px;
   line-height: 1.75;
   color: #cbd5e1;
-  max-width: 680px;
-  margin: 12px 0 20px;
+  max-width: 720px;
+  margin: 12px 0 24px;
   display: -webkit-box;
   -webkit-line-clamp: 4;
   -webkit-box-orient: vertical;
   overflow: hidden;
   text-overflow: ellipsis;
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.5);
 }
+
 @media (max-width: 720px) {
   .hero-inner {
     flex-direction: column;
     align-items: flex-start;
-    gap: 16px;
+    gap: 20px;
+    padding: 24px 20px;
   }
   .hero-poster-box {
-    width: 130px;
+    width: 140px;
+  }
+  .detail-content h1 {
+    font-size: 24px;
   }
 }
+
+/* 科技胶囊标签 */
 .hero-tags {
   display: flex;
   flex-wrap: wrap;
   gap: 8px;
-  margin-bottom: 14px;
+  margin-bottom: 12px;
 }
 .hero-tags .tag {
   font-size: 11px;
   font-weight: 700;
   letter-spacing: 0.5px;
-  padding: 4px 10px;
-  border-radius: 6px;
-  background: rgba(255, 255, 255, 0.08);
-  border: 1px solid rgba(255, 255, 255, 0.12);
-  color: #cbd5e1;
+  padding: 4px 12px;
+  border-radius: 9999px;
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  color: #e2e8f0;
+  backdrop-filter: blur(8px);
 }
 .hero-tags .tag-kind {
-  background: rgba(121, 91, 255, 0.2);
-  border-color: rgba(121, 91, 255, 0.4);
-  color: #c4b5fd;
+  background: rgba(99, 102, 241, 0.15);
+  border-color: rgba(99, 102, 241, 0.4);
+  color: #a5b4fc;
 }
 .hero-tags .tag-series {
-  background: rgba(87, 200, 245, 0.15);
-  border-color: rgba(87, 200, 245, 0.35);
+  background: rgba(56, 189, 248, 0.15);
+  border-color: rgba(56, 189, 248, 0.4);
   color: #7dd3fc;
 }
 
@@ -563,160 +642,151 @@ const mainQuality = computed(() => {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: 10px;
+  gap: 12px;
   font-size: 13px;
   color: #cbd5e1;
-  margin: 12px 0 16px;
+  margin: 10px 0 14px;
 }
 .hero-meta .meta-sep {
-  width: 3px;
-  height: 3px;
+  width: 4px;
+  height: 4px;
   border-radius: 50%;
-  background: rgba(255, 255, 255, 0.3);
+  background: rgba(148, 163, 184, 0.4);
 }
 .hero-meta .meta-rating {
-  color: #fbbf24;
+  color: #facc15;
   font-weight: 700;
+  text-shadow: 0 0 10px rgba(250, 204, 21, 0.35);
 }
 .hero-meta .meta-quality {
-  color: var(--cyan);
+  color: #38bdf8;
   font-weight: 600;
+  text-shadow: 0 0 8px rgba(56, 189, 248, 0.3);
 }
 
-/* 决策卡片重塑 */
-.decision-card {
-  margin: 16px 0;
-  padding: 12px 18px;
-  border-radius: 12px;
-  background: rgba(16, 24, 42, 0.5);
-  border: 1px solid var(--line);
+/* 操作按钮组 */
+.actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 12px;
+  margin-top: 14px;
+}
+.actions .btn-primary {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 22px;
+  border-radius: 10px;
+  background: linear-gradient(135deg, #0284c7 0%, #4f46e5 100%);
+  border: 1px solid rgba(56, 189, 248, 0.5);
+  color: #fff;
+  font-size: 14px;
+  font-weight: 700;
+  text-decoration: none;
+  cursor: pointer;
+  transition: all 0.25s ease;
+  box-shadow: 0 4px 18px rgba(2, 132, 199, 0.4);
+}
+.actions .btn-primary:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 8px 24px rgba(2, 132, 199, 0.6), 0 0 16px rgba(99, 102, 241, 0.4);
+  border-color: #38bdf8;
+}
+.actions .btn-primary svg {
+  width: 18px;
+  height: 18px;
+  fill: currentColor;
+}
+.actions .btn-secondary {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 9px 18px;
+  border-radius: 10px;
+  background: rgba(30, 41, 59, 0.65);
+  border: 1px solid rgba(148, 163, 184, 0.2);
+  color: #e2e8f0;
+  font-size: 13.5px;
+  font-weight: 600;
+  text-decoration: none;
+  cursor: pointer;
+  backdrop-filter: blur(8px);
   transition: all 0.2s ease;
 }
-.decision-card.direct_play {
-  background: rgba(16, 185, 129, 0.06);
-  border-color: rgba(16, 185, 129, 0.22);
+.actions .btn-secondary:hover {
+  background: rgba(51, 65, 85, 0.8);
+  border-color: rgba(56, 189, 248, 0.4);
+  color: #fff;
+  transform: translateY(-1px);
 }
-.decision-card.remux {
-  background: rgba(14, 165, 233, 0.06);
-  border-color: rgba(14, 165, 233, 0.22);
+.fav-toggle-btn.is-active {
+  border-color: rgba(244, 63, 94, 0.45);
+  background: rgba(244, 63, 94, 0.12);
+  color: #fda4af;
 }
-.decision-card.transcode {
-  background: rgba(245, 158, 11, 0.06);
-  border-color: rgba(245, 158, 11, 0.22);
+
+/* 详情下部内容区 */
+.detail-body {
+  margin-top: 28px;
 }
-.decision-card.unsupported {
-  background: rgba(239, 68, 68, 0.06);
-  border-color: rgba(239, 68, 68, 0.22);
-}
-.decision-head {
+
+/* 无法播放时的极简警示条 */
+.unsupported-alert {
   display: flex;
   align-items: center;
   gap: 12px;
-}
-.decision-badge {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  font-size: 12px;
-  font-weight: 600;
-  padding: 3px 10px;
-  border-radius: 6px;
-}
-.decision-badge.direct_play {
-  background: rgba(16, 185, 129, 0.15);
-  color: #6ee7b7;
-}
-.decision-badge.remux {
-  background: rgba(14, 165, 233, 0.15);
-  color: #7dd3fc;
-}
-.decision-badge.transcode {
-  background: rgba(245, 158, 11, 0.15);
-  color: #fcd34d;
-}
-.decision-badge.unsupported {
-  background: rgba(239, 68, 68, 0.15);
+  padding: 12px 18px;
+  border-radius: 12px;
+  background: rgba(239, 68, 68, 0.1);
+  border: 1px solid rgba(239, 68, 68, 0.3);
   color: #fca5a5;
-}
-.decision-dot {
-  width: 6px;
-  height: 6px;
-  border-radius: 50%;
-  background: currentColor;
-}
-.decision-tag {
-  font-size: 11px;
-  font-weight: 700;
-  padding: 0;
-  border: 0;
-  background: transparent;
-  color: inherit;
-}
-.decision-reason {
   font-size: 13px;
-  color: var(--muted);
-}
-.decision-list {
-  margin: 12px 0 0;
-  padding-top: 10px;
-  border-top: 1px solid var(--line);
-  list-style: none;
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-}
-.decision-list li {
-  font-size: 11px;
-  color: var(--muted);
-}
-.decision-list code {
-  background: rgba(255, 255, 255, 0.08);
-  padding: 2px 6px;
-  border-radius: 4px;
-  margin-right: 6px;
-  color: var(--muted);
-}
-.unsupported-hint {
-  margin-top: 10px;
-  font-size: 12px;
-  color: #fca5a5;
+  margin-bottom: 24px;
 }
 
-/* 4 宫格事实参数矩阵 */
+/* 4 宫格科技事实参数矩阵 */
 .detail-facts {
   display: grid;
   grid-template-columns: repeat(4, minmax(0, 1fr));
-  gap: 12px;
-  margin: 18px 0;
+  gap: 14px;
+  margin: 20px 0 24px;
+}
+@media (max-width: 640px) {
+  .detail-facts {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
 }
 .fact {
-  background: rgba(20, 31, 52, 0.6);
-  border: 1px solid rgba(174, 193, 226, 0.09);
-  border-radius: 12px;
+  background: linear-gradient(135deg, rgba(15, 23, 42, 0.65) 0%, rgba(20, 31, 51, 0.45) 100%);
+  border: 1px solid rgba(148, 163, 184, 0.1);
+  border-radius: 14px;
   padding: 14px 18px;
   display: flex;
   flex-direction: column;
   gap: 6px;
   backdrop-filter: blur(8px);
-  transition: transform 0.2s ease, border-color 0.2s ease;
+  transition: transform 0.25s ease, border-color 0.25s ease;
 }
 .fact:hover {
   transform: translateY(-2px);
-  border-color: rgba(174, 193, 226, 0.2);
+  border-color: rgba(56, 189, 248, 0.3);
+  box-shadow: 0 8px 20px rgba(0, 0, 0, 0.4);
 }
-.fact span {
+.fact-label {
   font-size: 11px;
-  color: var(--muted2);
-  text-transform: uppercase;
+  color: #94a3b8;
   letter-spacing: 0.5px;
 }
-.fact strong {
+.fact-value {
   font-size: 15px;
   font-weight: 700;
-  color: var(--text);
+  color: #f8fafc;
+  font-family: 'JetBrains Mono', monospace, Inter, sans-serif;
 }
 .quality-highlight {
-  color: var(--cyan) !important;
+  color: #38bdf8 !important;
+  text-shadow: 0 0 10px rgba(56, 189, 248, 0.25);
 }
 
 /* 标签行 */
@@ -724,7 +794,21 @@ const mainQuality = computed(() => {
   display: flex;
   flex-wrap: wrap;
   gap: 8px;
-  margin: 18px 0;
+  margin-bottom: 24px;
+}
+.genre-chips-row .chip {
+  padding: 4px 12px;
+  border-radius: 9999px;
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid rgba(148, 163, 184, 0.14);
+  font-size: 12px;
+  color: #cbd5e1;
+  transition: all 0.2s ease;
+}
+.genre-chips-row .chip:hover {
+  border-color: rgba(56, 189, 248, 0.4);
+  color: #38bdf8;
+  background: rgba(56, 189, 248, 0.08);
 }
 
 /* 演职员 */
@@ -732,38 +816,50 @@ const mainQuality = computed(() => {
   display: flex;
   gap: 16px;
   overflow-x: auto;
-  padding-bottom: 8px;
+  padding: 4px 2px 12px;
+  scrollbar-width: thin;
 }
 .cast-card {
   width: 90px;
   flex-shrink: 0;
   text-align: center;
+  transition: transform 0.2s ease;
+}
+.cast-card:hover {
+  transform: translateY(-2px);
 }
 .cast-avatar {
   margin: 0 auto;
-  width: 60px;
-  height: 60px;
+  width: 58px;
+  height: 58px;
   border-radius: 50%;
   display: grid;
   place-items: center;
-  font-size: 19px;
+  font-size: 18px;
   font-weight: 700;
-  color: #ced9ee;
-  background-image: linear-gradient(150deg, #1d2d4c, #131d31);
-  border: 1px solid rgba(255, 255, 255, 0.08);
+  color: #7dd3fc;
+  background: linear-gradient(135deg, rgba(30, 41, 59, 0.9) 0%, rgba(15, 23, 42, 0.9) 100%);
+  border: 1px solid rgba(56, 189, 248, 0.3);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.4);
+  transition: all 0.2s ease;
+}
+.cast-card:hover .cast-avatar {
+  border-color: #38bdf8;
+  box-shadow: 0 0 16px rgba(56, 189, 248, 0.35);
+  transform: scale(1.05);
 }
 .cast-name {
   margin-top: 8px;
   font-size: 12px;
   font-weight: 600;
-  color: var(--text);
+  color: #f1f5f9;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 .cast-role {
-  font-size: 10px;
-  color: var(--muted);
+  font-size: 11px;
+  color: #94a3b8;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -772,79 +868,27 @@ const mainQuality = computed(() => {
 
 /* 幕后归并 */
 .crew-list {
-  margin-top: 18px;
-  padding-top: 14px;
-  border-top: 1px solid var(--line);
+  margin-top: 20px;
+  padding-top: 16px;
+  border-top: 1px solid rgba(148, 163, 184, 0.12);
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: 10px;
 }
 .crew-item {
   display: flex;
-  gap: 14px;
-  font-size: 12px;
+  gap: 16px;
+  font-size: 13px;
 }
 .crew-item dt {
-  width: 50px;
+  width: 54px;
   flex-shrink: 0;
-  color: var(--muted);
+  color: #94a3b8;
+  font-weight: 500;
 }
 .crew-item dd {
-  color: var(--text);
+  color: #e2e8f0;
   margin: 0;
-}
-
-/* 版本与文件 */
-.versions-list {
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
-}
-.version-card {
-  padding: 16px;
-  transition: border-color 0.2s ease;
-}
-.version-card:hover {
-  border-color: rgba(155, 134, 255, 0.35);
-}
-.version-head {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 9px;
-}
-.hdr-chip {
-  border-color: rgba(245, 158, 11, 0.3);
-  color: #fcd34d;
-  background: rgba(245, 158, 11, 0.1);
-}
-.default-chip {
-  border-color: rgba(121, 91, 255, 0.35);
-  color: #b3a4ff;
-  background: rgba(121, 91, 255, 0.12);
-}
-.file-item {
-  margin-top: 12px;
-  font-size: 11px;
-}
-.file-path {
-  font-family: monospace;
-  color: var(--muted);
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-.file-meta {
-  margin-top: 6px;
-  display: flex;
-  gap: 14px;
-  color: var(--muted2);
-}
-.status-online {
-  color: #34d399;
-}
-.status-offline {
-  color: #f87171;
 }
 </style>
 

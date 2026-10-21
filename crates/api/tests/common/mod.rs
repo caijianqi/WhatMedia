@@ -130,6 +130,32 @@ pub fn patch_json(token: &str, uri: &str, v: Value) -> Request<Body> {
         .unwrap()
 }
 
+pub fn put_json(token: &str, uri: &str, v: Value) -> Request<Body> {
+    Request::builder()
+        .method("PUT")
+        .uri(uri)
+        .header("authorization", format!("Bearer {token}"))
+        .header("content-type", "application/json")
+        .body(Body::from(serde_json::to_vec(&v).unwrap()))
+        .unwrap()
+}
+
+pub fn get_authed(token: &str, uri: &str) -> Request<Body> {
+    get(token, uri)
+}
+
+pub fn post_authed(token: &str, uri: &str, v: Value) -> Request<Body> {
+    post_json(token, uri, v)
+}
+
+pub fn put_authed(token: &str, uri: &str, v: Value) -> Request<Body> {
+    put_json(token, uri, v)
+}
+
+pub fn delete_authed(token: &str, uri: &str) -> Request<Body> {
+    delete(token, uri)
+}
+
 pub fn delete(token: &str, uri: &str) -> Request<Body> {
     Request::builder()
         .method("DELETE")

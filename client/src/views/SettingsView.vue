@@ -320,9 +320,10 @@ onMounted(async () => {
         ? e.message
         : String(e)
   }
-  // 这两块单独取：设置端点或存储端点挂了，不该让"服务端状态"那栏也空白。
+  // 这几块单独取：设置端点或存储端点挂了，不该让"服务端状态"那栏也空白。
   void loadSettings()
   void loadStorage()
+  void loadStorageAccounts()
   void refreshTasks()
   void loadScrapeStats()
   void loadLiveSources()
@@ -433,11 +434,176 @@ async function copyCommand(): Promise<void> {
   }
 }
 
+// ── 云盘与存储源管理 (Storage Accounts) ────────────────────────
+const storageAccounts = ref<api.StorageAccount[]>([])
+const loadingStorageAccounts = ref(false)
+const storageAccountsError = ref<string | null>(null)
+
+async function loadStorageAccounts(): Promise<void> {
+  loadingStorageAccounts.value = true
+  storageAccountsError.value = null
+  try {
+    const list = await api.listStorageAccounts()
+    storageAccounts.value = Array.isArray(list) ? list : []
+  } catch (err) {
+    storageAccountsError.value = err instanceof api.ApiError ? err.detail.message : String(err)
+  } finally {
+    loadingStorageAccounts.value = false
+  }
+}
+
+// 存储源预设
+const showAddStorageModal = ref(false)
+const storagePreset = ref<string>('alist_baidu')
+const storageForm = ref<api.CreateStorageRequest>({
+  name: '百度网盘',
+  driver: 'webdav',
+  endpoint: 'http://127.0.0.1:5244/dav/baidu',
+  auth_type: 'basic',
+  username: '',
+  password: '',
+  root_path: '',
+  direct_stream: true,
+})
+
+const storagePresetsConfig = [
+  {
+    id: 'alist_baidu',
+    name: '百度网盘',
+    driver: 'webdav',
+    icon: '🐾',
+    tip: '基于 AList / CD2 挂载的百度网盘 WebDAV 目录',
+    endpoint: 'http://127.0.0.1:5244/dav/baidu',
+  },
+  {
+    id: 'alist_quark',
+    name: '夸克网盘',
+    driver: 'webdav',
+    icon: '⚡',
+    tip: '基于 AList / CD2 挂载的夸克网盘 WebDAV 目录',
+    endpoint: 'http://127.0.0.1:5244/dav/quark',
+  },
+  {
+    id: 'alist_xunlei',
+    name: '迅雷云盘',
+    driver: 'webdav',
+    icon: '🦅',
+    tip: '基于 AList / CD2 挂载的迅雷云盘 WebDAV 目录',
+    endpoint: 'http://127.0.0.1:5244/dav/xunlei',
+  },
+  {
+    id: 'alist_139',
+    name: '移动云盘',
+    driver: 'webdav',
+    icon: '📶',
+    tip: '基于 AList / CD2 挂载的中国移动云盘 WebDAV 目录',
+    endpoint: 'http://127.0.0.1:5244/dav/139',
+  },
+  {
+    id: 'webdav',
+    name: '通用 WebDAV',
+    driver: 'webdav',
+    icon: '🌐',
+    tip: '群晖/威联通/NAS 或自建 WebDAV 协议服务',
+    endpoint: 'http://192.168.1.100:5005/media',
+  },
+]
+
+function applyStoragePreset(presetId: string): void {
+  storagePreset.value = presetId
+  const found = storagePresetsConfig.find((p) => p.id === presetId)
+  if (found) {
+    storageForm.value.name = found.name
+    storageForm.value.driver = found.driver
+    storageForm.value.endpoint = found.endpoint
+  }
+}
+
+const testingStorage = ref(false)
+const storageTestResult = ref<api.TestStorageResponse | null>(null)
+const savingStorage = ref(false)
+const storageActionFeedback = ref<{ type: 'ok' | 'err'; message: string } | null>(null)
+
+async function testStorageConn(): Promise<void> {
+  const ep = storageForm.value.endpoint.trim()
+  if (!ep) {
+    storageTestResult.value = { ok: false, message: '请填写服务端 Endpoint 地址' }
+    return
+  }
+  testingStorage.value = true
+  storageTestResult.value = null
+  try {
+    const res = await api.testStorageConnection({
+      driver: storageForm.value.driver,
+      endpoint: ep,
+      auth_type: storageForm.value.auth_type,
+      username: storageForm.value.username,
+      password: storageForm.value.password,
+      root_path: storageForm.value.root_path || undefined,
+    })
+    storageTestResult.value = res
+  } catch (err) {
+    storageTestResult.value = {
+      ok: false,
+      message: err instanceof api.ApiError ? err.detail.message : String(err),
+    }
+  } finally {
+    testingStorage.value = false
+  }
+}
+
+async function saveStorageAccount(): Promise<void> {
+  const name = storageForm.value.name.trim()
+  const ep = storageForm.value.endpoint.trim()
+  if (!name || !ep) {
+    storageActionFeedback.value = { type: 'err', message: '名称和 Endpoint 均为必填项' }
+    return
+  }
+  savingStorage.value = true
+  storageActionFeedback.value = null
+  try {
+    await api.createStorageAccount({
+      name,
+      driver: storageForm.value.driver,
+      endpoint: ep,
+      auth_type: storageForm.value.auth_type,
+      username: storageForm.value.username || undefined,
+      password: storageForm.value.password || undefined,
+      root_path: storageForm.value.root_path || undefined,
+      direct_stream: storageForm.value.direct_stream,
+    })
+    showAddStorageModal.value = false
+    storageActionFeedback.value = { type: 'ok', message: `✓ 成功添加存储源「${name}」` }
+    await loadStorageAccounts()
+  } catch (err) {
+    storageActionFeedback.value = {
+      type: 'err',
+      message: err instanceof api.ApiError ? err.detail.message : String(err),
+    }
+  } finally {
+    savingStorage.value = false
+  }
+}
+
+async function handleDeleteStorage(id: string, name: string): Promise<void> {
+  if (!confirm(`确定要移除存储源「${name}」吗？`)) return
+  try {
+    await api.deleteStorageAccount(id)
+    await loadStorageAccounts()
+    if (scanForm.value.storageProvider === id) {
+      scanForm.value.storageProvider = 'local'
+    }
+  } catch (err) {
+    alert(err instanceof api.ApiError ? err.detail.message : String(err))
+  }
+}
+
 // ── Web 端直接添加与扫盘入库 ──────────────────────────────────
 const showDirPicker = ref(false)
 const scanForm = ref({
   name: '',
   path: '',
+  storageProvider: 'local',
   probe: true,
   concurrency: 4,
 })
@@ -452,8 +618,11 @@ function openDirPicker(): void {
   showDirPicker.value = true
 }
 
-function onDirSelected(path: string): void {
+function onDirSelected(path: string, storageId?: string): void {
   scanForm.value.path = path
+  if (storageId) {
+    scanForm.value.storageProvider = storageId
+  }
   try {
     localStorage.setItem('whatmedia_last_scan_path', path)
   } catch {
@@ -470,11 +639,11 @@ function onDirSelected(path: string): void {
   }
 }
 
-/** 仅保存物理路径与媒体库配置，暂不启动耗资源的扫描。 */
+/** 仅保存路径与媒体库配置，暂不启动耗资源的扫描。 */
 async function saveLibraryPath(): Promise<void> {
   const p = scanForm.value.path.trim()
   if (!p) {
-    scanFeedback.value = { type: 'err', message: '请指定服务端物理路径' }
+    scanFeedback.value = { type: 'err', message: '请指定媒体库路径' }
     return
   }
   savingLib.value = true
@@ -487,15 +656,19 @@ async function saveLibraryPath(): Promise<void> {
     const lib = await api.createLibrary({
       name,
       path: p,
+      storage_provider: scanForm.value.storageProvider === 'local' ? undefined : scanForm.value.storageProvider,
     })
     try {
       localStorage.setItem('whatmedia_last_scan_path', p)
     } catch {
       // 忽略静默
     }
+    const providerLabel = scanForm.value.storageProvider === 'local'
+      ? '本地物理'
+      : (storageAccounts.value.find((s) => s.id === scanForm.value.storageProvider)?.name ?? '云盘')
     scanFeedback.value = {
       type: 'ok',
-      message: `✓ 媒体库「${lib.name}」已成功持久化保存（物理路径：${lib.root_path}）`,
+      message: `✓ 媒体库「${lib.name}」已成功持久化保存（存储源：${providerLabel}，路径：${lib.root_path}）`,
     }
     await loadStorage()
   } catch (err) {
@@ -575,6 +748,7 @@ function ensureTaskPolling(): void {
 // ── 元数据刮削与 TMDB 交互 ─────────────────────────────────
 const scrapeLibraryId = ref<string>('')
 const retryFailedOnly = ref(false)
+const forceRescrape = ref(false)
 const scraping = ref(false)
 const scrapeFeedback = ref<{ type: 'ok' | 'err'; message: string } | null>(null)
 const scrapeStats = ref<api.JobStats | null>(null)
@@ -595,14 +769,15 @@ async function loadScrapeStats(): Promise<void> {
   }
 }
 
-async function triggerManualScrape(): Promise<void> {
+async function triggerManualScrape(isForce = false): Promise<void> {
   scraping.value = true
   scrapeFeedback.value = null
   try {
     const res = await api.startScrape({
       library_id: scrapeLibraryId.value ? scrapeLibraryId.value : null,
       retry_failed: retryFailedOnly.value,
-    })
+      force: isForce || forceRescrape.value,
+    } as any)
     scrapeFeedback.value = {
       type: 'ok',
       message: `✓ 刮削任务已受理：入队 ${res.queued} 项条目（批次：${res.run_id.slice(0, 8)}…），后台刮削中`,
@@ -643,6 +818,7 @@ const liveError = ref<string | null>(null)
 const liveNotice = ref<string | null>(null)
 const liveBusy = ref(false)
 const syncingSourceId = ref<string | null>(null)
+const probingSourceId = ref<string | null>(null)
 
 const newSourceName = ref('')
 const newSourceUrl = ref('')
@@ -700,12 +876,33 @@ async function syncSingleLiveSource(id: string): Promise<void> {
   liveNotice.value = null
   try {
     const res = await api.syncLiveSource(id)
-    liveNotice.value = `同步成功，当前包含 ${res.channels} 个频道`
+    liveNotice.value = `同步成功，已导入 ${res.channels} 个频道，后台正在自动校验连通性...`
     await loadLiveSources()
   } catch (e) {
     liveNotice.value = `同步失败：${e instanceof Error ? e.message : String(e)}`
   } finally {
     syncingSourceId.value = null
+  }
+}
+
+function isProbeSuccess(msg?: string | null): boolean {
+  if (!msg) return false
+  return msg.includes('探测完成') || msg.includes('活跃')
+}
+
+async function probeSingleLiveSource(id: string): Promise<void> {
+  probingSourceId.value = id
+  liveNotice.value = null
+  try {
+    await api.probeLiveSource(id)
+    liveNotice.value = '后台流可用性检测已启动，完成后将自动过滤死链'
+    setTimeout(() => {
+      void loadLiveSources()
+    }, 2500)
+  } catch (e) {
+    liveNotice.value = `启动检测失败：${e instanceof Error ? e.message : String(e)}`
+  } finally {
+    probingSourceId.value = null
   }
 }
 
@@ -880,6 +1077,141 @@ async function deleteSingleLiveSource(id: string, name: string): Promise<void> {
             {{ storageError }}
           </p>
 
+          <!-- 云盘与多存储源管理卡片 -->
+          <div class="storage-accounts-card">
+            <div class="card-header">
+              <div>
+                <h3 class="card-title">云盘与多存储源管理</h3>
+                <p class="card-sub">
+                  原生支持本地物理磁盘，同时支持挂载百度网盘、夸克网盘、迅雷云盘、移动云盘（通过 AList / CD2 等 WebDAV 网关）及各类 NAS WebDAV。
+                </p>
+              </div>
+              <button
+                type="button"
+                class="btn-add-storage"
+                @click="showAddStorageModal = !showAddStorageModal"
+              >
+                <span>{{ showAddStorageModal ? '收起表单' : '＋ 添加存储源' }}</span>
+              </button>
+            </div>
+
+            <!-- 快捷添加存储源抽屉/卡片 -->
+            <div v-if="showAddStorageModal" class="storage-add-box">
+              <div class="preset-pill-list">
+                <span class="preset-title">快速预设：</span>
+                <button
+                  v-for="p in storagePresetsConfig"
+                  :key="p.id"
+                  type="button"
+                  class="preset-pill"
+                  :class="{ active: storagePreset === p.id }"
+                  @click="applyStoragePreset(p.id)"
+                >
+                  <span>{{ p.icon }}</span>
+                  <span>{{ p.name }}</span>
+                </button>
+              </div>
+
+              <div class="storage-form-grid">
+                <div class="form-group">
+                  <label class="form-label">存储源名称 <span class="required-star">*</span></label>
+                  <input v-model="storageForm.name" type="text" class="input-field" placeholder="例如：百度网盘" />
+                </div>
+
+                <div class="form-group">
+                  <label class="form-label">驱动协议</label>
+                  <select v-model="storageForm.driver" class="input-field">
+                    <option value="webdav">WebDAV (AList / CD2 / 通用)</option>
+                  </select>
+                </div>
+
+                <div class="form-group span-2">
+                  <label class="form-label">服务地址 (Endpoint) <span class="required-star">*</span></label>
+                  <input v-model="storageForm.endpoint" type="text" class="input-field font-mono" placeholder="http://127.0.0.1:5244/dav/baidu" />
+                </div>
+
+                <div class="form-group">
+                  <label class="form-label">用户名 (可选)</label>
+                  <input v-model="storageForm.username" type="text" class="input-field" placeholder="例如 admin" />
+                </div>
+
+                <div class="form-group">
+                  <label class="form-label">密码 / Token (可选)</label>
+                  <input v-model="storageForm.password" type="password" class="input-field" placeholder="访问凭据" />
+                </div>
+
+                <div class="form-group span-2">
+                  <label class="checkbox-label">
+                    <input v-model="storageForm.direct_stream" type="checkbox" />
+                    <span>允许直链重定向播放（若服务端支持 302 重定向则优先直下，极大减轻服务器负载）</span>
+                  </label>
+                </div>
+              </div>
+
+              <div class="storage-form-actions">
+                <div v-if="storageTestResult" class="test-result-box" :class="{ ok: storageTestResult.ok, err: !storageTestResult.ok }">
+                  <span>{{ storageTestResult.ok ? '✓' : '⚠️' }}</span>
+                  <span>{{ storageTestResult.message }}</span>
+                  <span v-if="storageTestResult.latency_ms !== null && storageTestResult.latency_ms !== undefined" class="latency-tag">{{ storageTestResult.latency_ms }}ms</span>
+                </div>
+                <div v-else class="flex-spacer" />
+
+                <div class="action-buttons">
+                  <button
+                    type="button"
+                    class="btn-test-conn"
+                    :disabled="testingStorage || !storageForm.endpoint.trim()"
+                    @click="testStorageConn"
+                  >
+                    {{ testingStorage ? '正在测试...' : '⚡ 测试连接' }}
+                  </button>
+                  <button
+                    type="button"
+                    class="btn-save-storage"
+                    :disabled="savingStorage || !storageForm.name.trim() || !storageForm.endpoint.trim()"
+                    @click="saveStorageAccount"
+                  >
+                    {{ savingStorage ? '正在保存...' : '确认添加' }}
+                  </button>
+                </div>
+              </div>
+            </div>
+
+            <!-- 已配置的存储源列表 -->
+            <div v-if="storageAccounts.length > 0" class="configured-storages-list">
+              <div v-for="acc in storageAccounts" :key="acc.id" class="storage-account-card">
+                <div class="account-card-left">
+                  <div class="acc-icon-badge">☁️</div>
+                  <div class="acc-info">
+                    <div class="acc-title-row">
+                      <strong>{{ acc.name }}</strong>
+                      <span class="acc-driver-chip">{{ acc.driver.toUpperCase() }}</span>
+                      <span v-if="acc.direct_stream" class="acc-direct-chip">直链 302</span>
+                    </div>
+                    <div class="acc-endpoint font-mono">{{ acc.endpoint }}</div>
+                  </div>
+                </div>
+                <div class="account-card-actions">
+                  <button
+                    type="button"
+                    class="btn-delete-acc"
+                    title="删除此存储源"
+                    @click="handleDeleteStorage(acc.id, acc.name)"
+                  >
+                    🗑️ 移除
+                  </button>
+                </div>
+              </div>
+            </div>
+            <div v-else-if="!showAddStorageModal" class="empty-storage-tip">
+              <span>暂未配置云盘存储源。点击右上角「添加存储源」可挂载百度网盘、夸克网盘、移动云盘等。</span>
+            </div>
+
+            <div v-if="storageActionFeedback" class="action-feedback-box" :class="storageActionFeedback.type">
+              {{ storageActionFeedback.message }}
+            </div>
+          </div>
+
           <template v-if="storage">
             <div v-if="storage.libraries.length" class="storage-list">
               <div v-for="l in storage.libraries" :key="l.id" class="storage-item">
@@ -916,7 +1248,7 @@ async function deleteSingleLiveSource(id: string, name: string): Promise<void> {
                 <div>
                   <h3 class="web-scan-title">添加媒体库与扫盘入库</h3>
                   <p class="web-scan-sub">
-                    无需在服务端机器命令行执行命令，直接在下方选择服务端物理路径即可快速入库。
+                    无需在服务端机器命令行执行命令，支持选择本地磁盘或已挂载的百度/夸克/移动云盘目录入库。
                   </p>
                 </div>
               </div>
@@ -933,8 +1265,24 @@ async function deleteSingleLiveSource(id: string, name: string): Promise<void> {
                 </div>
 
                 <div class="scan-input-group">
+                  <label class="scan-label">存储源 (本地 / 云盘)</label>
+                  <select v-model="scanForm.storageProvider" class="scan-input scan-select">
+                    <option value="local">💻 本地服务器磁盘 (Local)</option>
+                    <optgroup v-if="storageAccounts.length > 0" label="已配置的云盘 / WebDAV">
+                      <option
+                        v-for="acc in storageAccounts"
+                        :key="acc.id"
+                        :value="acc.id"
+                      >
+                        ☁️ {{ acc.name }} ({{ acc.driver.toUpperCase() }})
+                      </option>
+                    </optgroup>
+                  </select>
+                </div>
+
+                <div class="scan-input-group">
                   <label class="scan-label">
-                    <span>服务端物理路径</span>
+                    <span>{{ scanForm.storageProvider === 'local' ? '服务端物理路径' : '网盘挂载目录' }}</span>
                     <span class="required-star">*</span>
                   </label>
                   <div class="path-input-wrap">
@@ -942,12 +1290,12 @@ async function deleteSingleLiveSource(id: string, name: string): Promise<void> {
                       v-model="scanForm.path"
                       type="text"
                       class="scan-input path-input"
-                      placeholder="服务端物理路径（如 D:/Media 或 /media）"
+                      :placeholder="scanForm.storageProvider === 'local' ? '服务端物理路径（如 D:/Media 或 /media）' : '网盘挂载目录（如 /电影 或 /）'"
                     />
                     <button
                       type="button"
                       class="dir-picker-icon-btn"
-                      title="打开服务端目录选择窗口"
+                      :title="scanForm.storageProvider === 'local' ? '打开服务端目录选择窗口' : '打开网盘目录选择窗口'"
                       @click="openDirPicker"
                     >
                       📁
@@ -1173,8 +1521,12 @@ async function deleteSingleLiveSource(id: string, name: string): Promise<void> {
 
               <div class="scan-options-row">
                 <label class="scan-checkbox-label">
-                  <input v-model="retryFailedOnly" type="checkbox" />
-                  <span>仅重试上次失败条目 (retry_failed)</span>
+                  <input v-model="retryFailedOnly" type="checkbox" :disabled="forceRescrape" />
+                  <span>仅重试失败条目</span>
+                </label>
+                <label class="scan-checkbox-label" title="覆盖重置已完成状态，重新抓取全部条目与图片">
+                  <input v-model="forceRescrape" type="checkbox" />
+                  <span style="color: #60a5fa; font-weight: 500;">🔄 强制全量重新刮削 (覆盖已完成项/重拉海报)</span>
                 </label>
 
                 <div class="scan-btn-group">
@@ -1182,10 +1534,10 @@ async function deleteSingleLiveSource(id: string, name: string): Promise<void> {
                     type="button"
                     class="btn-start-scan"
                     :disabled="scraping"
-                    title="立即向服务端提交异步刮削任务"
-                    @click="triggerManualScrape"
+                    :title="forceRescrape ? '强制重新刮削全量影视并下载海报' : '立即向服务端提交异步刮削任务'"
+                    @click="triggerManualScrape(forceRescrape)"
                   >
-                    <span>{{ scraping ? '正在提交...' : '🚀 开始手动刮削' }}</span>
+                    <span>{{ scraping ? '正在提交...' : (forceRescrape ? '🔄 强制全量重刮' : '🚀 开始手动刮削') }}</span>
                   </button>
                 </div>
               </div>
@@ -1430,12 +1782,23 @@ async function deleteSingleLiveSource(id: string, name: string): Promise<void> {
                       最后同步: {{ s.last_sync_at ? new Date(s.last_sync_at).toLocaleString() : '未同步' }}
                     </span>
                   </div>
-                  <div v-if="s.sync_error" class="live-source-err">
-                    ⚠️ {{ s.sync_error }}
+                  <div
+                    v-if="s.sync_error"
+                    :class="isProbeSuccess(s.sync_error) ? 'live-source-info' : 'live-source-err'"
+                  >
+                    {{ isProbeSuccess(s.sync_error) ? '📡 ' : '⚠️ ' }}{{ s.sync_error }}
                   </div>
                 </div>
 
                 <div class="live-source-actions">
+                  <button
+                    type="button"
+                    class="btn-live-probe"
+                    :disabled="probingSourceId === s.id || liveBusy"
+                    @click="probeSingleLiveSource(s.id)"
+                  >
+                    {{ probingSourceId === s.id ? '检测中...' : '🔍 重新检测' }}
+                  </button>
                   <button
                     type="button"
                     class="btn-live-sync"
@@ -1764,10 +2127,12 @@ async function deleteSingleLiveSource(id: string, name: string): Promise<void> {
       </div>
     </div>
 
-    <!-- 服务端文件系统物理路径选择弹窗 -->
+    <!-- 服务端物理磁盘与云盘存储目录选择弹窗 -->
     <DirectoryPickerModal
       v-model="showDirPicker"
       :initial-path="scanForm.path"
+      :storage-id="scanForm.storageProvider"
+      :storage-accounts="storageAccounts"
       @select="onDirSelected"
     />
   </div>
@@ -2272,6 +2637,365 @@ async function deleteSingleLiveSource(id: string, name: string): Promise<void> {
   .hw-grid {
     grid-template-columns: 1fr;
   }
+}
+
+/* ─────────────────────────────────────────────────────────────
+ * 云盘与多存储源管理
+ * ───────────────────────────────────────────────────────────── */
+.storage-accounts-card {
+  margin: 14px 0;
+  padding: 18px 20px;
+  background: var(--panel2);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.2);
+}
+
+.card-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 16px;
+  flex-wrap: wrap;
+}
+
+.card-title {
+  margin: 0;
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--text);
+}
+
+.card-sub {
+  margin: 4px 0 0;
+  font-size: 12.5px;
+  color: var(--muted);
+  line-height: 1.5;
+}
+
+.btn-add-storage {
+  padding: 6px 14px;
+  background: linear-gradient(135deg, var(--purple), #5334db);
+  border: none;
+  border-radius: 8px;
+  color: #fff;
+  font-size: 12.5px;
+  font-weight: 500;
+  cursor: pointer;
+  box-shadow: 0 3px 12px rgba(121, 91, 255, 0.35);
+  transition: all 0.15s ease;
+  flex-shrink: 0;
+}
+
+.btn-add-storage:hover {
+  background: linear-gradient(135deg, var(--purple2), var(--purple));
+  box-shadow: 0 4px 16px rgba(121, 91, 255, 0.45);
+}
+
+.storage-add-box {
+  margin-top: 16px;
+  padding: 16px;
+  background: var(--panel3);
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.preset-pill-list {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.preset-title {
+  font-size: 12px;
+  color: var(--muted);
+}
+
+.preset-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 10px;
+  background: var(--panel2);
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  color: var(--text);
+  font-size: 12px;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.preset-pill:hover {
+  border-color: var(--cyan);
+  background: rgba(87, 200, 245, 0.08);
+}
+
+.preset-pill.active {
+  background: rgba(87, 200, 245, 0.15);
+  border-color: var(--cyan);
+  color: var(--cyan);
+  font-weight: 500;
+}
+
+.storage-form-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+}
+
+.storage-form-grid .span-2 {
+  grid-column: span 2;
+}
+
+.form-group {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.form-label {
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--muted);
+}
+
+.input-field {
+  width: 100%;
+  padding: 8px 12px;
+  background: var(--bg);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  color: var(--text);
+  font-size: 13px;
+  transition: border-color 0.15s ease;
+}
+
+.input-field:focus {
+  border-color: var(--cyan);
+  outline: none;
+}
+
+.checkbox-label {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+  color: var(--muted);
+  cursor: pointer;
+}
+
+.storage-form-actions {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+  padding-top: 8px;
+  border-top: 1px solid rgba(255, 255, 255, 0.05);
+}
+
+.flex-spacer {
+  flex: 1;
+}
+
+.test-result-box {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12.5px;
+  padding: 4px 10px;
+  border-radius: 6px;
+}
+
+.test-result-box.ok {
+  color: var(--good);
+  background: rgba(46, 204, 113, 0.12);
+  border: 1px solid rgba(46, 204, 113, 0.25);
+}
+
+.test-result-box.err {
+  color: #f87171;
+  background: rgba(248, 113, 113, 0.12);
+  border: 1px solid rgba(248, 113, 113, 0.25);
+}
+
+.latency-tag {
+  font-size: 11px;
+  padding: 1px 5px;
+  border-radius: 4px;
+  background: rgba(255, 255, 255, 0.1);
+  color: #fff;
+}
+
+.action-buttons {
+  display: flex;
+  gap: 10px;
+}
+
+.btn-test-conn {
+  padding: 7px 14px;
+  background: var(--panel2);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  color: var(--cyan);
+  font-size: 12.5px;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.btn-test-conn:hover:not(:disabled) {
+  background: rgba(87, 200, 245, 0.12);
+  border-color: var(--cyan);
+}
+
+.btn-test-conn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.btn-save-storage {
+  padding: 7px 16px;
+  background: linear-gradient(135deg, var(--purple), #5334db);
+  border: none;
+  border-radius: 8px;
+  color: #fff;
+  font-size: 12.5px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.btn-save-storage:hover:not(:disabled) {
+  background: linear-gradient(135deg, var(--purple2), var(--purple));
+}
+
+.btn-save-storage:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.configured-storages-list {
+  margin-top: 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.storage-account-card {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 10px 14px;
+  background: var(--panel3);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  gap: 12px;
+}
+
+.account-card-left {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-width: 0;
+}
+
+.acc-icon-badge {
+  font-size: 20px;
+  flex-shrink: 0;
+}
+
+.acc-info {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  min-width: 0;
+}
+
+.acc-title-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.acc-title-row strong {
+  font-size: 13.5px;
+  color: var(--text);
+}
+
+.acc-driver-chip {
+  font-size: 10.5px;
+  padding: 1px 6px;
+  border-radius: 4px;
+  background: rgba(87, 200, 245, 0.12);
+  color: var(--cyan);
+  border: 1px solid rgba(87, 200, 245, 0.25);
+}
+
+.acc-direct-chip {
+  font-size: 10.5px;
+  padding: 1px 6px;
+  border-radius: 4px;
+  background: rgba(46, 204, 113, 0.12);
+  color: var(--good);
+  border: 1px solid rgba(46, 204, 113, 0.25);
+}
+
+.acc-endpoint {
+  font-size: 11.5px;
+  color: var(--muted2);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.btn-delete-acc {
+  padding: 4px 10px;
+  background: transparent;
+  border: 1px solid rgba(248, 113, 113, 0.25);
+  color: #f87171;
+  border-radius: 6px;
+  font-size: 11.5px;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.btn-delete-acc:hover {
+  background: rgba(248, 113, 113, 0.12);
+  border-color: #f87171;
+}
+
+.empty-storage-tip {
+  margin-top: 12px;
+  padding: 14px;
+  background: rgba(255, 255, 255, 0.02);
+  border: 1px dashed var(--line);
+  border-radius: 8px;
+  font-size: 12px;
+  color: var(--muted);
+  text-align: center;
+}
+
+.action-feedback-box {
+  margin-top: 10px;
+  padding: 8px 12px;
+  border-radius: 6px;
+  font-size: 12px;
+}
+
+.action-feedback-box.ok {
+  color: var(--good);
+  background: rgba(46, 204, 113, 0.1);
+  border: 1px solid rgba(46, 204, 113, 0.25);
+}
+
+.action-feedback-box.err {
+  color: #f87171;
+  background: rgba(248, 113, 113, 0.1);
+  border: 1px solid rgba(248, 113, 113, 0.25);
 }
 
 /* ─────────────────────────────────────────────────────────────
@@ -2960,11 +3684,43 @@ async function deleteSingleLiveSource(id: string, name: string): Promise<void> {
   display: inline-block;
 }
 
+.live-source-info {
+  font-size: 12px;
+  color: #38bdf8;
+  background: rgba(56, 189, 248, 0.12);
+  border: 1px solid rgba(56, 189, 248, 0.25);
+  padding: 4px 10px;
+  border-radius: 6px;
+  display: inline-block;
+}
+
 .live-source-actions {
   display: flex;
   align-items: center;
   gap: 8px;
   flex-shrink: 0;
+}
+
+.btn-live-probe {
+  padding: 6px 14px;
+  border-radius: 8px;
+  background: rgba(168, 85, 247, 0.12);
+  border: 1px solid rgba(168, 85, 247, 0.3);
+  color: #c084fc;
+  font-size: 12px;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.btn-live-probe:hover:not(:disabled) {
+  background: rgba(168, 85, 247, 0.22);
+  border-color: rgba(168, 85, 247, 0.5);
+  color: #e9d5ff;
+}
+
+.btn-live-probe:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
 }
 
 .btn-live-sync {

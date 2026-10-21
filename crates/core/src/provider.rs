@@ -41,6 +41,17 @@ pub trait StorageProvider: Send + Sync {
 
     async fn rename(&self, from: &str, to: &str) -> Result<()>;
     async fn delete(&self, path: &str) -> Result<()>;
+
+    /// 获取文件的直接访问/下载 URL（如 WebDAV 或网盘直链）。
+    /// 如果返回 Some(url)，播放器可选择发起 302 重定向直连播放。
+    async fn get_direct_url(&self, _path: &str) -> Result<Option<String>> {
+        Ok(None)
+    }
+
+    /// 是否为远程存储。远程存储在扫描和探测时应采用轻量 Range 探头，避免全量下载。
+    fn is_remote(&self) -> bool {
+        false
+    }
 }
 
 // ─────────────────────────────────────────────────────────────

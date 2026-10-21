@@ -378,6 +378,11 @@ export function syncLiveSource(id: string): Promise<{ source_id: string; channel
   return post<{ source_id: string; channels: number }>(`/live/sources/${id}/sync`)
 }
 
+/** 重新探测指定直播源的频道连通性并过滤失效频道。 */
+export function probeLiveSource(id: string): Promise<{ ok: boolean }> {
+  return post<{ ok: boolean }>(`/live/sources/${id}/probe`)
+}
+
 export function listLiveChannels(): Promise<LiveChannel[]> {
   return request<LiveChannel[]>('/live/channels')
 }
@@ -581,6 +586,7 @@ export interface CreateLibraryRequest {
   name: string
   path: string
   kind?: MediaKind
+  storage_provider?: string
 }
 
 /**
@@ -629,4 +635,108 @@ export function listScrapeRuns(): Promise<ScrapeRunView[]> {
 export function getScrapeStats(libraryId?: string): Promise<JobStats> {
   return request<JobStats>(`/scrape/stats${qs({ library_id: libraryId })}`)
 }
+
+/**
+ * 人工确认或强制按指定 provider/provider_id 重新识别某个条目。
+ */
+export function identify(
+  id: string,
+  req: { provider: string; provider_id: string },
+): Promise<void> {
+  return post<void>(`/items/${id}/identify`, req)
+}
+
+// ─────────────────────────────────────────────────────────────
+// 存储源管理（Storage Accounts / WebDAV / 百度网盘 / 夸克 / 迅雷 / 移动云盘）
+// ─────────────────────────────────────────────────────────────
+
+export interface StorageAccount {
+  id: string
+  name: string
+  driver: 'local' | 'webdav' | 'alist' | string
+  endpoint: string
+  auth_type: 'none' | 'basic' | 'bearer' | string
+  username?: string | null
+  password?: string | null
+  root_path: string
+  direct_stream: boolean
+  extra_headers?: Record<string, unknown>
+  created_at: string
+  updated_at: string
+}
+
+export interface CreateStorageRequest {
+  name: string
+  driver: string
+  endpoint: string
+  auth_type?: string
+  username?: string
+  password?: string
+  root_path?: string
+  direct_stream?: boolean
+  extra_headers?: Record<string, unknown>
+}
+
+export interface UpdateStorageRequest {
+  name?: string
+  endpoint?: string
+  auth_type?: string
+  username?: string
+  password?: string
+  root_path?: string
+  direct_stream?: boolean
+  extra_headers?: Record<string, unknown>
+}
+
+export interface TestStorageRequest {
+  driver: string
+  endpoint: string
+  auth_type?: string
+  username?: string
+  password?: string
+  root_path?: string
+}
+
+export interface TestStorageResponse {
+  ok: boolean
+  message: string
+  latency_ms?: number | null
+}
+
+export interface StorageEntry {
+  path: string
+  name: string
+  is_dir: boolean
+  size?: number | null
+  modified_ns?: number | null
+}
+
+export function listStorageAccounts(): Promise<StorageAccount[]> {
+  return request<StorageAccount[]>('/storages')
+}
+
+export function createStorageAccount(req: CreateStorageRequest): Promise<StorageAccount> {
+  return post<StorageAccount>('/storages', req)
+}
+
+export function getStorageAccount(id: string): Promise<StorageAccount> {
+  return request<StorageAccount>(`/storages/${id}`)
+}
+
+export function updateStorageAccount(id: string, req: UpdateStorageRequest): Promise<StorageAccount> {
+  return put<StorageAccount>(`/storages/${id}`, req)
+}
+
+export function deleteStorageAccount(id: string): Promise<{ ok: boolean }> {
+  return del<{ ok: boolean }>(`/storages/${id}`)
+}
+
+export function testStorageConnection(req: TestStorageRequest): Promise<TestStorageResponse> {
+  return post<TestStorageResponse>('/storages/test', req)
+}
+
+export function browseStorage(id: string, path?: string): Promise<StorageEntry[]> {
+  return request<StorageEntry[]>(`/storages/${id}/browse${qs({ path })}`)
+}
+
 

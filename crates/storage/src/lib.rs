@@ -9,6 +9,9 @@
 //! 这四条不是装饰品：媒体库路径来自用户输入，
 //! 而 WhatMedia 是一个**长期运行、对外开放 HTTP 端口**的服务。
 
+pub mod webdav;
+pub use webdav::{WebDavAuth, WebDavConfig, WebDavStorage};
+
 use async_trait::async_trait;
 use std::io::SeekFrom;
 use std::path::{Component, Path, PathBuf};

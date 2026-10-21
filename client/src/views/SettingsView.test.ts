@@ -90,6 +90,20 @@ const mockLiveSources = [
   },
 ]
 
+const mockStorageAccounts = [
+  {
+    id: 'storage-baidu',
+    name: '百度网盘',
+    driver: 'webdav',
+    endpoint: 'http://127.0.0.1:5244/dav/baidu',
+    auth_type: 'basic',
+    username: 'admin',
+    direct_stream: true,
+    created_at: '2026-10-21T00:00:00Z',
+    updated_at: '2026-10-21T00:00:00Z',
+  },
+]
+
 const standardHandlers: Array<[string, () => unknown]> = [
   ['/health', () => mockHealth],
   ['/hardware/profile', () => mockHardware],
@@ -99,6 +113,7 @@ const standardHandlers: Array<[string, () => unknown]> = [
   ['/scrape/stats', () => mockJobStats],
   ['/scrape/runs', () => []],
   ['/live/sources', () => mockLiveSources],
+  ['/storages', () => mockStorageAccounts],
 ]
 
 function mountSettings(routeQuery: Record<string, string> = {}) {
@@ -675,6 +690,7 @@ describe('SettingsView', () => {
     expect(scrapeCalledWith).toEqual({
       library_id: null,
       retry_failed: false,
+      force: false,
     })
     expect(w.text()).toContain('刮削任务已受理')
     expect(w.text()).toContain('42 项条目')
@@ -801,6 +817,90 @@ describe('SettingsView', () => {
     expect(liveSection.text()).toContain('添加直播订阅源')
     expect(liveSection.text()).toContain('GuoVin 直播源')
     expect(liveSection.text()).toContain('150 个频道')
+  })
+
+  it('展示云盘与多存储源管理模块，支持展示已配置存储源并切换预设', async () => {
+    stubFetch(standardHandlers)
+    const w = mountSettings({ tab: 'storage' })
+    await flushPromises()
+
+    expect(w.text()).toContain('云盘与多存储源管理')
+    expect(w.text()).toContain('百度网盘')
+    expect(w.text()).toContain('http://127.0.0.1:5244/dav/baidu')
+
+    // 点击添加存储源按钮展开表单
+    const addBtn = w.find('.btn-add-storage')
+    expect(addBtn.exists()).toBe(true)
+    await addBtn.trigger('click')
+    await flushPromises()
+
+    // 检查预设按钮存在
+    const pills = w.findAll('.preset-pill')
+    expect(pills.length).toBeGreaterThanOrEqual(4)
+    expect(w.text()).toContain('夸克网盘')
+    expect(w.text()).toContain('迅雷云盘')
+  })
+
+  it('保存媒体库时若选择云盘存储源，正确携带 storage_provider 参数', async () => {
+    let createLibraryPayload: unknown = null
+    globalThis.fetch = vi.fn((url: string | URL | Request, init?: RequestInit) => {
+      const u = String(url)
+      if (u.includes('/libraries') && init?.method === 'POST') {
+        createLibraryPayload = JSON.parse(String(init?.body))
+        return Promise.resolve({
+          ok: true,
+          status: 200,
+          text: () =>
+            Promise.resolve(
+              JSON.stringify({
+                id: 'lib-cloud-1',
+                name: '电影',
+                root_path: '/电影',
+                storage_provider: 'storage-baidu',
+              }),
+            ),
+        } as Response)
+      }
+      for (const [needle, h] of standardHandlers) {
+        if (u.includes(needle)) {
+          return Promise.resolve({
+            ok: true,
+            status: 200,
+            text: () => Promise.resolve(JSON.stringify(h())),
+          } as Response)
+        }
+      }
+      return Promise.resolve({
+        ok: true,
+        status: 200,
+        text: () => Promise.resolve('[]'),
+      } as Response)
+    }) as unknown as typeof fetch
+
+    const w = mountSettings({ tab: 'storage' })
+    await flushPromises()
+
+    // 选择云端存储源
+    const select = w.find('.scan-select')
+    expect(select.exists()).toBe(true)
+    await select.setValue('storage-baidu')
+
+    // 输入网盘路径
+    const pathInput = w.find('.path-input')
+    await pathInput.setValue('/电影')
+
+    // 点击保存媒体库
+    const saveBtn = w.find('.btn-save-lib')
+    await saveBtn.trigger('click')
+    await flushPromises()
+
+    expect(createLibraryPayload).toEqual({
+      name: '电影',
+      path: '/电影',
+      storage_provider: 'storage-baidu',
+    })
+    expect(w.text()).toContain('已成功持久化保存')
+    expect(w.text()).toContain('百度网盘')
   })
 })
 

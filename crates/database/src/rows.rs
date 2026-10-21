@@ -8,7 +8,7 @@ use sqlx::FromRow;
 use uuid::Uuid;
 use whatmedia_core::{
     AudioCodec, Container, HdrType, Id, Library, MediaFile, MediaItem, MediaKind, MediaStream,
-    MediaVersion, Season, Series, StreamType, SubtitleCodec, VideoCodec,
+    MediaVersion, Season, Series, StorageAccount, StreamType, SubtitleCodec, VideoCodec,
 };
 
 pub(crate) fn to_id(s: &str) -> Option<Id> {
@@ -393,6 +393,43 @@ impl SeasonRow {
             series_id: to_id(&self.series_id)?,
             season_number: self.season_number,
             title: self.title,
+        })
+    }
+}
+
+#[derive(Debug, Clone, FromRow)]
+pub struct StorageAccountRow {
+    pub id: String,
+    pub name: String,
+    pub driver: String,
+    pub endpoint: String,
+    pub auth_type: String,
+    pub username: Option<String>,
+    pub password: Option<String>,
+    pub root_path: String,
+    pub direct_stream: i64,
+    pub extra_headers: String,
+    pub created_at: String,
+    pub updated_at: String,
+}
+
+impl StorageAccountRow {
+    pub fn into_domain(self) -> Option<StorageAccount> {
+        let extra_headers = serde_json::from_str(&self.extra_headers)
+            .unwrap_or_else(|_| serde_json::json!({}));
+        Some(StorageAccount {
+            id: to_id(&self.id)?,
+            name: self.name,
+            driver: self.driver,
+            endpoint: self.endpoint,
+            auth_type: self.auth_type,
+            username: self.username,
+            password: self.password,
+            root_path: self.root_path,
+            direct_stream: self.direct_stream != 0,
+            extra_headers,
+            created_at: to_time(&self.created_at)?,
+            updated_at: to_time(&self.updated_at)?,
         })
     }
 }
