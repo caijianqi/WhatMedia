@@ -58,7 +58,7 @@ pub trait StorageProvider: Send + Sync {
 // ② MetadataProvider —— 必须 Provider 化，不得绑定单一数据源
 // ─────────────────────────────────────────────────────────────
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
 #[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 pub struct MetadataQuery {
     pub title: String,
@@ -67,6 +67,8 @@ pub struct MetadataQuery {
     /// 集标题。动漫里 `Frieren - 07` 的目录提示有时比剧名更准。
     #[serde(default)]
     pub episode_title: Option<String>,
+    #[serde(default)]
+    pub kind: Option<crate::MediaKind>,
 }
 
 /// 一次刮削能拿到的全部信息。

@@ -735,7 +735,6 @@ pub async fn play_channel(State(state): State<AppState>, AxumPath(id): AxumPath<
         seek_ms: 0,
         video: whatmedia_transcoder::VideoAction::Copy,
         audio: whatmedia_transcoder::AudioAction::Copy { index: None },
-        burn: None,
         output: whatmedia_transcoder::OutputSpec::LiveHls {
             dir: dir.to_string_lossy().to_string(),
             seg_seconds: LIVE_SEG_SECONDS,

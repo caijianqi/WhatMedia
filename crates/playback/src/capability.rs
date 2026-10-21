@@ -9,10 +9,8 @@
 
 use serde::{Deserialize, Serialize};
 use whatmedia_core::{
-    AudioCodec, Container, HdrType, MediaFile, MediaStream, StreamType, SubtitleCodec, VideoCodec,
+    AudioCodec, Container, HdrType, MediaFile, MediaStream, StreamType, VideoCodec,
 };
-
-use whatmedia_subtitle::ExternalSubtitle;
 
 // ─────────────────────────────────────────────────────────────
 // 客户端能力
@@ -31,9 +29,6 @@ pub struct ClientCapability {
     pub containers: Vec<Container>,
     pub video_codecs: Vec<VideoCodec>,
     pub audio_codecs: Vec<AudioCodec>,
-    /// 能自己渲染的字幕格式（不含位图，位图看 `supports_bitmap_subtitle`）。
-    pub subtitle_codecs: Vec<SubtitleCodec>,
-    pub supports_bitmap_subtitle: bool,
     pub max_bitrate_kbps: Option<u32>,
     pub max_width: Option<u32>,
     pub max_height: Option<u32>,
@@ -96,8 +91,6 @@ impl ClientCapability {
             containers: vec![Container::Mp4, Container::Webm],
             video_codecs: vec![VideoCodec::H264, VideoCodec::Vp9],
             audio_codecs: vec![AudioCodec::Aac, AudioCodec::Opus, AudioCodec::Mp3],
-            subtitle_codecs: vec![SubtitleCodec::Vtt],
-            supports_bitmap_subtitle: false,
             max_bitrate_kbps: None,
             max_width: None,
             max_height: None,
@@ -140,13 +133,6 @@ impl ClientCapability {
                 AudioCodec::Opus,
                 AudioCodec::Mp3,
             ],
-            subtitle_codecs: vec![
-                SubtitleCodec::Srt,
-                SubtitleCodec::Ass,
-                SubtitleCodec::Ssa,
-                SubtitleCodec::Vtt,
-            ],
-            supports_bitmap_subtitle: true,
             max_bitrate_kbps: None,
             max_width: None,
             max_height: None,
@@ -180,8 +166,6 @@ impl ClientCapability {
                 AudioCodec::Eac3,
                 AudioCodec::Opus,
             ],
-            subtitle_codecs: vec![SubtitleCodec::Srt, SubtitleCodec::Vtt, SubtitleCodec::Ass],
-            supports_bitmap_subtitle: false,
             max_bitrate_kbps: Some(40_000),
             max_width: Some(3840),
             max_height: Some(2160),
@@ -205,8 +189,6 @@ impl ClientCapability {
                 AudioCodec::Eac3,
                 AudioCodec::Flac,
             ],
-            subtitle_codecs: vec![SubtitleCodec::Vtt],
-            supports_bitmap_subtitle: false,
             max_bitrate_kbps: None,
             max_width: None,
             max_height: None,
@@ -225,8 +207,6 @@ impl ClientCapability {
             containers: vec![Container::Ts],
             video_codecs: vec![VideoCodec::H264],
             audio_codecs: vec![AudioCodec::Aac],
-            subtitle_codecs: vec![],
-            supports_bitmap_subtitle: false,
             max_bitrate_kbps: Some(8_000),
             max_width: Some(1280),
             max_height: Some(720),
@@ -276,27 +256,14 @@ pub struct AudioTrack {
     pub is_default: bool,
 }
 
-/// 片源的字幕轨（内嵌）。
-#[derive(Debug, Clone)]
-pub struct SubtitleTrack {
-    pub index: i32,
-    pub codec: SubtitleCodec,
-    pub language: Option<String>,
-    pub is_forced: bool,
-    pub is_default: bool,
-}
-
 /// 从 `MediaFile + MediaStream[]` 派生出的片源画像。
 #[derive(Debug, Clone, Default)]
 pub struct MediaCapability {
     pub container: Option<Container>,
     pub video: Option<VideoTrack>,
     pub audio: Vec<AudioTrack>,
-    pub subtitles: Vec<SubtitleTrack>,
     pub duration_ms: Option<i64>,
     pub bitrate_kbps: Option<u32>,
-    /// 外挂字幕（在文件旁边扫出来的）。
-    pub external_subtitles: Vec<ExternalSubtitle>,
 }
 
 impl MediaCapability {
@@ -308,14 +275,12 @@ impl MediaCapability {
     pub fn from_streams(
         file: &MediaFile,
         streams: &[MediaStream],
-        external: Vec<ExternalSubtitle>,
     ) -> Self {
         Self::from_parts(
             file.container.clone(),
             file.duration_ms,
             file.bitrate.map(|b| (b / 1000) as u32),
             streams,
-            external,
         )
     }
 
@@ -329,13 +294,11 @@ impl MediaCapability {
         duration_ms: Option<i64>,
         bitrate_kbps: Option<u32>,
         streams: &[MediaStream],
-        external: Vec<ExternalSubtitle>,
     ) -> Self {
         let mut cap = MediaCapability {
             container,
             duration_ms,
             bitrate_kbps,
-            external_subtitles: external,
             ..Default::default()
         };
 
@@ -364,22 +327,11 @@ impl MediaCapability {
                         is_default: s.is_default,
                     });
                 }
-                StreamType::Subtitle => {
-                    cap.subtitles.push(SubtitleTrack {
-                        index: s.index,
-                        codec: whatmedia_subtitle::codec_from_probe_name(
-                            s.codec.as_deref().unwrap_or(""),
-                        ),
-                        language: s.language.clone(),
-                        is_forced: s.is_forced,
-                        is_default: s.is_default,
-                    });
-                }
                 _ => {}
             }
         }
 
-        // 没有视频轨的"媒体文件"（纯音频 / 字幕包）也要能构造出来，
+        // 没有视频轨的"媒体文件"（纯音频）也要能构造出来，
         // 只不过决策时会因为没有画面而走 Unsupported。
         cap
     }
@@ -445,11 +397,10 @@ mod tests {
     use super::*;
 
     #[test]
-    fn web_client_rejects_10bit_and_pgs() {
+    fn web_client_rejects_10bit() {
         let c = ClientCapability::preset_web();
         assert!(c.supports_video(&VideoCodec::H264));
         assert!(!c.supports_video(&VideoCodec::Hevc));
-        assert!(!c.supports_bitmap_subtitle);
         assert_eq!(c.max_bit_depth, 8);
         assert!(!c.supports_hdr(HdrType::Hdr10));
         // SDR 永远支持。
@@ -460,7 +411,6 @@ mod tests {
     fn mpv_plays_almost_everything() {
         let c = ClientCapability::preset_mpv();
         assert!(c.supports_video(&VideoCodec::Av1));
-        assert!(c.supports_bitmap_subtitle);
         assert!(c.supports_audio(&AudioCodec::TrueHd));
         assert!(c.supports_container(&Container::Mkv));
         assert!(c.supports_hdr(HdrType::DolbyVision));

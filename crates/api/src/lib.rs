@@ -1058,6 +1058,7 @@ fn guarded_routes(state: AppState) -> Router {
         .route("/api/v1/scrape/runs", get(metadata::scrape_runs))
         .route("/api/v1/metadata/review", get(metadata::review_queue))
         .route("/api/v1/metadata/candidates", get(metadata::candidates))
+        .route("/api/v1/metadata/image_proxy", get(metadata::image_proxy))
         .route("/api/v1/metadata/cache/stats", get(metadata::cache_stats))
         .route("/api/v1/metadata/cache/evict", post(metadata::cache_evict))
         .route("/api/v1/items/{id}/identify", post(metadata::identify))
@@ -1084,14 +1085,6 @@ fn guarded_routes(state: AppState) -> Router {
         .route("/api/v1/playback/resume", get(playback::resume_list))
         .route("/api/v1/playback/streams", get(playback::list_streams))
         .route("/api/v1/hardware/profile", get(playback::hardware_profile))
-        .route(
-            "/api/v1/items/{id}/subtitles",
-            get(playback::item_subtitles),
-        )
-        .route(
-            "/api/v1/subtitles/external",
-            post(playback::external_subtitle),
-        )
         .route("/api/v1/stream/{id}", get(playback::stream_direct))
         .route("/api/v1/stream/{id}/remux", get(playback::stream_remux))
         .route("/api/v1/hls/{job}/master.m3u8", get(playback::hls_master))

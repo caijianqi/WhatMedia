@@ -60,7 +60,6 @@ fn request(input: &str) -> StreamRequest {
             tonemap_to: None,
         },
         audio: AudioAction::None,
-        burn: None,
         output: OutputSpec::PipeTs,
         accel: None,
         live: false,

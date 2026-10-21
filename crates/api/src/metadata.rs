@@ -657,6 +657,65 @@ pub async fn item_image(
         .into_response()
 }
 
+#[derive(Debug, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
+pub struct ImageProxyQuery {
+    pub url: String,
+}
+
+/// 远程图片直连代理端点，避免浏览器直接请求外网 CDN（如 TMDB image.tmdb.org）被拦截或超时。
+#[cfg_attr(
+    feature = "openapi",
+    utoipa::path(
+        get,
+        path = "/api/v1/metadata/image_proxy",
+        params(
+            ("url" = String, Query, description = "远程图片绝对 URL"),
+        ),
+        responses(
+            (status = 200, description = "图片流", content_type = "image/*", body = Vec<u8>),
+        ),
+        tag = "metadata"
+    )
+)]
+pub async fn image_proxy(
+    State(state): State<AppState>,
+    Query(q): Query<ImageProxyQuery>,
+) -> Response {
+    let url = q.url.trim();
+    if !url.starts_with("http://") && !url.starts_with("https://") {
+        return (StatusCode::BAD_REQUEST, "Invalid URL").into_response();
+    }
+
+    if let Some(cache) = &state.images {
+        if let Some(p) = download_into(cache, url, "poster").await {
+            let path_str = p.to_string_lossy().to_string();
+            if let Ok(bytes) = tokio::fs::read(&p).await {
+                return (
+                    StatusCode::OK,
+                    [
+                        (header::CONTENT_TYPE, content_type_of(&path_str)),
+                        (header::CACHE_CONTROL, "public, max-age=86400"),
+                    ],
+                    bytes,
+                )
+                    .into_response();
+            }
+        }
+    }
+
+    let svg = placeholder_svg("WhatMedia", 300, 450);
+    (
+        StatusCode::OK,
+        [
+            (header::CONTENT_TYPE, "image/svg+xml"),
+            (header::CACHE_CONTROL, "public, max-age=3600"),
+        ],
+        svg,
+    )
+        .into_response()
+}
+
 async fn download_into(cache: &ImageCache, url: &str, kind: &str) -> Option<std::path::PathBuf> {
     let transport = whatmedia_metadata::ReqwestTransport::new();
     let key = ImageCache::key_for(url, kind);

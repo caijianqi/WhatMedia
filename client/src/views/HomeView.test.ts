@@ -144,14 +144,13 @@ describe('HomeView', () => {
     expect(w2.text()).not.toContain('一段简介')
   })
 
-  it('空库时呈现接入指引而不是空白，且不凭空冒出任何影片', async () => {
+  it('空库时呈现类型浏览分类而不是空白，且不凭空冒出任何影片', async () => {
     stubFetch(emptyHandlers)
 
     const w = mountHome()
     await flushPromises()
 
-    expect(w.text()).toContain('你的家庭影院')
-    expect(w.text()).toContain('连接与设置媒体库')
+    expect(w.text()).toContain('按类型浏览')
 
     // 反向断言。库是空的却显示出片名，曾经真的发生过：
     // 首页在接口返回空数组时回退到一份写死的演示数据集，

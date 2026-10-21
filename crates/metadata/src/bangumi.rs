@@ -260,9 +260,7 @@ mod tests {
         let r = p
             .search_series(&MetadataQuery {
                 title: "葬送的芙莉莲".into(),
-                year: None,
-                language: None,
-                episode_title: None,
+                ..Default::default()
             })
             .await
             .unwrap();

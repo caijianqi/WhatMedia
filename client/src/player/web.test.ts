@@ -15,12 +15,9 @@ const caps: PlayerCapabilities = {
   containers: ['mp4', 'webm'],
   videoCodecs: ['h264', 'vp9'],
   audioCodecs: ['aac'],
-  subtitleCodecs: ['vtt'],
-  bitmapSubtitles: false,
   hls: true,
   localFile: false,
   canSwitchAudioTrack: false,
-  canSwitchSubtitleTrack: true,
 }
 
 // jsdom 没有实现播放相关方法，先 stub 掉，否则会抛 "Not implemented"。

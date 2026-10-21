@@ -13,7 +13,7 @@
 
 use regex::Regex;
 use std::sync::LazyLock;
-use whatmedia_core::HdrType;
+use whatmedia_core::{HdrType, MediaKind};
 
 /// 解析结果。所有字段都是"尽力而为"，缺了就 None，绝不猜。
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
@@ -34,6 +34,8 @@ pub struct ParsedName {
     pub bit_depth: Option<i32>,
     pub hdr: Option<HdrType>,
     pub release_group: Option<String>,
+    /// 从上级路径或文件名推导的类型倾向（如动画片/动漫 -> Anime）
+    pub kind_hint: Option<MediaKind>,
 }
 
 impl ParsedName {
@@ -234,6 +236,43 @@ fn is_close_bracket(c: char) -> bool {
 pub struct PathHint {
     pub series_title: Option<String>,
     pub season: Option<i32>,
+    pub kind_hint: Option<MediaKind>,
+}
+
+/// 从目录路径推导媒体类型偏好（如 动画片/动漫 -> Anime，纪录片 -> Documentary，电影 -> Movie，电视剧 -> Series）。
+pub fn detect_kind_from_path(dir_path: &std::path::Path) -> Option<MediaKind> {
+    for comp in dir_path.components() {
+        let name = comp.as_os_str().to_string_lossy();
+        let trimmed = name.trim();
+        let lower = trimmed.to_lowercase();
+        // 动画 / 动漫
+        if matches!(
+            lower.as_str(),
+            "动画" | "动画片" | "动漫" | "国漫" | "日漫" | "anime" | "animation" | "cartoons" | "cartoon"
+        ) {
+            return Some(MediaKind::Anime);
+        }
+        // 纪录片
+        if matches!(
+            lower.as_str(),
+            "纪录片" | "纪录" | "记录片" | "documentary" | "documentaries" | "doc"
+        ) {
+            return Some(MediaKind::Documentary);
+        }
+        // 综艺
+        if matches!(lower.as_str(), "综艺" | "variety" | "shows") {
+            return Some(MediaKind::Variety);
+        }
+        // 电影
+        if matches!(lower.as_str(), "电影" | "movie" | "movies" | "films" | "film") {
+            return Some(MediaKind::Movie);
+        }
+        // 电视剧
+        if matches!(lower.as_str(), "电视剧" | "剧集" | "连续剧" | "tv" | "series" | "tv shows") {
+            return Some(MediaKind::Series);
+        }
+    }
+    None
 }
 
 /// 解析中文或阿拉伯数字（支持 1~99 以及 一到十二）。
@@ -287,13 +326,17 @@ pub fn parse_season_dir(name: &str) -> Option<i32> {
 
 /// 从目录路径推导剧名和季号。
 pub fn extract_path_hint(dir_path: &std::path::Path) -> PathHint {
+    let kind_hint = detect_kind_from_path(dir_path);
     let parent = dir_path
         .file_name()
         .map(|n| n.to_string_lossy().to_string())
         .unwrap_or_default();
 
     if parent.is_empty() {
-        return PathHint::default();
+        return PathHint {
+            kind_hint,
+            ..Default::default()
+        };
     }
 
     if let Some(season) = parse_season_dir(&parent) {
@@ -305,11 +348,13 @@ pub fn extract_path_hint(dir_path: &std::path::Path) -> PathHint {
         PathHint {
             series_title: if grand.is_empty() { None } else { Some(grand) },
             season: Some(season),
+            kind_hint,
         }
     } else {
         PathHint {
             series_title: Some(parent),
             season: None,
+            kind_hint,
         }
     }
 }
@@ -392,6 +437,9 @@ pub fn parse_file_in_dir(file_name: &str, dir_name: &str) -> ParsedName {
     let mut p = parse_filename(file_name);
     let path = std::path::Path::new(dir_name);
     let hint = extract_path_hint(path);
+    if p.kind_hint.is_none() {
+        p.kind_hint = hint.kind_hint;
+    }
     if let Some(s) = hint.season {
         if p.season.is_none() {
             p.season = Some(s);
@@ -852,6 +900,16 @@ mod tests {
         assert_eq!(p.title, "Breaking Bad");
         assert_eq!(p.season, Some(2));
         assert_eq!(p.episode, Some(1));
+        assert_eq!(p.kind_hint, Some(MediaKind::Series));
+    }
+
+    #[test]
+    fn anime_path_hierarchy() {
+        let p = parse_file_in_dir("01.mp4", "D:/media/动画片/凡人修仙传");
+        assert_eq!(p.title, "凡人修仙传");
+        assert_eq!(p.season, Some(1));
+        assert_eq!(p.episode, Some(1));
+        assert_eq!(p.kind_hint, Some(MediaKind::Anime));
     }
 }
 

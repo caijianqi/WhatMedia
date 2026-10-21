@@ -26,7 +26,7 @@ use crate::metadata::{
 };
 use crate::playback::{
     AckView, CreateSessionBody, DecideView, HardwareProfileView, HeartbeatBody, ReasonView,
-    SessionView, SubtitleConvertBody, SubtitleItemView, SubtitleView,
+    SessionView,
 };
 use crate::social::{
     BrowseDirView, DirEntryView, FavoritePage, FavoriteState, NotificationList, ReadAllResult,
@@ -83,6 +83,7 @@ use crate::{
         crate::metadata::candidates,
         crate::metadata::cache_stats,
         crate::metadata::cache_evict,
+        crate::metadata::image_proxy,
         crate::metadata::identify,
         crate::metadata::set_locks,
         crate::metadata::item_images,
@@ -95,8 +96,6 @@ use crate::{
         crate::playback::resume_list,
         crate::playback::list_streams,
         crate::playback::hardware_profile,
-        crate::playback::item_subtitles,
-        crate::playback::external_subtitle,
         crate::playback::stream_direct,
         crate::playback::stream_remux,
         crate::playback::hls_master,
@@ -231,14 +230,11 @@ use crate::{
         // ── 播放 ──────────────────────────────────────────
         DecideView,
         ReasonView,
-        SubtitleView,
         SessionView,
         CreateSessionBody,
         HeartbeatBody,
         AckView,
         HardwareProfileView,
-        SubtitleItemView,
-        SubtitleConvertBody,
         whatmedia_database::repo::ResumePoint,
         // ── AI（P7）──────────────────────────────────────
         AiChatRequest,

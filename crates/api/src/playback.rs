@@ -21,14 +21,12 @@ use std::sync::{Arc, Mutex};
 use tokio_util::io::ReaderStream;
 use tracing::warn;
 use whatmedia_core::{
-    ByteRange, Container, HardwareProfile, Id, MediaStream, PlaybackStrategy, StorageProvider,
-    TaskPriority,
+    ByteRange, Container, HardwareProfile, Id, MediaStream, PlaybackStrategy, TaskPriority,
 };
 use whatmedia_database::repo::{FileTarget, StreamSession};
 use whatmedia_playback::{
     decide, ClientCapability, DecisionInput, MediaCapability, PlaybackDecision, ServerCapability,
 };
-use whatmedia_subtitle::{discover_sidecars, ExternalSubtitle};
 use whatmedia_transcoder::{
     build_args, master_playlist, FfmpegRunner, OutputSpec, StreamRequest, TempDirGuard,
     TranscodePool,
@@ -171,7 +169,6 @@ pub struct DecideView {
     pub reasons: Vec<ReasonView>,
     pub client: String,
     pub audio_index: Option<i32>,
-    pub subtitles: Vec<SubtitleView>,
 }
 
 #[derive(Debug, Serialize)]
@@ -179,15 +176,6 @@ pub struct DecideView {
 pub struct ReasonView {
     pub code: String,
     pub message: String,
-}
-
-#[derive(Debug, Serialize)]
-#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
-pub struct SubtitleView {
-    pub track_id: String,
-    pub language: Option<String>,
-    pub mode: String,
-    pub url: Option<String>,
 }
 
 /// `GET /api/v1/playback/decide`
@@ -270,16 +258,6 @@ fn decide_view(item_id: Id, file_id: Id, client: &str, d: &PlaybackDecision) -> 
             .collect(),
         client: client.to_string(),
         audio_index: d.audio_index,
-        subtitles: d
-            .subtitle_plans
-            .iter()
-            .map(|p| SubtitleView {
-                track_id: p.track_id.clone(),
-                language: p.language.clone(),
-                mode: format!("{:?}", p.mode).to_ascii_lowercase(),
-                url: None,
-            })
-            .collect(),
     }
 }
 
@@ -317,7 +295,6 @@ pub struct SessionView {
     /// HLS 用这个。
     pub hls_url: Option<String>,
     pub audio_index: Option<i32>,
-    pub subtitles: Vec<SubtitleView>,
 }
 
 #[cfg_attr(
@@ -440,17 +417,6 @@ pub async fn create_playback_session(
         None
     };
 
-    let subtitles = d
-        .subtitle_plans
-        .iter()
-        .map(|p| SubtitleView {
-            track_id: p.track_id.clone(),
-            language: p.language.clone(),
-            mode: format!("{:?}", p.mode).to_ascii_lowercase(),
-            url: subtitle_url(target.file.id, &p.track_id),
-        })
-        .collect();
-
     (
         StatusCode::CREATED,
         Json(SessionView {
@@ -469,7 +435,6 @@ pub async fn create_playback_session(
             stream_url,
             hls_url,
             audio_index: d.audio_index,
-            subtitles,
         }),
     )
         .into_response()
@@ -766,7 +731,6 @@ pub async fn stream_remux(
                 seek_ms: q.start_ms,
                 video: whatmedia_transcoder::VideoAction::Copy,
                 audio: whatmedia_transcoder::AudioAction::Copy { index: None },
-                burn: None,
                 output: OutputSpec::PipeTs,
                 accel: None,
                 live: false,
@@ -1112,163 +1076,7 @@ pub async fn list_streams(State(state): State<AppState>) -> Response {
     }
 }
 
-// ─────────────────────────────────────────────────────────────
-// 字幕
-// ─────────────────────────────────────────────────────────────
 
-#[derive(Debug, Serialize)]
-#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
-pub struct SubtitleItemView {
-    pub track_id: String,
-    pub codec: String,
-    pub language: Option<String>,
-    pub forced: bool,
-    pub name: Option<String>,
-    pub url: Option<String>,
-}
-
-/// `GET /api/v1/items/{id}/subtitles`
-#[cfg_attr(
-    feature = "openapi",
-    utoipa::path(
-        get,
-        path = "/api/v1/items/{id}/subtitles",
-        params(
-        ("id" = String, Path, description = "条目 id"),
-        ),
-        responses(
-            (status = 200, description = "内嵌 + 外挂字幕", body = Vec<SubtitleItemView>),
-            (status = 404, description = "条目下没有文件", body = crate::ErrorBody),
-            (status = 503, description = "数据库未就绪", body = crate::ErrorBody),
-        ),
-        tag = "playback"
-    )
-)]
-pub async fn item_subtitles(State(state): State<AppState>, AxumPath(id): AxumPath<Id>) -> Response {
-    let db = match state.db_or_503() {
-        Ok(d) => d,
-        Err(r) => return *r,
-    };
-    let files = match whatmedia_database::repo::files_for_item(&db, id).await {
-        Ok(f) => f,
-        Err(e) => return internal(e),
-    };
-    let Some((file, streams)) = files.into_iter().next() else {
-        return error_response(StatusCode::NOT_FOUND, "NOT_FOUND", "条目下没有文件");
-    };
-
-    let external = match external_for(&state, &db, &file.path).await {
-        Ok(v) => v,
-        Err(e) => return internal(e),
-    };
-
-    let mut out: Vec<SubtitleItemView> = Vec::new();
-    for s in streams
-        .iter()
-        .filter(|s| matches!(s.stream_type, whatmedia_core::StreamType::Subtitle))
-    {
-        out.push(SubtitleItemView {
-            track_id: format!("internal:{}", s.index),
-            codec: s.codec.clone().unwrap_or_default(),
-            language: s.language.clone(),
-            forced: s.is_forced,
-            name: s.title.clone(),
-            url: subtitle_url(file.id, &format!("internal:{}", s.index)),
-        });
-    }
-    for e in external {
-        out.push(SubtitleItemView {
-            track_id: format!("external:{}", e.path),
-            codec: format!("{:?}", e.codec).to_ascii_lowercase(),
-            language: e.language.clone(),
-            forced: e.forced,
-            name: Some(e.name.clone()),
-            url: None,
-        });
-    }
-    Json(out).into_response()
-}
-
-#[derive(Debug, Deserialize)]
-#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
-pub struct SubtitleConvertBody {
-    pub path: String,
-    #[serde(default = "default_to")]
-    pub to: String,
-}
-
-fn default_to() -> String {
-    "vtt".to_string()
-}
-
-/// `POST /api/v1/subtitles/external` —— 转换并输出外挂字幕。
-///
-/// 路径走 POST + JSON 而不是 GET 参数：字幕路径含冒号与反斜杠，
-/// 塞在 URL 里既难编码又容易被网关改写。
-#[cfg_attr(
-    feature = "openapi",
-    utoipa::path(
-        post,
-        path = "/api/v1/subtitles/external",
-        request_body = SubtitleConvertBody,
-        responses(
-            (status = 200, description = "转换后的字幕（默认 text/vtt）", content_type = "text/vtt", body = String),
-            (status = 404, description = "字幕不存在或不在库内", body = crate::ErrorBody),
-        ),
-        tag = "playback"
-    )
-)]
-pub async fn external_subtitle(
-    State(state): State<AppState>,
-    Json(body): Json<SubtitleConvertBody>,
-) -> Response {
-    let db = match state.db_or_503() {
-        Ok(d) => d,
-        Err(r) => return *r,
-    };
-
-    // 路径必须落在某个媒体库根内 —— 绝不直接 open 用户给的路径。
-    let storage = match storage_for_path(&state, &db, &body.path).await {
-        Ok(Some(s)) => s,
-        Ok(None) => return bad_request("字幕文件不在任何媒体库内"),
-        Err(r) => return *r,
-    };
-
-    let bytes: Vec<u8> = match storage.read(&body.path).await {
-        Ok(b) => b,
-        Err(e) => return bad_request(e.to_string()),
-    };
-    let text = String::from_utf8_lossy(&bytes);
-
-    let ext = std::path::Path::new(&body.path)
-        .extension()
-        .and_then(|e| e.to_str())
-        .unwrap_or("")
-        .to_ascii_lowercase();
-
-    let cues = match ext.as_str() {
-        "srt" => whatmedia_subtitle::parse_srt(&text),
-        "vtt" => whatmedia_subtitle::parse_vtt(&text),
-        "ass" | "ssa" => whatmedia_subtitle::parse_ass(&text),
-        other => return bad_request(format!("不支持的字幕格式：{other}")),
-    };
-
-    let out = if body.to.eq_ignore_ascii_case("srt") {
-        (
-            whatmedia_subtitle::to_srt(&cues),
-            "text/plain; charset=utf-8",
-        )
-    } else {
-        (whatmedia_subtitle::to_vtt(&cues), "text/vtt; charset=utf-8")
-    };
-
-    (
-        StatusCode::OK,
-        [(header::CONTENT_TYPE, out.1.to_string())],
-        out.0,
-    )
-        .into_response()
-}
 
 // ─────────────────────────────────────────────────────────────
 // 硬件
@@ -1352,9 +1160,9 @@ async fn resolve_file(
     Ok(t)
 }
 
-/// 构造片源画像（含外挂字幕发现）。
+/// 构造片源画像。
 async fn build_media(
-    state: &AppState,
+    _state: &AppState,
     db: &whatmedia_database::Db,
     target: &FileTarget,
 ) -> anyhow::Result<MediaCapability> {
@@ -1365,53 +1173,14 @@ async fn build_media(
         .map(|(_, s)| s)
         .unwrap_or_default();
 
-    let external = external_for(state, db, &target.file.path)
-        .await
-        .unwrap_or_default();
-
     Ok(MediaCapability::from_parts(
         target.file.container.clone(),
         target.file.duration_ms,
         target.file.bitrate.map(|b| (b / 1000) as u32),
         &streams,
-        external,
     ))
 }
 
-async fn external_for(
-    state: &AppState,
-    db: &whatmedia_database::Db,
-    media_path: &str,
-) -> anyhow::Result<Vec<ExternalSubtitle>> {
-    let storage = match storage_for_path(state, db, media_path).await {
-        Ok(Some(s)) => s,
-        Ok(None) => return Ok(Vec::new()),
-        Err(r) => return Err(anyhow::anyhow!("storage 解析失败（HTTP {}）", r.status())),
-    };
-    Ok(discover_sidecars(storage.as_ref(), media_path)
-        .await
-        .unwrap_or_default())
-}
-
-/// 找出路径所属的媒体库 → 对应的 StorageProvider。
-async fn storage_for_path(
-    state: &AppState,
-    db: &whatmedia_database::Db,
-    path: &str,
-) -> anyhow::Result<Option<Arc<whatmedia_storage::LocalStorage>>, Box<Response>> {
-    let libs = match whatmedia_database::repo::list_libraries(db).await {
-        Ok(l) => l,
-        Err(e) => return Err(Box::new(internal(e))),
-    };
-    let p = std::path::Path::new(path);
-    for lib in libs {
-        let root = std::path::Path::new(&lib.root_path);
-        if p.starts_with(root) {
-            return state.storage_for(&lib.root_path).map(Some);
-        }
-    }
-    Ok(None)
-}
 
 /// 回收上次运行遗留的流式输出目录。
 ///
@@ -1459,12 +1228,6 @@ pub async fn reap_idle_streams(state: &AppState, idle_secs: i64) -> anyhow::Resu
 
 fn hls_dir_for(state: &AppState, file_id: Id) -> std::path::PathBuf {
     state.transcode.hls_root.join(file_id.to_string())
-}
-
-fn subtitle_url(file_id: Id, track_id: &str) -> Option<String> {
-    // 外挂字幕走 POST（路径含特殊字符），这里只给内嵌轨生成 GET 链接。
-    let idx = track_id.strip_prefix("internal:")?;
-    Some(format!("/api/v1/stream/{file_id}/subtitle/{idx}"))
 }
 
 fn content_type(c: Option<&Container>) -> String {
@@ -1562,16 +1325,6 @@ mod tests {
         assert_eq!(content_type(None), "application/octet-stream");
     }
 
-    #[test]
-    fn subtitle_url_only_for_internal_tracks() {
-        let id = Id::new_v4();
-        assert_eq!(
-            subtitle_url(id, "internal:3"),
-            Some(format!("/api/v1/stream/{id}/subtitle/3"))
-        );
-        // 外挂字幕路径含冒号与反斜杠，不能进 URL。
-        assert_eq!(subtitle_url(id, "external:/a b/c.srt"), None);
-    }
 
     #[tokio::test]
     async fn registry_stop_cancels_and_removes() {
@@ -1601,7 +1354,6 @@ mod tests {
             seek_ms: 0,
             video: whatmedia_transcoder::VideoAction::Copy,
             audio: whatmedia_transcoder::AudioAction::None,
-            burn: None,
             output: OutputSpec::Hls {
                 dir: "/cache/hls/FILE-ID".into(),
                 seg_seconds: 6,
@@ -1627,7 +1379,6 @@ mod tests {
             seek_ms: 0,
             video: whatmedia_transcoder::VideoAction::Copy,
             audio: whatmedia_transcoder::AudioAction::None,
-            burn: None,
             output: OutputSpec::PipeTs,
             accel: None,
             live: false,

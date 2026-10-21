@@ -8,7 +8,6 @@ rust-version.workspace = true
 [dependencies]
 whatmedia-core = { workspace = true }
 whatmedia-database = { workspace = true }
-whatmedia-subtitle = { path = "../subtitle" }
 whatmedia-transcoder = { path = "../transcoder" }
 anyhow = { workspace = true }
 chrono = { workspace = true }

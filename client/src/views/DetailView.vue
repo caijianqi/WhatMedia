@@ -10,6 +10,7 @@
 import { computed, onMounted, ref, watch } from 'vue'
 import { useRoute } from 'vue-router'
 import EpisodeList from '../components/EpisodeList.vue'
+import IdentifyModal from '../components/IdentifyModal.vue'
 import { toast } from '../stores/toast'
 import * as api from '../api/client'
 import type { CreditsView, DecideView, ItemDetail, SeriesRef } from '../api/client'
@@ -23,6 +24,7 @@ const decision = ref<DecideView | null>(null)
 const resumeMs = ref<number | null>(null)
 const loading = ref(true)
 const error = ref<string | null>(null)
+const identifyModalOpen = ref(false)
 
 /*
  * 演职员与季列表是**附属数据**：它们只在详情页用到，
@@ -287,7 +289,7 @@ const mainQuality = computed(() => {
 
           <div class="detail-content">
             <div class="hero-tags">
-              <span class="tag tag-kind">{{ series ? '电视剧' : (kindLabels[detail.kind] ?? detail.kind) }}</span>
+              <span class="tag tag-kind">{{ detail.kind === 'anime' ? '动画' : (series ? '电视剧' : (kindLabels[detail.kind] ?? detail.kind)) }}</span>
               <span v-if="detail.year ?? series?.year" class="tag tag-year">{{ detail.year ?? series?.year }}</span>
               <span v-if="series" class="tag tag-series">全剧集</span>
             </div>
@@ -369,6 +371,23 @@ const mainQuality = computed(() => {
                 </svg>
                 <span>{{ rescraping ? '刷新中...' : '重新刮削' }}</span>
               </button>
+
+              <!-- 手动识别 / 消歧匹配按钮 -->
+              <button
+                type="button"
+                class="btn btn-secondary btn-identify"
+                title="手动从 TMDB 候选中挑选版本（如动画版 vs 电视剧版）或直接输入 TMDB ID"
+                @click="identifyModalOpen = true"
+              >
+                <svg
+                  viewBox="0 0 24 24"
+                  aria-hidden="true"
+                  style="width: 15px; height: 15px; fill: none; stroke: currentColor; stroke-width: 2;"
+                >
+                  <path d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" stroke-linecap="round" stroke-linejoin="round" />
+                </svg>
+                <span>识别 / 换匹配</span>
+              </button>
             </div>
           </div>
         </div>
@@ -392,7 +411,7 @@ const mainQuality = computed(() => {
           </div>
           <div class="fact">
             <span class="fact-label">内容类型</span>
-            <strong class="fact-value">{{ series ? '电视剧' : (kindLabels[detail.kind] ?? detail.kind) }}</strong>
+            <strong class="fact-value">{{ detail.kind === 'anime' ? '动画' : (series ? '电视剧' : (kindLabels[detail.kind] ?? detail.kind)) }}</strong>
           </div>
           <div class="fact">
             <span class="fact-label">片长 / 规格</span>
@@ -447,6 +466,16 @@ const mainQuality = computed(() => {
         </div>
       </div>
     </div>
+
+    <!-- 重新识别与手动选片消歧弹窗 -->
+    <IdentifyModal
+      :open="identifyModalOpen"
+      :item-id="id"
+      :initial-title="displayTitle"
+      :initial-year="detail?.year ?? series?.year"
+      @close="identifyModalOpen = false"
+      @identified="load"
+    />
   </div>
 </template>
 

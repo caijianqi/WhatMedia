@@ -6,7 +6,7 @@
  * - Eyebrow 横线标语：本周精选 · FEATURED
  * - 标题、评分、年份、分类、4K HDR 元数据分割点
  * - "立即播放"主按钮（带光晕投影）与"查看影片详情"次按钮
- * - 底部标签群（高画质、多音轨、支持字幕）与 22px 轮播长胶囊指示点
+ * - 底部标签群（高画质、多音轨）与 22px 轮播长胶囊指示点
  * - 左右优雅切换翻页控件（支持 aria-label="上一张"/"下一张"）与右下角 WHATMEDIA 水印
  */
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
@@ -159,7 +159,6 @@ onBeforeUnmount(() => {
         <div class="hero-tags">
           <span class="tag">高画质</span>
           <span class="tag">多音轨</span>
-          <span class="tag">支持字幕</span>
         </div>
 
         <!-- 轮播长胶囊指示点 -->
@@ -199,8 +198,6 @@ onBeforeUnmount(() => {
         </svg>
       </button>
     </div>
-
-    <div class="hero-visual-label">WHATMEDIA ORIGINAL EXPERIENCE</div>
   </section>
 </template>
 

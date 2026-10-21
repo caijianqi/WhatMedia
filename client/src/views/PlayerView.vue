@@ -577,20 +577,6 @@ const bufferedPct = computed(() => {
 
         <div class="ctl-spacer" />
 
-        <!-- 字幕菜单 -->
-        <select
-          v-if="store.canSwitchSubtitle && store.snapshot.subtitleTracks.length > 0"
-          class="ctl-select"
-          :value="store.snapshot.currentSubtitleTrackId ?? ''"
-          @change="
-            store.selectSubtitle(($event.target as HTMLSelectElement).value || null)
-          "
-        >
-          <option value="">关闭字幕</option>
-          <option v-for="t in store.snapshot.subtitleTracks" :key="t.id" :value="t.id">
-            {{ t.label }}
-          </option>
-        </select>
 
         <!-- 音轨菜单 -->
         <select

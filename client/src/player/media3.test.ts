@@ -37,14 +37,10 @@ function player() {
 }
 
 describe('Media3Player 能力', () => {
-  it('用 android-exoplayer 档，且能切音轨切字幕', () => {
+  it('用 android-exoplayer 档，且能切音轨', () => {
     const { p } = player()
     expect(p.capabilities.clientId).toBe('android-exoplayer')
     expect(p.capabilities.canSwitchAudioTrack).toBe(true)
-    expect(p.capabilities.canSwitchSubtitleTrack).toBe(true)
-    // 位图字幕（PGS）不支持 —— 服务端必须烧录或转换，
-    // 这条错了用户会看到"字幕加载了但一条都不显示"。
-    expect(p.capabilities.bitmapSubtitles).toBe(false)
   })
 })
 
@@ -60,23 +56,6 @@ describe('Media3Player 载入', () => {
     const { p, calls } = player()
     await p.load({ kind: 'progressive', url: 'http://x/a.mp4' })
     expect(calls.find((c) => c.cmd.endsWith('media3_load'))?.args).toMatchObject({ kind: 'progressive' })
-  })
-
-  it('外挂字幕转成 Kotlin 认得的形状，并猜 MIME', async () => {
-    const { p, calls } = player()
-    await p.load({ kind: 'hls', url: 'u' }, {
-      externalSubtitles: [{ label: '中文', url: 'http://x/a.ass?t=1', language: 'chi', default: true }],
-    })
-    const subs = calls.find((c) => c.cmd.endsWith('media3_load'))?.args?.externalSubtitles as unknown[]
-    expect(subs).toHaveLength(1)
-    expect(subs[0]).toMatchObject({ label: '中文', language: 'chi', default: true, mime: 'text/x-ssa' })
-  })
-
-  it('字幕 URL 缺失时给空串而不是 undefined —— Kotlin 侧会直接崩', async () => {
-    const { p, calls } = player()
-    await p.load({ kind: 'hls', url: 'u' }, { externalSubtitles: [{ label: 'x' }] })
-    const subs = calls.find((c) => c.cmd.endsWith('media3_load'))?.args?.externalSubtitles as Array<Record<string, unknown>>
-    expect(typeof subs[0]!.url).toBe('string')
   })
 })
 
@@ -156,12 +135,6 @@ describe('Media3Player 控制', () => {
     expect(last(calls)?.args).toMatchObject({ rate: 0.25 })
   })
 
-  it('关闭字幕传 null，不是空串', async () => {
-    const { p, calls } = player()
-    await p.selectSubtitleTrack(null)
-    expect(last(calls)?.args).toMatchObject({ id: null })
-  })
-
   it('全屏静默成功 —— Android 上没有 DOM 全屏这回事，报错只会污染日志', async () => {
     const { p } = player()
     await expect(p.setFullscreen(true)).resolves.toBeUndefined()
@@ -239,10 +212,8 @@ describe('轨道刷新（两趟 IPC）', () => {
     })
     const typed = {
       audioTracks: [{ id: 'g0:t0', label: '英语' }],
-      subtitleTracks: [{ id: 'g1:t0', label: '中文' }],
       qualities: [{ id: 'g2:t0', label: '1080P' }],
       currentAudioTrackId: 'g0:t0',
-      currentSubtitleTrackId: null,
       currentQualityId: 'g2:t0',
     }
     const bridge: Media3Bridge = {
@@ -264,7 +235,6 @@ describe('轨道刷新（两趟 IPC）', () => {
     await Promise.resolve()
 
     expect(p.state.audioTracks[0]?.label).toBe('英语')
-    expect(p.state.subtitleTracks[0]?.label).toBe('中文')
     expect(p.state.qualities[0]?.label).toBe('1080P')
   })
 

@@ -63,15 +63,6 @@ pub enum AudioAction {
     None,
 }
 
-/// 烧录字幕的来源。
-#[derive(Debug, Clone)]
-pub enum BurnSource {
-    /// 外挂字幕文件路径。
-    External(String),
-    /// 内嵌轨在**文件中的序号**（ffprobe 的序号，不是过滤后的序号）。
-    Internal(i32),
-}
-
 /// 输出形态。
 #[derive(Debug, Clone)]
 pub enum OutputSpec {
@@ -114,7 +105,6 @@ pub struct StreamRequest {
     pub seek_ms: i64,
     pub video: VideoAction,
     pub audio: AudioAction,
-    pub burn: Option<BurnSource>,
     pub output: OutputSpec,
     pub accel: Option<AccelArgs>,
     /// 输入是**直播流**吗。为 true 时按实时速率读、挂重连、容忍时间戳跳变。
@@ -124,7 +114,7 @@ pub struct StreamRequest {
 impl StreamRequest {
     /// 是否需要重编码视频。Remux 与 Transcode 的分界线就是它。
     pub fn reencodes_video(&self) -> bool {
-        matches!(self.video, VideoAction::Encode { .. }) || self.burn.is_some()
+        matches!(self.video, VideoAction::Encode { .. })
     }
 
     /// 直播由输出形态决定，不另设开关 ——
@@ -213,13 +203,9 @@ pub fn build_args(req: &StreamRequest) -> Vec<String> {
     let mut filters: Vec<String> = Vec::new();
 
     match &req.video {
-        VideoAction::Copy if req.burn.is_none() => {
+        VideoAction::Copy => {
             a.push("-c:v".into());
             a.push("copy".into());
-        }
-        VideoAction::Copy => {
-            // 有烧录就必须重编码 —— 这条覆盖了 `-c copy`。
-            a.extend(encode_video_args(req, &mut filters));
         }
         VideoAction::Encode { .. } => {
             a.extend(encode_video_args(req, &mut filters));
@@ -250,19 +236,6 @@ pub fn build_args(req: &StreamRequest) -> Vec<String> {
                 }
             }
         }
-    }
-
-    if let Some(burn) = &req.burn {
-        filters.push(match burn {
-            BurnSource::External(p) => {
-                let esc = p
-                    .replace('\\', "/")
-                    .replace(':', "\\:")
-                    .replace('\'', "\\'");
-                format!("subtitles='{esc}'")
-            }
-            BurnSource::Internal(i) => format!("subtitles=si={i}"),
-        });
     }
 
     if !filters.is_empty() {
@@ -505,7 +478,6 @@ mod tests {
             seek_ms: 0,
             video: VideoAction::Copy,
             audio: AudioAction::Copy { index: Some(1) },
-            burn: None,
             output: OutputSpec::PipeTs,
             accel: None,
             live: false,
@@ -558,26 +530,6 @@ mod tests {
         assert!(idx(&a, "h264_vaapi") > idx(&a, "-i"));
         assert!(a.contains(&"scale_vaapi=1280:720".to_string()));
         assert!(a.contains(&"4000k".to_string()));
-    }
-
-    #[test]
-    fn burn_forces_video_reencode() {
-        let mut req = remux_req();
-        req.burn = Some(BurnSource::Internal(3));
-        let a = build_args(&req);
-        // 即使 video 动作是 Copy，烧录也必须重编码。
-        assert!(!a.windows(2).any(|w| w[0] == "-c:v" && w[1] == "copy"));
-        assert!(a.iter().any(|x| x.contains("subtitles=si=3")));
-        assert!(req.reencodes_video());
-    }
-
-    #[test]
-    fn external_burn_escapes_windows_path() {
-        let mut req = remux_req();
-        req.burn = Some(BurnSource::External(r"C:\media\a'b.srt".into()));
-        let a = build_args(&req);
-        let f = a.iter().find(|x| x.starts_with("subtitles=")).unwrap();
-        assert!(f.contains("C\\:/media/a\\'b.srt"));
     }
 
     #[test]

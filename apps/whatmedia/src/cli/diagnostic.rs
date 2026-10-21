@@ -6,9 +6,7 @@ use anyhow::{Context, Result};
 use std::path::PathBuf;
 use whatmedia_config::AppConfig;
 use whatmedia_database::{repo, Db};
-use whatmedia_storage::LocalStorage;
-
-use crate::common::{human_ms, parse_id, storage_for};
+use crate::common::{human_ms, parse_id};
 
 /// 打印最终生效的配置（合并环境变量与 TOML 结果），便于黑屏运维排障。
 pub fn config_cmd(file: Option<PathBuf>) -> Result<()> {
@@ -123,17 +121,11 @@ pub async fn play_cmd(
         .map(|(_, s)| s)
         .unwrap_or_default();
 
-    let storage = LocalStorage::new("local", std::path::PathBuf::from(&target.library_root))?;
-    let external = whatmedia_subtitle::discover_sidecars(&storage, &target.file.path)
-        .await
-        .unwrap_or_default();
-
     let media = whatmedia_playback::MediaCapability::from_parts(
         target.file.container.clone(),
         target.file.duration_ms,
         target.file.bitrate.map(|b| (b / 1000) as u32),
         &streams,
-        external.clone(),
     );
     let client = whatmedia_playback::ClientCapability::by_id(client_id);
 
@@ -212,74 +204,6 @@ pub async fn play_cmd(
         let args = whatmedia_transcoder::build_args(req);
         println!("\n生成 FFmpeg 转码命令（共 {} 个参数）：", args.len());
         println!("  ffmpeg {}", args.join(" "));
-    }
-    if !external.is_empty() {
-        println!("\n外挂同名同目录字幕：");
-        for e in &external {
-            println!(
-                "  {}\t{:?}\t{:?}\tforced={}",
-                e.name, e.codec, e.language, e.forced
-            );
-        }
-    }
-    if !preview.subtitle_plans.is_empty() {
-        println!("\n字幕投递规划：");
-        for p in &preview.subtitle_plans {
-            println!("  {}\t{:?}\t模式: {:?}\t说明: {}", p.track_id, p.mode, p.mode, p.reason);
-        }
-    }
-    Ok(())
-}
-
-/// 检查并列出条目的内嵌字幕与外挂同名字幕。
-pub async fn subtitles_cmd(db: &Db, item: &str) -> Result<()> {
-    let item_id: whatmedia_core::Id = parse_id(item)?;
-    let files = repo::files_for_item(db, item_id).await?;
-    let Some((file, streams)) = files.into_iter().next() else {
-        println!("(该条目下未找到任何文件)");
-        return Ok(());
-    };
-    println!("文件物理路径：{}", file.path);
-
-    println!("\n内嵌字幕轨：");
-    let mut any = false;
-    for s in streams
-        .iter()
-        .filter(|s| matches!(s.stream_type, whatmedia_core::StreamType::Subtitle))
-    {
-        any = true;
-        println!(
-            "  #{}  {}\t{:?}\t语言: {:?}\tforced={}",
-            s.index,
-            s.codec.as_deref().unwrap_or("-"),
-            whatmedia_subtitle::codec_from_probe_name(s.codec.as_deref().unwrap_or("")),
-            s.language,
-            s.is_forced
-        );
-    }
-    if !any {
-        println!("  (无内嵌字幕)");
-    }
-
-    let storage = match storage_for(db, &file.path).await? {
-        Some(s) => s,
-        None => {
-            println!("\n外挂字幕：(文件不在任何已登记的媒体库路径下，跳过外挂搜索)");
-            return Ok(());
-        }
-    };
-    let external = whatmedia_subtitle::discover_sidecars(storage.as_ref(), &file.path)
-        .await
-        .unwrap_or_default();
-    println!("\n外挂字幕：");
-    if external.is_empty() {
-        println!("  (未检测到同名外挂字幕文件)");
-    }
-    for e in &external {
-        println!(
-            "  {}\t{:?}\t语言: {:?}\tforced={}\tdefault={}",
-            e.name, e.codec, e.language, e.forced, e.default
-        );
     }
     Ok(())
 }

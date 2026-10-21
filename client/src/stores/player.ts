@@ -16,7 +16,6 @@ import {
   initialSnapshot,
   resolveBackend,
   RecoveryCoordinator,
-  type ExternalSubtitle,
   type MediaPlayer,
   type PlaybackSource,
   type PlayerSnapshot,
@@ -24,7 +23,7 @@ import {
 } from '../player'
 import * as api from '../api/client'
 import type { PlayerErrorCode } from '../player'
-import type { PlaybackStrategy, ReasonView, SubtitleView } from '../api/client'
+import type { PlaybackStrategy, ReasonView } from '../api/client'
 
 /**
  * 从 `/api/v1/hls/{job}/master.m3u8` 里取出 job id。
@@ -47,7 +46,6 @@ export const usePlayerStore = defineStore('player', () => {
   const sessionId = ref<string | null>(null)
   const strategy = ref<PlaybackStrategy | null>(null)
   const reasons = ref<ReasonView[]>([])
-  const subtitles = ref<SubtitleView[]>([])
   const busy = ref(false)
   const error = ref<string | null>(null)
 
@@ -70,7 +68,7 @@ export const usePlayerStore = defineStore('player', () => {
 
   /** 上次载入的源与参数。重连要重放同一份。 */
   let lastSource: PlaybackSource | null = null
-  let lastLoadOptions: { startAt?: number; autoplay?: boolean; externalSubtitles?: ExternalSubtitle[] } = {}
+  let lastLoadOptions: { startAt?: number; autoplay?: boolean } = {}
   let retryTimer: number | undefined
   /** 上次 `open()` 的参数。地址失效时要能整段重来一次。 */
   let lastOpen: {
@@ -80,9 +78,6 @@ export const usePlayerStore = defineStore('player', () => {
   } | null = null
 
   const canSwitchAudio = computed(() => player.value?.capabilities.canSwitchAudioTrack ?? false)
-  const canSwitchSubtitle = computed(
-    () => player.value?.capabilities.canSwitchSubtitleTrack ?? false,
-  )
   const hasQualities = computed(() => snapshot.value.qualities.length > 0)
 
   /**
@@ -116,7 +111,6 @@ export const usePlayerStore = defineStore('player', () => {
       sessionId.value = view.session_id
       strategy.value = view.strategy
       reasons.value = view.reasons
-      subtitles.value = view.subtitles
       hlsJob = hlsJobId(view.hls_url)
 
       const source = await pickSource(view)
@@ -148,19 +142,10 @@ export const usePlayerStore = defineStore('player', () => {
         return api.heartbeat(id, posSec * 1000, durSec === undefined ? null : durSec * 1000)
       })
 
-      const external: ExternalSubtitle[] = view.subtitles
-        .filter((s) => s.url)
-        .map((s) => ({
-          url: s.url ?? undefined,
-          label: s.language ?? s.track_id,
-          language: s.language ?? undefined,
-        }))
-
       lastSource = source
       lastLoadOptions = {
         startAt: (opts.startMs ?? 0) / 1000,
         autoplay: opts.autoplay ?? true,
-        externalSubtitles: external,
       }
       recovery.reset()
       await p.load(source, lastLoadOptions)
@@ -311,7 +296,6 @@ export const usePlayerStore = defineStore('player', () => {
     snapshot.value = initialSnapshot()
     strategy.value = null
     reasons.value = []
-    subtitles.value = []
   }
 
   async function play(): Promise<void> {
@@ -333,9 +317,6 @@ export const usePlayerStore = defineStore('player', () => {
   }
   async function setRate(r: number): Promise<void> {
     await player.value?.setRate(r)
-  }
-  async function selectSubtitle(id: string | null): Promise<void> {
-    await player.value?.selectSubtitleTrack(id)
   }
   async function selectQuality(id: string): Promise<void> {
     await player.value?.selectQuality(id)
@@ -362,11 +343,9 @@ export const usePlayerStore = defineStore('player', () => {
     sessionId,
     strategy,
     reasons,
-    subtitles,
     busy,
     error,
     canSwitchAudio,
-    canSwitchSubtitle,
     hasQualities,
     open,
     close,
@@ -376,7 +355,6 @@ export const usePlayerStore = defineStore('player', () => {
     setVolume,
     setMuted,
     setRate,
-    selectSubtitle,
     selectQuality,
     setFullscreen,
     flushBeforeUnload,

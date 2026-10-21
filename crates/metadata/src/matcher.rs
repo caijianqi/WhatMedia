@@ -155,6 +155,43 @@ impl Default for MatchThresholds {
     }
 }
 
+fn genre_boost(query_kind: Option<whatmedia_core::MediaKind>, genres: &[String]) -> f64 {
+    let Some(k) = query_kind else { return 0.0 };
+    match k {
+        whatmedia_core::MediaKind::Anime => {
+            let is_anime = genres.iter().any(|g| {
+                g.contains("动画") || g.to_ascii_lowercase().contains("animation") || g.contains("动漫")
+            });
+            if is_anime {
+                0.15
+            } else {
+                -0.05
+            }
+        }
+        whatmedia_core::MediaKind::Documentary => {
+            let is_doc = genres.iter().any(|g| {
+                g.contains("纪录") || g.to_ascii_lowercase().contains("documentary")
+            });
+            if is_doc {
+                0.15
+            } else {
+                -0.05
+            }
+        }
+        whatmedia_core::MediaKind::Variety => {
+            let is_variety = genres.iter().any(|g| {
+                g.contains("综艺") || g.to_ascii_lowercase().contains("variety")
+            });
+            if is_variety {
+                0.15
+            } else {
+                -0.05
+            }
+        }
+        _ => 0.0,
+    }
+}
+
 /// 给候选列表打分并排序。
 ///
 /// 返回按分数降序排列的候选，每个都带 `confidence`。
@@ -177,10 +214,10 @@ pub fn score_candidates(
             let title_score = by_title.max(by_original);
 
             let ys = year_score(query.year, r.year);
+            let gb = genre_boost(query.kind, &r.genres);
 
-            // 标题占 7 成、年份占 3 成。
-            // 年份权重不能更高：目录里的年份本来就经常错（尤其是老片重发版）。
-            let score = title_score * 0.7 + ys * 0.3;
+            // 标题占 7 成、年份占 3 成，加上类型偏好修正。
+            let score = (title_score * 0.7 + ys * 0.3 + gb).clamp(0.0, 1.0);
 
             ScoredCandidate {
                 record: r,
@@ -263,8 +300,7 @@ mod tests {
         let q = MetadataQuery {
             title: "Blade Runner 2049".into(),
             year: Some(2017),
-            language: None,
-            episode_title: None,
+            ..Default::default()
         };
         let cands = vec![
             rec("Blade Runner 2049", Some(2017)),
@@ -282,8 +318,7 @@ mod tests {
         let q = MetadataQuery {
             title: "1917".into(),
             year: Some(2019),
-            language: None,
-            episode_title: None,
+            ..Default::default()
         };
         let cands = vec![rec("1917", Some(2019)), rec("1917: The War", Some(1917))];
         let scored = score_candidates(&q, cands, &MatchThresholds::default());
@@ -297,8 +332,7 @@ mod tests {
         let q = MetadataQuery {
             title: "The Office".into(),
             year: Some(2005),
-            language: None,
-            episode_title: None,
+            ..Default::default()
         };
         let cands = vec![
             MetadataRecord {
@@ -325,8 +359,7 @@ mod tests {
         let q = MetadataQuery {
             title: "Frieren".into(),
             year: Some(2023),
-            language: None,
-            episode_title: None,
+            ..Default::default()
         };
         let cands = vec![rec("Fast & Furious", Some(2009))];
         let scored = score_candidates(&q, cands, &MatchThresholds::default());
@@ -340,5 +373,33 @@ mod tests {
         assert!(is_lockable("overview"));
         assert!(!is_lockable("id"));
         assert!(!is_lockable("provider_id"));
+    }
+
+    #[test]
+    fn anime_genre_disambiguation_boosts_anime_candidate() {
+        let q = MetadataQuery {
+            title: "凡人修仙传".into(),
+            year: None,
+            language: None,
+            episode_title: None,
+            kind: Some(whatmedia_core::MediaKind::Anime),
+        };
+        let cands = vec![
+            MetadataRecord {
+                title: "凡人修仙传".into(),
+                year: Some(2025),
+                genres: vec!["剧情".into(), "古装".into()],
+                ..Default::default()
+            },
+            MetadataRecord {
+                title: "凡人修仙传".into(),
+                year: Some(2020),
+                genres: vec!["动画".into(), "奇幻".into()],
+                ..Default::default()
+            },
+        ];
+        let scored = score_candidates(&q, cands, &MatchThresholds::default());
+        assert_eq!(scored[0].record.year, Some(2020));
+        assert_eq!(scored[0].confidence, Confidence::Auto);
     }
 }

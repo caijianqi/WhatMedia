@@ -16,9 +16,8 @@
 //! 用户问"为什么我的 4K 原盘在转码"时要有据可查，而不是一个黑盒结果。
 
 use serde::Serialize;
-use whatmedia_core::{AudioCodec, PlaybackStrategy, SubtitleCodec, VideoCodec};
-use whatmedia_subtitle::{plan_track, BurnCapability, SubtitleTarget};
-use whatmedia_transcoder::{AudioAction, BurnSource, OutputSpec, StreamRequest, VideoAction};
+use whatmedia_core::{AudioCodec, PlaybackStrategy, VideoCodec};
+use whatmedia_transcoder::{AudioAction, OutputSpec, StreamRequest, VideoAction};
 
 use crate::capability::{ClientCapability, MediaCapability, ServerCapability};
 
@@ -50,7 +49,6 @@ pub enum Reason {
     },
     /// 音轨客户端解不了，需要单独转音频（视频仍可 copy）。
     AudioNeedsTranscode,
-    SubtitleNeedsBurn,
     /// 客户端既不能 Range 直连也不接受流式。
     ClientCannotReceive,
     FfmpegMissing,
@@ -69,7 +67,6 @@ impl Reason {
             Reason::HdrUnsupported { .. } => "hdr_unsupported",
             Reason::BitrateTooHigh { .. } => "bitrate_too_high",
             Reason::AudioNeedsTranscode => "audio_needs_transcode",
-            Reason::SubtitleNeedsBurn => "subtitle_needs_burn",
             Reason::ClientCannotReceive => "client_cannot_receive",
             Reason::FfmpegMissing => "ffmpeg_missing",
             Reason::NoEncoderForClient => "no_encoder_for_client",
@@ -92,7 +89,6 @@ impl Reason {
                 format!("码率 {kbps}kbps 超过上限 {limit}kbps")
             }
             Reason::AudioNeedsTranscode => "音轨格式不被支持，需要转换音频".into(),
-            Reason::SubtitleNeedsBurn => "字幕需要烧录进画面".into(),
             Reason::ClientCannotReceive => "客户端既不支持直连也不支持流式输出".into(),
             Reason::FfmpegMissing => "服务端没有可用的 ffmpeg".into(),
             Reason::NoEncoderForClient => "服务端编不出客户端支持的任何格式".into(),
@@ -110,8 +106,6 @@ pub struct PlaybackDecision {
     pub stream: Option<StreamRequest>,
     /// 选中的音轨序号。
     pub audio_index: Option<i32>,
-    /// 每条字幕轨的投递方式。
-    pub subtitle_plans: Vec<whatmedia_subtitle::SubtitlePlan>,
     /// 转码目标高度。缩放用；None 表示保持原始分辨率。
     pub target_height: Option<u32>,
     /// 硬件后端候选链，索引 0 为首选，**链尾保证是软件档**。
@@ -160,54 +154,12 @@ pub fn decide(input: DecisionInput<'_>) -> PlaybackDecision {
             reasons: vec![Reason::NoVideoTrack],
             stream: None,
             audio_index: None,
-            subtitle_plans: Vec::new(),
             target_height: None,
             accel_chain: Vec::new(),
         };
     };
 
-    // ── ① 字幕投递计划 ──────────────────────────────────────
-    let subtitle_target = SubtitleTarget {
-        supported: client.subtitle_codecs.clone(),
-        supports_bitmap: client.supports_bitmap_subtitle,
-    };
-    let burn_cap = BurnCapability {
-        ffmpeg_available: server.ffmpeg_available,
-        has_budget: server.has_budget(),
-    };
-    let mut subtitle_plans = Vec::new();
-    for t in &media.subtitles {
-        subtitle_plans.push(plan_track(
-            format!("internal:{}", t.index),
-            t.codec.clone(),
-            t.language.clone(),
-            &subtitle_target,
-            &burn_cap,
-        ));
-    }
-    for e in &media.external_subtitles {
-        subtitle_plans.push(plan_track(
-            format!("external:{}", e.path),
-            e.codec.clone(),
-            e.language.clone(),
-            &subtitle_target,
-            &burn_cap,
-        ));
-    }
-    let burn = subtitle_plans
-        .iter()
-        .find(|p| p.mode == whatmedia_subtitle::SubtitleMode::BurnIn)
-        .map(|p| match p.track_id.strip_prefix("internal:") {
-            Some(i) => BurnSource::Internal(i.parse().unwrap_or(0)),
-            None => BurnSource::External(
-                p.track_id
-                    .strip_prefix("external:")
-                    .unwrap_or("")
-                    .to_string(),
-            ),
-        });
-
-    // ── ② 逐项检查视频能不能原样播 ─────────────────────────
+    // ── 逐项检查视频能不能原样播 ─────────────────────────
     let mut reasons: Vec<Reason> = Vec::new();
 
     let container_ok = media
@@ -259,10 +211,6 @@ pub fn decide(input: DecisionInput<'_>) -> PlaybackDecision {
             });
         }
     }
-    if burn.is_some() {
-        reasons.push(Reason::SubtitleNeedsBurn);
-    }
-
     // 音轨：能直解就直解，否则单独转音频。
     let audio_direct = media.pick_audio(client);
     let audio_action = match audio_direct {
@@ -286,8 +234,7 @@ pub fn decide(input: DecisionInput<'_>) -> PlaybackDecision {
     };
 
     // ── ③ Direct Play ───────────────────────────────────────
-    let video_passthrough =
-        video_ok && depth_ok && res_ok && hdr_ok && bitrate_ok && burn.is_none();
+    let video_passthrough = video_ok && depth_ok && res_ok && hdr_ok && bitrate_ok;
     if video_passthrough
         && container_ok
         && client.supports_range
@@ -298,7 +245,6 @@ pub fn decide(input: DecisionInput<'_>) -> PlaybackDecision {
             reasons: Vec::new(),
             stream: None,
             audio_index,
-            subtitle_plans,
             target_height: None,
             accel_chain: Vec::new(),
         };
@@ -310,7 +256,6 @@ pub fn decide(input: DecisionInput<'_>) -> PlaybackDecision {
             reasons: vec![Reason::ClientCannotReceive],
             stream: None,
             audio_index,
-            subtitle_plans,
             target_height: None,
             accel_chain: Vec::new(),
         };
@@ -344,14 +289,12 @@ pub fn decide(input: DecisionInput<'_>) -> PlaybackDecision {
                 seek_ms: input.start_ms,
                 video: VideoAction::Copy,
                 audio: audio_action,
-                burn: None,
                 output,
                 accel: None,
                 // 决策层只产出点播请求。直播不经过 decide()，见 crates/api/src/live.rs。
                 live: false,
             }),
             audio_index,
-            subtitle_plans,
             target_height: None,
             accel_chain: Vec::new(),
         };
@@ -364,7 +307,6 @@ pub fn decide(input: DecisionInput<'_>) -> PlaybackDecision {
             reasons: vec![Reason::FfmpegMissing],
             stream: None,
             audio_index,
-            subtitle_plans,
             target_height: None,
             accel_chain: Vec::new(),
         };
@@ -376,7 +318,6 @@ pub fn decide(input: DecisionInput<'_>) -> PlaybackDecision {
             reasons: vec![Reason::NoEncoderForClient],
             stream: None,
             audio_index,
-            subtitle_plans,
             target_height: None,
             accel_chain: Vec::new(),
         };
@@ -427,13 +368,11 @@ pub fn decide(input: DecisionInput<'_>) -> PlaybackDecision {
                 tonemap_to,
             },
             audio: audio_action,
-            burn,
             output,
             accel: accel_chain.first().cloned(),
             live: false,
         }),
         audio_index,
-        subtitle_plans,
         target_height,
         accel_chain,
     }
@@ -498,21 +437,11 @@ fn codec_label(c: &VideoCodec) -> String {
     }
 }
 
-/// 常用字幕目标格式。HLS 用 VTT，其余用 SRT。
-pub fn subtitle_target_codec(hls: bool) -> SubtitleCodec {
-    if hls {
-        SubtitleCodec::Vtt
-    } else {
-        SubtitleCodec::Srt
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::capability::{AudioTrack, MediaCapability, VideoTrack};
     use whatmedia_core::{Container, HdrType};
-    use whatmedia_subtitle::SubtitleMode;
 
     fn media(
         video: VideoTrack,
@@ -523,10 +452,8 @@ mod tests {
             container,
             video: Some(video),
             audio,
-            subtitles: Vec::new(),
             duration_ms: Some(7_200_000),
             bitrate_kbps: Some(20_000),
-            external_subtitles: Vec::new(),
         }
     }
 
@@ -694,28 +621,6 @@ mod tests {
         ));
     }
 
-    #[test]
-    fn pgs_subtitle_forces_burn_and_transcode() {
-        let mut m = media(h264_1080p(), vec![aac()], Some(Container::Mp4));
-        m.subtitles.push(crate::capability::SubtitleTrack {
-            index: 3,
-            codec: SubtitleCodec::Pgs,
-            language: Some("chi".into()),
-            is_forced: false,
-            is_default: true,
-        });
-        let d = decide(input(&m, &ClientCapability::preset_web(), &server()));
-        assert_eq!(d.strategy, PlaybackStrategy::Transcode);
-        assert!(d.reasons.iter().any(|r| r.code() == "subtitle_needs_burn"));
-        assert!(matches!(
-            d.stream.as_ref().unwrap().burn,
-            Some(BurnSource::Internal(3))
-        ));
-        assert!(d
-            .subtitle_plans
-            .iter()
-            .any(|p| p.mode == SubtitleMode::BurnIn));
-    }
 
     #[test]
     fn weak_network_lowers_bitrate_and_transcodes() {

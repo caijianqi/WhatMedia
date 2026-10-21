@@ -454,7 +454,6 @@ impl AiHost for DbHost {
             file.duration_ms,
             file.bitrate.map(|b| (b / 1000) as u32),
             &streams,
-            Vec::new(),
         );
         let client = ClientCapability::by_id(client_id.unwrap_or("web"));
         let d = decide(DecisionInput {
@@ -475,14 +474,7 @@ impl AiHost for DbHost {
             container: file.container.as_ref().map(serde_str),
             video: media.video.as_ref().map(|v| serde_str(&v.codec)),
             audio: media.audio.iter().map(|a| serde_str(&a.codec)).collect(),
-            subtitles: media
-                .subtitles
-                .iter()
-                .map(|s| match &s.language {
-                    Some(l) => format!("{}（{}）", serde_str(&s.codec), l),
-                    None => serde_str(&s.codec),
-                })
-                .collect(),
+            subtitles: Vec::new(),
             warnings: d.reasons.iter().map(|r| format!("{r:?}")).collect(),
         })
     }

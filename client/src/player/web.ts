@@ -17,7 +17,6 @@
 import { PlayerCore } from './core'
 import { capabilitiesFor } from './capabilities'
 import type {
-  ExternalSubtitle,
   LoadOptions,
   MediaPlayer,
   PlayerCapabilities,
@@ -133,9 +132,6 @@ export class WebPlayer implements MediaPlayer {
     this.pendingStartAt = options.startAt ?? 0
     video.loop = false
 
-    // 外挂字幕要在 src 之前挂：某些浏览器在 src 设置后才认 <track>。
-    this.attachExternalSubtitles(video, options.externalSubtitles ?? [])
-
     switch (source.kind) {
       case 'progressive':
         video.src = source.url
@@ -227,20 +223,6 @@ export class WebPlayer implements MediaPlayer {
     }))
   }
 
-  private attachExternalSubtitles(video: HTMLVideoElement, subs: ExternalSubtitle[]): void {
-    for (const s of subs) {
-      if (!s.url) continue // 只有 path 的（桌面端专用）Web 用不了
-      const track = document.createElement('track')
-      track.kind = 'subtitles'
-      track.src = s.url
-      track.label = s.label
-      if (s.language) track.srclang = s.language
-      track.default = s.default ?? false
-      video.appendChild(track)
-    }
-    // 轨道要等浏览器解析完才出现在 textTracks 里，所以在 loadedmetadata 时统一读取。
-  }
-
   private bindVideoEvents(video: HTMLVideoElement): void {
     const patch = (p: Partial<PlayerSnapshot>) => {
       if (!this.disposed) this.core.patch(p)
@@ -259,7 +241,6 @@ export class WebPlayer implements MediaPlayer {
         }
         this.pendingStartAt = 0
       }
-      this.refreshTextTracks(video)
     })
 
     video.addEventListener('durationchange', () => {
@@ -328,37 +309,6 @@ export class WebPlayer implements MediaPlayer {
     return b.end(b.length - 1)
   }
 
-  /**
-   * 读取字幕轨。
-   *
-   * **只收 `kind === 'subtitles'`**：`metadata` / `captions` 混进来会让
-   * 菜单里出现一些用户看不懂的条目。
-   */
-  private refreshTextTracks(video: HTMLVideoElement): void {
-    const list = video.textTracks
-    if (!list) return
-    const tracks: Track[] = []
-    for (let i = 0; i < list.length; i++) {
-      const t = list[i]
-      if (!t || t.kind !== 'subtitles') continue
-      tracks.push({
-        id: String(i),
-        label: t.label || (t.language ? t.language : `字幕 ${i + 1}`),
-        language: t.language || undefined,
-      })
-    }
-    const shown = this.firstShowingTrackId(list)
-    this.core.patch({ subtitleTracks: tracks, currentSubtitleTrackId: shown })
-    this.core.emit({ type: 'trackslisted' })
-  }
-
-  private firstShowingTrackId(list: TextTrackList): string | null {
-    for (let i = 0; i < list.length; i++) {
-      if (list[i] && list[i]!.mode === 'showing') return String(i)
-    }
-    return null
-  }
-
   async play(): Promise<void> {
     const video = this.requireVideo()
     try {
@@ -420,18 +370,6 @@ export class WebPlayer implements MediaPlayer {
     // 真走到这里也报不出一个用户能处理的错误。
   }
 
-  async selectSubtitleTrack(id: string | null): Promise<void> {
-    const video = this.video
-    if (!video || !video.textTracks) return
-    const list = video.textTracks
-    for (let i = 0; i < list.length; i++) {
-      const t = list[i]
-      if (!t || t.kind !== 'subtitles') continue
-      t.mode = id !== null && String(i) === id ? 'showing' : 'disabled'
-    }
-    this.core.patch({ currentSubtitleTrackId: id })
-  }
-
   async selectQuality(id: string): Promise<void> {
     if (!this.hls) return
     const level = Number(id)
@@ -457,7 +395,6 @@ export class WebPlayer implements MediaPlayer {
     if (this.video) {
       this.video.removeAttribute('src')
       this.video.load()
-      this.clearTrackElements(this.video)
     }
     this.core.setState('idle', null)
   }
@@ -467,7 +404,6 @@ export class WebPlayer implements MediaPlayer {
     this.teardownPlayback()
     const video = this.video
     if (video) {
-      this.clearTrackElements(video)
       video.remove()
     }
     this.video = null
@@ -487,10 +423,6 @@ export class WebPlayer implements MediaPlayer {
     this.onHlsError = null
     this.onHlsManifestParsed = null
     this.onHlsLevelSwitched = null
-  }
-
-  private clearTrackElements(video: HTMLVideoElement): void {
-    video.querySelectorAll('track').forEach((t) => t.remove())
   }
 
   private requireVideo(): HTMLVideoElement {

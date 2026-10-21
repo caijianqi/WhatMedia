@@ -157,12 +157,6 @@ pub enum CliCommand {
         #[arg(long)]
         network_kbps: Option<u32>,
     },
-    /// 列出指定媒体条目的内嵌与外挂字幕轨
-    Subtitles {
-        /// 媒体条目 ID
-        #[arg(long)]
-        item: String,
-    },
     /// 查看当前播放进度列表（继续观看）
     Resume {
         /// 最大展示条数
@@ -220,6 +214,11 @@ pub async fn run_cli(command: CliCommand) -> Result<()> {
             no_images,
         } => {
             let db = open_db(&cfg).await?;
+            let mut cfg = cfg.clone();
+            if let Ok(rows) = whatmedia_database::repo::list_server_settings(&db).await {
+                let overrides: Vec<(String, String)> = rows.into_iter().map(|r| (r.key, r.value)).collect();
+                cfg.apply_setting_overrides(&overrides);
+            }
             scrape::scrape_cmd(&db, &cfg, library, retry_failed, review_only, no_images).await?;
         }
         CliCommand::ScrapeStats { library } => {
@@ -265,10 +264,6 @@ pub async fn run_cli(command: CliCommand) -> Result<()> {
         } => {
             let db = open_db(&cfg).await?;
             diagnostic::play_cmd(&db, &cfg, item, file, &client, network_kbps).await?;
-        }
-        CliCommand::Subtitles { item } => {
-            let db = open_db(&cfg).await?;
-            diagnostic::subtitles_cmd(&db, &item).await?;
         }
         CliCommand::Resume { limit } => {
             let db = open_db(&cfg).await?;

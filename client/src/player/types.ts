@@ -79,10 +79,6 @@ export interface PlayerCapabilities {
   containers: string[]
   videoCodecs: string[]
   audioCodecs: string[]
-  /** **能自己渲染**的字幕格式。不在这个列表里的，服务端必须烧录或转换。 */
-  subtitleCodecs: string[]
-  /** 能否自己渲染 PGS / DVD SUB 等位图字幕。Web 永远 false。 */
-  bitmapSubtitles: boolean
   maxBitrateKbps?: number
   /** 能否播 HLS。 */
   hls: boolean
@@ -97,8 +93,6 @@ export interface PlayerCapabilities {
    * 前端不该给一个点了没反应的按钮。
    */
   canSwitchAudioTrack: boolean
-  /** 播放中能否切换字幕轨。Web 端仅对 `<track>` 注入的外挂字幕成立。 */
-  canSwitchSubtitleTrack: boolean
 }
 
 /**
@@ -119,12 +113,9 @@ export interface PlayerSnapshot {
   /** 已缓冲到的位置（秒）。用于画缓冲条。 */
   buffered: number
   audioTracks: Track[]
-  subtitleTracks: Track[]
   /** 画质档。HLS 多码率才有，单码率为空数组 —— UI 据此隐藏"画质"按钮。 */
   qualities: Track[]
   currentAudioTrackId: string | null
-  /** null 表示字幕关闭。 */
-  currentSubtitleTrackId: string | null
   currentQualityId: string | null
   /** 可恢复的错误信息。`state === 'error'` 时有意义。 */
   error: PlayerError | null
@@ -210,25 +201,6 @@ export interface LoadOptions {
    * 此时后端应当报 `autoplay-blocked` 而不是静默失败。
    */
   autoplay?: boolean
-  /** 外挂字幕。Web 端通过 `<track>` 注入；mpv 端直接 `sub-add`。 */
-  externalSubtitles?: ExternalSubtitle[]
-}
-
-/**
- * 外挂字幕源。对应 P3 `/api/v1/subtitles/external` 的输出。
- *
- * Web 与桌面端取值不同：Web 只能拿服务端转换后的 URL（`<track>` 要同源或 CORS），
- * 桌面端可以直接读文件路径。两个字段都可选，由后端挑自己能用的那个。
- */
-export interface ExternalSubtitle {
-  /** 服务端转换后的 URL（Web 用）。 */
-  url?: string
-  /** 本地文件路径（桌面端用）。 */
-  path?: string
-  language?: string
-  label: string
-  /** 是否默认显示。 */
-  default?: boolean
 }
 
 /**
@@ -273,8 +245,6 @@ export interface MediaPlayer {
   setRate(rate: number): Promise<void>
 
   selectAudioTrack(id: string): Promise<void>
-  /** 传 null 表示关闭字幕。 */
-  selectSubtitleTrack(id: string | null): Promise<void>
   selectQuality(id: string): Promise<void>
 
   /**

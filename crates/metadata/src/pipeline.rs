@@ -221,7 +221,16 @@ impl Scraper {
             None => return Ok((Outcome::Skipped, None, None, None)),
         };
 
-        let is_episode = target.kind == "episode" && target.series_id.is_some();
+        let is_episode = target.series_id.is_some() || target.kind == "episode";
+        let kind = match target.kind.as_str() {
+            "movie" => Some(whatmedia_core::MediaKind::Movie),
+            "series" => Some(whatmedia_core::MediaKind::Series),
+            "episode" => Some(whatmedia_core::MediaKind::Episode),
+            "anime" => Some(whatmedia_core::MediaKind::Anime),
+            "documentary" => Some(whatmedia_core::MediaKind::Documentary),
+            "variety" => Some(whatmedia_core::MediaKind::Variety),
+            _ => None,
+        };
         let query = MetadataQuery {
             // 用 match_title（文件名派生）而不是 title：用户把标题改成
             // "黑客帝国" 之后，拿它去 TMDB 搜是搜不到的。
@@ -237,6 +246,7 @@ impl Scraper {
             year: target.year,
             language: None,
             episode_title: None,
+            kind,
         };
 
         let mut last_error: Option<String> = None;
@@ -351,7 +361,16 @@ impl Scraper {
         let target = repo::metadata::scrape_target(&self.db, item_id)
             .await?
             .ok_or_else(|| anyhow::anyhow!("条目不存在：{item_id}"))?;
-        let is_episode = target.kind == "episode" && target.series_id.is_some();
+        let is_episode = target.series_id.is_some() || target.kind == "episode";
+        let kind = match target.kind.as_str() {
+            "movie" => Some(whatmedia_core::MediaKind::Movie),
+            "series" => Some(whatmedia_core::MediaKind::Series),
+            "episode" => Some(whatmedia_core::MediaKind::Episode),
+            "anime" => Some(whatmedia_core::MediaKind::Anime),
+            "documentary" => Some(whatmedia_core::MediaKind::Documentary),
+            "variety" => Some(whatmedia_core::MediaKind::Variety),
+            _ => None,
+        };
 
         let query = MetadataQuery {
             title: title_override.unwrap_or_else(|| {
@@ -368,6 +387,7 @@ impl Scraper {
             year: year_override.or(target.year),
             language: None,
             episode_title: None,
+            kind,
         };
 
         let mut out = Vec::new();
@@ -381,6 +401,12 @@ impl Scraper {
                 for c in score_candidates(&query, list, &self.cfg.thresholds) {
                     // 不过滤 Reject：人工确认界面要能看到"最接近的几部"，
                     // 哪怕分数很低 —— 空白列表比低分候选更让人无从下手。
+                    let poster = c
+                        .record
+                        .images
+                        .iter()
+                        .find(|i| i.kind == "poster")
+                        .map(|i| i.url.clone());
                     out.push(CandidateView {
                         provider: c.record.provider.clone(),
                         provider_id: c.record.provider_id.clone(),
@@ -388,12 +414,8 @@ impl Scraper {
                         original_title: c.record.original_title.clone(),
                         year: c.record.year,
                         overview: c.record.overview.clone(),
-                        poster: c
-                            .record
-                            .images
-                            .iter()
-                            .find(|i| i.kind == "poster")
-                            .map(|i| i.url.clone()),
+                        poster: poster.clone(),
+                        poster_url: poster,
                         score: c.score,
                         confidence: format!("{:?}", c.confidence),
                     });
@@ -593,7 +615,7 @@ impl Cancel {
     }
 }
 
-#[derive(Debug, Clone, serde::Serialize)]
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 #[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 pub struct CandidateView {
     pub provider: String,
@@ -603,6 +625,7 @@ pub struct CandidateView {
     pub year: Option<i32>,
     pub overview: Option<String>,
     pub poster: Option<String>,
+    pub poster_url: Option<String>,
     pub score: f64,
     pub confidence: String,
 }

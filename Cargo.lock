@@ -2530,7 +2530,6 @@ dependencies = [
  "whatmedia-playback",
  "whatmedia-scanner",
  "whatmedia-storage",
- "whatmedia-subtitle",
  "whatmedia-transcoder",
 ]
 
@@ -2585,7 +2584,6 @@ dependencies = [
  "whatmedia-playback",
  "whatmedia-scanner",
  "whatmedia-storage",
- "whatmedia-subtitle",
  "whatmedia-transcoder",
 ]
 
@@ -2756,7 +2754,6 @@ dependencies = [
  "tokio",
  "whatmedia-core",
  "whatmedia-database",
- "whatmedia-subtitle",
  "whatmedia-transcoder",
 ]
 
@@ -2791,16 +2788,6 @@ dependencies = [
  "tempfile",
  "tokio",
  "tracing",
- "whatmedia-core",
-]
-
-[[package]]
-name = "whatmedia-subtitle"
-version = "0.1.0"
-dependencies = [
- "async-trait",
- "serde",
- "tokio",
  "whatmedia-core",
 ]
 

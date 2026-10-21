@@ -29,11 +29,8 @@ struct Harness {
     /// MP4 + H264 + AAC —— Web 端可以直出。
     mp4: Id,
     mp4_item: Id,
-    /// MKV + H264 + AAC + 内嵌 SRT —— Web 端容器不认，要 remux。
+    /// MKV + H264 + AAC —— Web 端容器不认，要 remux。
     mkv: Id,
-    mkv_item: Id,
-    /// 外挂字幕文件的绝对路径。
-    sidecar: String,
 }
 
 mod common;
@@ -60,7 +57,6 @@ async fn seed_file(
     root: &Path,
     rel: &str,
     container: &str,
-    with_subtitle: bool,
 ) -> (Id, Id) {
     let path = root.join(rel);
     std::fs::create_dir_all(path.parent().unwrap()).unwrap();
@@ -130,20 +126,6 @@ async fn seed_file(
         Some(2),
     )
     .await;
-    if with_subtitle {
-        insert_stream(
-            db,
-            file,
-            "subtitle",
-            2,
-            "srt",
-            Some("chi"),
-            None,
-            None,
-            None,
-        )
-        .await;
-    }
 
     (item, file)
 }
@@ -189,15 +171,8 @@ async fn harness() -> Harness {
     db.migrate(&common::migrations_dir()).await.unwrap();
     seed_library(&db, &root).await;
 
-    let (mp4_item, mp4) = seed_file(&db, &root, "Movie.2020.1080p.mp4", "mp4", false).await;
-    let (mkv_item, mkv) = seed_file(&db, &root, "Movie.2020.1080p.mkv", "mkv", true).await;
-
-    let sidecar = root.join("Movie.2020.1080p.chi.srt");
-    std::fs::write(
-        &sidecar,
-        "1\n00:00:01,000 --> 00:00:03,000\n你好\n\n2\n00:00:05,000 --> 00:00:07,000\n世界\n",
-    )
-    .unwrap();
+    let (mp4_item, mp4) = seed_file(&db, &root, "Movie.2020.1080p.mp4", "mp4").await;
+    let (_mkv_item, mkv) = seed_file(&db, &root, "Movie.2020.1080p.mkv", "mkv").await;
 
     let mut cfg = AppConfig::default();
     cfg.server.port = 0;
@@ -217,8 +192,6 @@ async fn harness() -> Harness {
         mp4,
         mp4_item,
         mkv,
-        mkv_item,
-        sidecar: sidecar.to_string_lossy().to_string(),
     }
 }
 
@@ -279,9 +252,6 @@ async fn decide_remuxes_mkv_on_web_with_an_explanation() {
     let reasons = v["reasons"].as_array().unwrap();
     assert!(!reasons.is_empty(), "降级了却给不出原因：{v}");
     assert!(!v["reason"].as_str().unwrap().is_empty());
-    // 内嵌 SRT 在浏览器里放不了（<video> 只认 WebVTT），要转成 VTT。
-    // 这是"字幕降级链"里的 Convert 档，不是烧录 —— 烧录要重编码，代价高一个量级。
-    assert_eq!(v["subtitles"][0]["mode"], "convert");
 }
 
 #[tokio::test]
@@ -570,67 +540,6 @@ async fn hardware_profile_reports_ffmpeg_absence() {
     assert_eq!(v["streams"], 0);
 }
 
-#[tokio::test]
-async fn item_subtitles_lists_internal_and_external_tracks() {
-    let h = harness().await;
-    let r = send(
-        &h.state,
-        get(&h.tok, &format!("/api/v1/items/{}/subtitles", h.mkv_item)),
-    )
-    .await;
-    assert_eq!(r.status, StatusCode::OK, "{}", r.text());
-    let list = r.json().as_array().unwrap().clone();
-    // 内嵌 SRT + 同目录外挂 .chi.srt。
-    assert_eq!(list.len(), 2, "{list:?}");
-    assert!(list.iter().any(|s| s["track_id"] == "internal:2"));
-    let ext = list
-        .iter()
-        .find(|s| s["track_id"].as_str().unwrap().starts_with("external:"))
-        .unwrap();
-    // 语料写的是 `.chi.srt`，发现时按 BCP-47 规范化成两位码。
-    assert_eq!(ext["language"], "zh");
-    // 外挂字幕路径含冒号与反斜杠，不能进 URL —— 只能走 POST 转换端点。
-    assert!(ext["url"].is_null());
-}
-
-#[tokio::test]
-async fn external_subtitle_is_converted_to_vtt() {
-    let h = harness().await;
-    let r = send(
-        &h.state,
-        post_json(
-            &h.tok,
-            "/api/v1/subtitles/external",
-            serde_json::json!({ "path": h.sidecar }),
-        ),
-    )
-    .await;
-    assert_eq!(r.status, StatusCode::OK, "{}", r.text());
-    assert!(r.header(header::CONTENT_TYPE).starts_with("text/vtt"));
-    let text = r.text();
-    assert!(text.starts_with("WEBVTT"), "{text}");
-    assert!(text.contains("你好"));
-    assert!(text.contains("00:00:01.000 --> 00:00:03.000"), "{text}");
-}
-
-#[tokio::test]
-async fn external_subtitle_outside_any_library_is_rejected() {
-    let h = harness().await;
-    let outside = std::env::temp_dir().join("definitely-not-in-a-library.srt");
-    std::fs::write(&outside, "1\n00:00:01,000 --> 00:00:02,000\nx\n").unwrap();
-    let r = send(
-        &h.state,
-        post_json(
-            &h.tok,
-            "/api/v1/subtitles/external",
-            serde_json::json!({ "path": outside.to_string_lossy() }),
-        ),
-    )
-    .await;
-    // 绝不 open 用户随手给的路径 —— 库外一律拒绝。
-    assert_eq!(r.status, StatusCode::BAD_REQUEST, "{}", r.text());
-    let _ = std::fs::remove_file(&outside);
-}
 
 #[tokio::test]
 async fn playback_endpoints_are_behind_auth_first() {

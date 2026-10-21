@@ -30,10 +30,8 @@ export function initialSnapshot(): PlayerSnapshot {
     rate: 1,
     buffered: 0,
     audioTracks: [],
-    subtitleTracks: [],
     qualities: [],
     currentAudioTrackId: null,
-    currentSubtitleTrackId: null,
     currentQualityId: null,
     error: null,
   }

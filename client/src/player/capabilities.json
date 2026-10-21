@@ -12,13 +12,10 @@
       "containers": ["mp4", "webm"],
       "videoCodecs": ["h264", "vp9"],
       "audioCodecs": ["aac", "opus", "mp3"],
-      "subtitleCodecs": ["vtt"],
-      "bitmapSubtitles": false,
       "hls": true,
       "localFile": false,
       "canSwitchAudioTrack": false,
-      "canSwitchSubtitleTrack": true,
-      "note": "位图字幕一律不支持（PGS/DVBSUB 必须服务端烧录）；播放中无法换音轨。"
+      "note": "播放中无法换音轨。"
     },
     "tauri-mpv": {
       "id": "tauri-mpv",
@@ -35,25 +32,19 @@
         "opus",
         "mp3"
       ],
-      "subtitleCodecs": ["srt", "ass", "ssa", "vtt"],
-      "bitmapSubtitles": true,
       "hls": true,
       "localFile": true,
       "canSwitchAudioTrack": true,
-      "canSwitchSubtitleTrack": true,
-      "note": "mpv 自己渲染位图字幕，不需要服务端烧录。"
+      "note": "全格式支持。"
     },
     "android-exoplayer": {
       "id": "android-exoplayer",
       "containers": ["mp4", "mkv", "ts", "webm"],
       "videoCodecs": ["h264", "hevc", "vp9"],
       "audioCodecs": ["aac", "ac3", "eac3", "opus"],
-      "subtitleCodecs": ["srt", "vtt", "ass"],
-      "bitmapSubtitles": false,
       "hls": true,
       "localFile": false,
       "canSwitchAudioTrack": true,
-      "canSwitchSubtitleTrack": true,
       "note": "硬件解码能力随机型差异极大，取的是交集。"
     },
     "apple": {
@@ -61,12 +52,9 @@
       "containers": ["mp4"],
       "videoCodecs": ["h264", "hevc"],
       "audioCodecs": ["aac", "ac3", "eac3", "flac"],
-      "subtitleCodecs": ["vtt"],
-      "bitmapSubtitles": false,
       "hls": true,
       "localFile": false,
       "canSwitchAudioTrack": true,
-      "canSwitchSubtitleTrack": true,
       "note": "AVFoundation。HLS 原生支持，不需要 hls.js。"
     },
     "minimal": {
@@ -74,12 +62,9 @@
       "containers": ["ts"],
       "videoCodecs": ["h264"],
       "audioCodecs": ["aac"],
-      "subtitleCodecs": [],
-      "bitmapSubtitles": false,
       "hls": true,
       "localFile": false,
       "canSwitchAudioTrack": false,
-      "canSwitchSubtitleTrack": false,
       "note": "兜底档：只认 HLS + H264 + AAC。给未知/老旧设备。"
     }
   }

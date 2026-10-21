@@ -59,6 +59,10 @@ fn is_public(path: &str) -> bool {
     if path.starts_with("/api/v1/items/") && path.contains("/images/") {
         return true;
     }
+    // 远程图片代理端点放行
+    if path.starts_with("/api/v1/metadata/image_proxy") {
+        return true;
+    }
     // 直播纯内存代理端点放行：前端原生流播放器拉取分片时不携带 Authorization 头
     if path.starts_with("/api/v1/live/proxy") {
         return true;

@@ -490,7 +490,6 @@ mod tests {
                 tonemap_to: None,
             },
             audio: crate::args::AudioAction::Copy { index: None },
-            burn: None,
             output: crate::args::OutputSpec::Hls {
                 dir: "/cache/hls/j1".into(),
                 seg_seconds: 6,

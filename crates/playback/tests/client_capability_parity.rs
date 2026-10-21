@@ -13,7 +13,7 @@
 use serde::Serialize;
 use serde_json::Value;
 use std::path::PathBuf;
-use whatmedia_core::{AudioCodec, Container, SubtitleCodec, VideoCodec};
+use whatmedia_core::{AudioCodec, Container, VideoCodec};
 use whatmedia_playback::ClientCapability;
 
 /// 前端的能力清单。
@@ -114,16 +114,6 @@ fn codec_lists_match_between_frontend_and_server() {
             &decl["audioCodecs"],
             &format!("{id}.audioCodecs"),
         );
-        assert_same_list(
-            &cap.subtitle_codecs,
-            &decl["subtitleCodecs"],
-            &format!("{id}.subtitleCodecs"),
-        );
-        assert_eq!(
-            cap.supports_bitmap_subtitle,
-            decl["bitmapSubtitles"].as_bool().unwrap_or(false),
-            "{id}.bitmapSubtitles 与服务端不一致"
-        );
     }
 }
 
@@ -151,13 +141,6 @@ fn no_codec_string_silently_falls_into_other() {
                 "{id} 的音频编码 `{s}` 落进了 AudioCodec::Other —— 名字写错了"
             );
         }
-        for raw in decl["subtitleCodecs"].as_array().unwrap() {
-            let s = raw.as_str().unwrap();
-            assert!(
-                !matches!(parse_codec::<SubtitleCodec>(s), SubtitleCodec::Other(_)),
-                "{id} 的字幕格式 `{s}` 落进了 SubtitleCodec::Other —— 名字写错了"
-            );
-        }
     }
 }
 
@@ -169,27 +152,17 @@ fn web_client_declares_what_browsers_actually_cannot_do() {
     // 用户会得到一个点了没反应的菜单。
     let decl = &manifest()["clients"]["web"];
     assert_eq!(
-        decl["bitmapSubtitles"], false,
-        "浏览器渲染不了 PGS 位图字幕"
-    );
-    assert_eq!(
         decl["canSwitchAudioTrack"], false,
         "浏览器 <video> 切不了音轨"
     );
     assert_eq!(decl["localFile"], false, "浏览器读不了本地文件路径");
-
-    // 反向：服务端也得同意。
-    let cap = ClientCapability::preset_web();
-    assert!(!cap.supports_bitmap_subtitle);
 }
 
 #[test]
-fn mpv_client_is_the_one_that_can_render_bitmaps() {
+fn mpv_client_is_the_one_that_can_switch_audio() {
     let decl = &manifest()["clients"]["tauri-mpv"];
-    assert_eq!(decl["bitmapSubtitles"], true);
     assert_eq!(decl["localFile"], true);
     assert_eq!(decl["canSwitchAudioTrack"], true);
-    assert!(ClientCapability::preset_mpv().supports_bitmap_subtitle);
 }
 
 #[test]

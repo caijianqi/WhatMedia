@@ -16,7 +16,7 @@ pub mod decision;
 pub mod session;
 
 pub use capability::{
-    AudioTrack, ClientCapability, MediaCapability, ServerCapability, SubtitleTrack, VideoTrack,
+    AudioTrack, ClientCapability, MediaCapability, ServerCapability, VideoTrack,
 };
-pub use decision::{decide, subtitle_target_codec, DecisionInput, PlaybackDecision, Reason};
+pub use decision::{decide, DecisionInput, PlaybackDecision, Reason};
 pub use session::{SessionManager, StartRequest};

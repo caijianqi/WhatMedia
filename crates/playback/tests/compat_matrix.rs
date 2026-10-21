@@ -18,10 +18,10 @@
 
 use serde::Deserialize;
 use std::path::{Path, PathBuf};
-use whatmedia_core::{AudioCodec, Container, HdrType, PlaybackStrategy, SubtitleCodec, VideoCodec};
+use whatmedia_core::{AudioCodec, Container, HdrType, PlaybackStrategy, VideoCodec};
 use whatmedia_playback::{
     decide, AudioTrack, ClientCapability, DecisionInput, MediaCapability, ServerCapability,
-    SubtitleTrack, VideoTrack,
+    VideoTrack,
 };
 
 /// 一条片源样本。`weight` 是这类片源在家庭库里的相对出现频率。
@@ -41,8 +41,6 @@ struct Sample {
     height: u32,
     audio: AudioCodec,
     channels: u8,
-    #[serde(default)]
-    subtitle: Option<SubtitleCodec>,
     kbps: u32,
 }
 
@@ -67,10 +65,6 @@ fn assert_recognized(s: &Sample, line: usize) {
         ("video", matches!(s.video, VideoCodec::Other(_))),
         ("audio", matches!(s.audio, AudioCodec::Other(_))),
         ("container", matches!(s.container, Container::Other(_))),
-        (
-            "subtitle",
-            matches!(s.subtitle, Some(SubtitleCodec::Other(_))),
-        ),
     ];
     for (field, bad) in unrecognized {
         assert!(
@@ -127,21 +121,8 @@ fn to_media(s: &Sample) -> MediaCapability {
             language: Some("eng".into()),
             is_default: true,
         }],
-        subtitles: s
-            .subtitle
-            .as_ref()
-            .map(|c| SubtitleTrack {
-                index: 2,
-                codec: c.clone(),
-                language: Some("chi".into()),
-                is_forced: false,
-                is_default: true,
-            })
-            .into_iter()
-            .collect(),
         duration_ms: Some(7_200_000),
         bitrate_kbps: Some(s.kbps),
-        external_subtitles: Vec::new(),
     }
 }
 
@@ -276,40 +257,3 @@ fn overall_no_reencode_coverage_meets_dod() {
     );
 }
 
-#[test]
-fn pgs_subtitles_are_burned_on_web_but_direct_on_desktop() {
-    // 位图字幕是 Web 端最大的降级来源。这条测试单独把它的行为钉住。
-    let srv = server();
-    let sample = corpus()
-        .into_iter()
-        .find(|s| s.subtitle == Some(SubtitleCodec::Pgs) && s.hdr == HdrType::Hdr10)
-        .expect("语料里应当有一条 PGS 样本");
-    let media = to_media(&sample);
-
-    let web = decide(DecisionInput {
-        media: &media,
-        client: &ClientCapability::preset_web(),
-        server: &srv,
-        network_kbps: None,
-        start_ms: 0,
-        hls_dir: None,
-        seg_seconds: 6,
-    });
-    assert_eq!(web.strategy, PlaybackStrategy::Transcode);
-    assert!(web
-        .reasons
-        .iter()
-        .any(|r| r.code() == "subtitle_needs_burn"));
-
-    let desktop = decide(DecisionInput {
-        media: &media,
-        client: &ClientCapability::preset_mpv(),
-        server: &srv,
-        network_kbps: None,
-        start_ms: 0,
-        hls_dir: None,
-        seg_seconds: 6,
-    });
-    // mpv 自己能渲染 PGS —— 桌面端放蓝光原盘不该被迫转码。
-    assert_eq!(desktop.strategy, PlaybackStrategy::DirectPlay);
-}

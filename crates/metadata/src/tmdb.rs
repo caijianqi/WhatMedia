@@ -270,6 +270,42 @@ fn credits_of(v: &Value, max_cast: usize) -> Vec<MetadataCredit> {
     out
 }
 
+fn genres_of(v: &Value) -> Vec<String> {
+    if let Some(arr) = v.get("genres").and_then(|g| g.as_array()) {
+        let names: Vec<String> = arr.iter().filter_map(|g| str_of(g, "name")).collect();
+        if !names.is_empty() {
+            return names;
+        }
+    }
+    // TMDB 搜索接口返回的是 genre_ids: [16, ...]
+    if let Some(ids) = v.get("genre_ids").and_then(|g| g.as_array()) {
+        let mut out = Vec::new();
+        for id_val in ids {
+            if let Some(id) = id_val.as_i64() {
+                match id {
+                    16 => out.push("动画".to_string()),
+                    10759 => out.push("动作冒险".to_string()),
+                    18 => out.push("剧情".to_string()),
+                    10765 => out.push("科幻与奇幻".to_string()),
+                    35 => out.push("喜剧".to_string()),
+                    99 => out.push("纪录".to_string()),
+                    80 => out.push("犯罪".to_string()),
+                    9648 => out.push("悬疑".to_string()),
+                    10751 => out.push("家庭".to_string()),
+                    10762 => out.push("儿童".to_string()),
+                    28 => out.push("动作".to_string()),
+                    12 => out.push("冒险".to_string()),
+                    878 => out.push("科幻".to_string()),
+                    14 => out.push("奇幻".to_string()),
+                    _ => {}
+                }
+            }
+        }
+        return out;
+    }
+    Vec::new()
+}
+
 fn record_from_movie(v: &Value, p: &TmdbProvider) -> MetadataRecord {
     MetadataRecord {
         provider: "tmdb".into(),
@@ -286,11 +322,7 @@ fn record_from_movie(v: &Value, p: &TmdbProvider) -> MetadataRecord {
             .filter(|r| *r > 0)
             .map(|r| r * 60_000),
         rating: v.get("vote_average").and_then(|r| r.as_f64()),
-        genres: v
-            .get("genres")
-            .and_then(|g| g.as_array())
-            .map(|arr| arr.iter().filter_map(|g| str_of(g, "name")).collect())
-            .unwrap_or_default(),
+        genres: genres_of(v),
         images: images_of(v, &p.cfg.image_base, p),
         credits: credits_of(v, p.cfg.max_cast),
     }
@@ -315,11 +347,7 @@ fn record_from_tv(v: &Value, p: &TmdbProvider) -> MetadataRecord {
             .filter(|r| *r > 0)
             .map(|r| r * 60_000),
         rating: v.get("vote_average").and_then(|r| r.as_f64()),
-        genres: v
-            .get("genres")
-            .and_then(|g| g.as_array())
-            .map(|arr| arr.iter().filter_map(|g| str_of(g, "name")).collect())
-            .unwrap_or_default(),
+        genres: genres_of(v),
         images: images_of(v, &p.cfg.image_base, p),
         credits: credits_of(v, p.cfg.max_cast),
     }
@@ -480,8 +508,7 @@ mod tests {
             .search_movie(&MetadataQuery {
                 title: "The Matrix".into(),
                 year: Some(1999),
-                language: None,
-                episode_title: None,
+                ..Default::default()
             })
             .await
             .unwrap();
@@ -532,8 +559,7 @@ mod tests {
             .search_series(&MetadataQuery {
                 title: "Breaking Bad".into(),
                 year: Some(2008),
-                language: None,
-                episode_title: None,
+                ..Default::default()
             })
             .await
             .unwrap();

@@ -112,16 +112,6 @@ describe('MpvPlayer · load', () => {
     expect(b.last('mpv_start')?.args?.args).toMatchObject({ url: 'D:\\media\\a.mkv' })
   })
 
-  it('外挂字幕按启动参数带上（启动后 sub-add 会有空窗）', async () => {
-    const { p, b } = await makePlayer()
-    await p.load(
-      { kind: 'progressive', url: 'http://srv/a.mkv' },
-      { externalSubtitles: [{ path: 'D:\\a.srt', language: 'chi', label: '中文' }] },
-    )
-    const args = b.last('mpv_start')?.args?.args as { subtitles: unknown[] }
-    expect(args.subtitles).toEqual([{ path: 'D:\\a.srt', lang: 'chi' }])
-  })
-
   it('启动失败进错误态，错误信息要能看懂', async () => {
     const { p, b } = await makePlayer()
     b.failing.add('mpv_start')
@@ -144,7 +134,7 @@ describe('MpvPlayer · 事件翻译', () => {
     expect(p.state.audioTracks).toEqual([])
   })
 
-  it('轨道列表按 request_id 对号，并分出音轨/字幕轨与当前选中', async () => {
+  it('轨道列表按 request_id 对号，并分出音轨与当前选中', async () => {
     const { p, b } = await makePlayer()
     await p.load({ kind: 'progressive', url: 'http://srv/a.mkv' })
     b.emit(MPV_EVENT_CHANNEL, ev({ name: 'file-loaded' }))
@@ -160,15 +150,12 @@ describe('MpvPlayer · 事件翻译', () => {
           { id: 1, type: 'video', title: 'video' },
           { id: 2, type: 'audio', lang: 'jpn', selected: true },
           { id: 3, type: 'audio', lang: 'chi' },
-          { id: 4, type: 'sub', lang: 'chi', selected: true },
         ],
       }),
     )
 
     expect(p.state.audioTracks.map((t) => t.id)).toEqual(['2', '3'])
-    expect(p.state.subtitleTracks.map((t) => t.id)).toEqual(['4'])
     expect(p.state.currentAudioTrackId).toBe('2')
-    expect(p.state.currentSubtitleTrackId).toBe('4')
   })
 
   it('响应里 request_id 对不上就不认（避免串台）', async () => {
@@ -255,14 +242,6 @@ describe('MpvPlayer · 控制', () => {
     await p.setVolume(0.35)
     expect(b.last('mpv_send')?.args?.command).toEqual(['set_property', 'volume', 35])
     expect(p.state.volume).toBeCloseTo(0.35)
-  })
-
-  it('关字幕发 sid=no', async () => {
-    const { p, b } = await makePlayer()
-    await p.load({ kind: 'progressive', url: 'http://srv/a.mkv' })
-    await p.selectSubtitleTrack(null)
-    expect(b.last('mpv_send')?.args?.command).toEqual(['set_property', 'sid', 'no'])
-    expect(p.state.currentSubtitleTrackId).toBeNull()
   })
 
   it('切音轨发数字轨号', async () => {

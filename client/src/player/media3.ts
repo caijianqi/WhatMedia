@@ -26,7 +26,6 @@
 import { PlayerCore } from './core'
 import { capabilitiesFor } from './capabilities'
 import type {
-  ExternalSubtitle,
   LoadOptions,
   MediaPlayer,
   PlayerCapabilities,
@@ -78,10 +77,8 @@ interface Media3SnapshotPayload {
   rate: number
   buffered: number
   audioTracks: Track[]
-  subtitleTracks: Track[]
   qualities: Track[]
   currentAudioTrackId: string | null
-  currentSubtitleTrackId: string | null
   currentQualityId: string | null
   error: { code: string; message: string } | null
 }
@@ -224,7 +221,6 @@ export class Media3Player implements MediaPlayer {
         kind: source.kind === 'hls' ? 'hls' : 'progressive',
         startAt: this.resumeAt,
         autoplay: options.autoplay ?? true,
-        externalSubtitles: (options.externalSubtitles ?? []).map(toWireSubtitle),
       })
       this.core.setState('loading')
     } catch (e) {
@@ -293,12 +289,6 @@ export class Media3Player implements MediaPlayer {
   async selectAudioTrack(id: string): Promise<void> {
     this.core.patch({ currentAudioTrackId: id })
     this.callVoid('media3_select_audio', { id })
-  }
-
-  async selectSubtitleTrack(id: string | null): Promise<void> {
-    this.core.patch({ currentSubtitleTrackId: id })
-    // null 表示关闭字幕。Tauri 的参数序列化会保留 null。
-    this.callVoid('media3_select_subtitle', { id })
   }
 
   async selectQuality(id: string): Promise<void> {
@@ -431,10 +421,8 @@ export class Media3Player implements MediaPlayer {
         if (!snap) return
         this.core.patch({
           audioTracks: snap.audioTracks ?? [],
-          subtitleTracks: snap.subtitleTracks ?? [],
           qualities: snap.qualities ?? [],
           currentAudioTrackId: snap.currentAudioTrackId ?? null,
-          currentSubtitleTrackId: snap.currentSubtitleTrackId ?? null,
           currentQualityId: snap.currentQualityId ?? null,
         })
       } catch (e) {
@@ -444,25 +432,6 @@ export class Media3Player implements MediaPlayer {
       }
     })()
   }
-}
-
-function toWireSubtitle(s: ExternalSubtitle): Record<string, unknown> {
-  return {
-    label: s.label,
-    // Android 走网络取字幕，和 Web 一样用 url。本地路径在手机上没有意义
-    // （服务端在另一台机器上）—— 这条与 mpv 端不同，别照抄。
-    url: s.url ?? '',
-    language: s.language ?? null,
-    default: s.default ?? false,
-    mime: guessMime(s.url),
-  }
-}
-
-function guessMime(url?: string): string {
-  const p = (url ?? '').split('?')[0]?.toLowerCase() ?? ''
-  if (p.endsWith('.vtt')) return 'text/vtt'
-  if (p.endsWith('.ass') || p.endsWith('.ssa')) return 'text/x-ssa'
-  return 'application/x-subrip'
 }
 
 function describe(e: unknown, prefix: string): string {

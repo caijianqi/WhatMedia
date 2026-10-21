@@ -23,7 +23,6 @@ whatmedia-scanner = { workspace = true }
 whatmedia-api = { workspace = true }
 whatmedia-hardware = { path = "../../crates/hardware" }
 whatmedia-playback = { path = "../../crates/playback" }
-whatmedia-subtitle = { path = "../../crates/subtitle" }
 whatmedia-transcoder = { path = "../../crates/transcoder" }
 
 anyhow = { workspace = true }

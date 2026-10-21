@@ -71,8 +71,6 @@ export interface AiActor {
 export type DecideView = components['schemas']['DecideView']
 export type ReasonView = components['schemas']['ReasonView']
 export type SessionView = components['schemas']['SessionView']
-export type SubtitleView = components['schemas']['SubtitleView']
-export type SubtitleItemView = components['schemas']['SubtitleItemView']
 export type CreateSessionBody = components['schemas']['CreateSessionBody']
 export type ResumePoint = components['schemas']['ResumePoint']
 
@@ -634,6 +632,39 @@ export function listScrapeRuns(): Promise<ScrapeRunView[]> {
  */
 export function getScrapeStats(libraryId?: string): Promise<JobStats> {
   return request<JobStats>(`/scrape/stats${qs({ library_id: libraryId })}`)
+}
+
+export interface CandidateView {
+  provider: string
+  provider_id: string
+  title: string
+  original_title?: string | null
+  year?: number | null
+  overview?: string | null
+  poster?: string | null
+  poster_url?: string | null
+  backdrop_url?: string | null
+  score: number
+  confidence: 'auto' | 'review' | 'reject' | string
+}
+
+/**
+ * 远程图片代理地址（解决 TMDB 官方 CDN 国内浏览器无法直连或被阻断的问题）。
+ */
+export function imageProxyUrl(url?: string | null): string {
+  if (!url) return ''
+  if (url.startsWith('http://') || url.startsWith('https://')) {
+    return `/api/v1/metadata/image_proxy?url=${encodeURIComponent(url)}`
+  }
+  return url
+}
+
+export function getCandidates(params: {
+  item_id: string
+  title?: string
+  year?: number
+}): Promise<CandidateView[]> {
+  return request<CandidateView[]>(`/metadata/candidates${qs(params)}`)
 }
 
 /**

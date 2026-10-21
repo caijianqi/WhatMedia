@@ -24,7 +24,6 @@
 import { PlayerCore } from './core'
 import { capabilitiesFor } from './capabilities'
 import type {
-  ExternalSubtitle,
   LoadOptions,
   MediaPlayer,
   PlayerCapabilities,
@@ -237,11 +236,6 @@ export class MpvPlayer implements MediaPlayer {
     await this.stopSession()
 
     const url = source.kind === 'local-file' ? source.path : source.url
-    const subs = (options.externalSubtitles ?? [])
-      // mpv 要的是文件路径；Web 用的 URL 在这边也能用（mpv 自己会下载），
-      // 但优先用 path —— 直读本地文件是桌面端的意义所在。
-      .map((s: ExternalSubtitle) => ({ path: s.path ?? s.url ?? '', lang: s.language ?? null }))
-      .filter((s) => s.path.length > 0)
 
     try {
       await bridge.invoke<string>('mpv_start', {
@@ -249,7 +243,6 @@ export class MpvPlayer implements MediaPlayer {
           url,
           start_seconds: options.startAt ?? 0,
           title: null,
-          subtitles: subs,
           hwdec: this.options.hwdec ?? 'auto-safe',
           mpv_path: this.options.mpvPath ?? null,
         },
@@ -389,9 +382,7 @@ export class MpvPlayer implements MediaPlayer {
   private applyTrackList(data: unknown): void {
     const list = Array.isArray(data) ? (data as MpvTrack[]) : []
     const audio: Track[] = []
-    const subs: Track[] = []
     let currentAudio: string | null = null
-    let currentSub: string | null = null
 
     for (const t of list) {
       if (!t || typeof t.id !== 'number') continue
@@ -405,17 +396,12 @@ export class MpvPlayer implements MediaPlayer {
       if (t.type === 'audio') {
         audio.push(track)
         if (t.selected) currentAudio = track.id
-      } else if (t.type === 'sub') {
-        subs.push(track)
-        if (t.selected) currentSub = track.id
       }
     }
 
     this.core.patch({
       audioTracks: audio,
-      subtitleTracks: subs,
       currentAudioTrackId: currentAudio,
-      currentSubtitleTrackId: currentSub,
     })
     this.core.emit({ type: 'trackslisted' })
   }
@@ -463,12 +449,6 @@ export class MpvPlayer implements MediaPlayer {
   async selectAudioTrack(id: string): Promise<void> {
     await this.send(['set_property', 'aid', toTrackValue(id)])
     this.core.patch({ currentAudioTrackId: id })
-  }
-
-  async selectSubtitleTrack(id: string | null): Promise<void> {
-    // mpv 关字幕用字符串 "no"，不是 0 也不是 false。
-    await this.send(['set_property', 'sid', id === null ? 'no' : toTrackValue(id)])
-    this.core.patch({ currentSubtitleTrackId: id })
   }
 
   /**
@@ -527,7 +507,6 @@ function toTrackValue(id: string): number | string {
 
 function defaultLabel(type: string | undefined, id: number): string {
   if (type === 'audio') return `音轨 ${id}`
-  if (type === 'sub') return `字幕 ${id}`
   return `轨道 ${id}`
 }
 

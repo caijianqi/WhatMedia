@@ -4,42 +4,7 @@
  * 1:1 遵循 ui.html 原生规范：
  * - 品牌标志带渐变投影与 <small>YOUR HOME CINEMA</small>
  * - 分组导航：发现内容与个人空间
- * - 原生 .server-card 状态卡片：呼吸绿点、版本与运行时间、紫青双色进度条
  */
-import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
-import * as api from '../api/client'
-
-// ── 服务端状态 ────────────────────────────────────────────
-const health = ref<api.HealthReport | null>(null)
-let timer: number | undefined
-
-async function loadHealth(): Promise<void> {
-  try {
-    health.value = await api.health()
-  } catch {
-    health.value = null
-  }
-}
-
-onMounted(() => {
-  void loadHealth()
-  timer = window.setInterval(() => void loadHealth(), 60_000)
-})
-
-onBeforeUnmount(() => {
-  if (timer) window.clearInterval(timer)
-})
-
-const uptime = computed(() => {
-  const s = health.value?.uptime_secs ?? 0
-  if (s <= 0) return null
-  const d = Math.floor(s / 86400)
-  const h = Math.floor((s % 86400) / 3600)
-  const m = Math.floor((s % 3600) / 60)
-  if (d > 0) return `${d} 天 ${h} 小时`
-  if (h > 0) return `${h} 小时 ${m} 分`
-  return `${m} 分钟`
-})
 </script>
 
 <template>
@@ -184,29 +149,5 @@ const uptime = computed(() => {
     </nav>
 
     <div class="sidebar-spacer"></div>
-
-    <!-- 原生服务器状态卡片（点击直达设置中心存储与媒体库） -->
-    <RouterLink
-      :to="{ name: 'settings', query: { tab: 'storage' } }"
-      class="server-card"
-      title="点击查看媒体库与存储设置"
-    >
-      <div class="server-head">
-        <span class="status-dot"></span>
-        <span style="font-size:11px">媒体服务器已连接</span>
-      </div>
-      <div class="server-caption">
-        本地媒体库运行正常
-        <br />
-        {{ health ? `运行环境 ${health.os} · 已运行 ${uptime ?? '刚刚'}` : '此区域在接入后端后显示实时状态' }}
-      </div>
-      <div class="server-meter">
-        <span :style="{ width: '38%' }"></span>
-      </div>
-      <div class="server-foot">
-        <span>存储使用情况</span>
-        <span>{{ health ? '正常运行' : '演示状态' }}</span>
-      </div>
-    </RouterLink>
   </aside>
 </template>

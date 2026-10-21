@@ -57,7 +57,18 @@ pub async fn ingest_file(db: &Db, req: &IngestRequest) -> Result<IngestOutcome> 
     let item = MediaItem {
         id: item_id,
         library_id,
-        kind: if is_episode {
+        kind: if let Some(k) = req.parsed.kind_hint {
+            if is_episode {
+                match k {
+                    MediaKind::Anime => MediaKind::Anime,
+                    MediaKind::Documentary => MediaKind::Documentary,
+                    MediaKind::Variety => MediaKind::Variety,
+                    _ => MediaKind::Episode,
+                }
+            } else {
+                k
+            }
+        } else if is_episode {
             MediaKind::Episode
         } else {
             MediaKind::Movie

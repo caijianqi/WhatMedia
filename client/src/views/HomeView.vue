@@ -7,7 +7,6 @@
  *   3. 继续观看分节（3 列横向卡片，带剩余时间与双色滑轨）
  *   4. 最近添加与为你发现（5 列海报行，带原生副标题与查看全部快速跳转）
  *   5. 按类型浏览（4 列 GenreCard 氛围卡网格）
- *   6. 底部家庭影院定制说明条（.section-note）
  */
 import { computed, onMounted, ref, watch } from 'vue'
 import HeroCarousel, { type HeroSlide } from '../components/HeroCarousel.vue'
@@ -291,28 +290,6 @@ const genreCards = [
         />
       </div>
     </section>
-
-    <!-- 分节五：底部家庭影院定制说明条 (Section Note) -->
-    <div class="section-note">
-      <div style="display:flex;align-items:center;gap:14px">
-        <span class="note-icon">
-          <svg viewBox="0 0 24 24">
-            <rect x="4" y="4" width="16" height="16" rx="3" />
-            <path d="M8 12h8M12 8v8" />
-          </svg>
-        </span>
-        <div>
-          <strong>你的家庭影院，按你的方式组织</strong>
-          <p>统一管理本地媒体、观看记录与收藏。连接真实媒体服务后，这里会显示你的实际内容。</p>
-        </div>
-      </div>
-      <RouterLink :to="{ name: 'settings', query: { tab: 'storage' } }" class="btn btn-secondary">
-        <span>连接与设置媒体库</span>
-        <svg viewBox="0 0 24 24">
-          <path d="M5 12h14m-6-6 6 6-6 6" />
-        </svg>
-      </RouterLink>
-    </div>
   </div>
 </template>
 

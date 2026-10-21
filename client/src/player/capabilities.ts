@@ -20,13 +20,10 @@ interface RawClient {
   containers: string[]
   videoCodecs: string[]
   audioCodecs: string[]
-  subtitleCodecs: string[]
-  bitmapSubtitles: boolean
   maxBitrateKbps?: number
   hls: boolean
   localFile: boolean
   canSwitchAudioTrack: boolean
-  canSwitchSubtitleTrack: boolean
   /** 给人看的说明，不参与比对。 */
   note: string
 }
@@ -39,13 +36,10 @@ function toCapabilities(c: RawClient): PlayerCapabilities {
     containers: c.containers,
     videoCodecs: c.videoCodecs,
     audioCodecs: c.audioCodecs,
-    subtitleCodecs: c.subtitleCodecs,
-    bitmapSubtitles: c.bitmapSubtitles,
     maxBitrateKbps: c.maxBitrateKbps,
     hls: c.hls,
     localFile: c.localFile,
     canSwitchAudioTrack: c.canSwitchAudioTrack,
-    canSwitchSubtitleTrack: c.canSwitchSubtitleTrack,
   }
 }
 

@@ -13,12 +13,9 @@ const caps: PlayerCapabilities = {
   containers: ['mp4'],
   videoCodecs: ['h264'],
   audioCodecs: ['aac'],
-  subtitleCodecs: ['vtt'],
-  bitmapSubtitles: false,
   hls: true,
   localFile: false,
   canSwitchAudioTrack: false,
-  canSwitchSubtitleTrack: true,
 }
 
 function core(): PlayerCore {

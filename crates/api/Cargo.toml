@@ -39,7 +39,6 @@ whatmedia-metadata = { workspace = true }
 whatmedia-playback = { path = "../playback" }
 whatmedia-storage = { workspace = true }
 whatmedia-transcoder = { path = "../transcoder" }
-whatmedia-subtitle = { path = "../subtitle" }
 whatmedia-scanner = { workspace = true }
 axum = { workspace = true }
 tower-http = { workspace = true }
