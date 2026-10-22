@@ -126,10 +126,14 @@ fn candidates(env: &dyn MpvEnv) -> Vec<String> {
             if dir.is_empty() {
                 continue;
             }
-            let p = std::path::Path::new(dir).join(&exe);
-            if let Some(s) = p.to_str() {
-                out.push(s.to_string());
-            }
+            let p = if os == Os::Windows {
+                let trimmed = dir.trim_end_matches(['/', '\\']);
+                format!("{trimmed}\\{exe}")
+            } else {
+                let trimmed = dir.trim_end_matches('/');
+                format!("{trimmed}/{exe}")
+            };
+            out.push(p);
         }
     }
 

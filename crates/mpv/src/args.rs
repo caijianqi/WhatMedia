@@ -3,7 +3,7 @@
 //! **参数顺序即正确性**，这里每一条都对应一个真实的踩坑点。
 
 use serde_json::json;
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 
 use crate::ipc::IpcPath;
 
@@ -122,8 +122,13 @@ pub fn url_allowed(url: &str) -> bool {
     if lower.starts_with("http://") || lower.starts_with("https://") {
         return true;
     }
-    if lower.starts_with('/') || lower.contains(':') && Path::new(&lower).is_absolute() {
-        // 绝对路径（含 Windows 的 C:\）
+    // POSIX 绝对路径（以 / 开头）或 Windows 盘符绝对路径（如 C:\ 或 C:/）
+    if lower.starts_with('/')
+        || (lower.len() >= 3
+            && lower.as_bytes()[0].is_ascii_alphabetic()
+            && lower.as_bytes()[1] == b':'
+            && (lower.as_bytes()[2] == b'\\' || lower.as_bytes()[2] == b'/'))
+    {
         return true;
     }
     if lower.starts_with("\\\\") {
