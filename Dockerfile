@@ -37,40 +37,17 @@ RUN --mount=type=cache,id=cargo-registry-${TARGETARCH},target=/usr/local/cargo/r
     cargo build --release -p whatmedia && \
     cp /src/target/release/whatmedia /usr/local/bin/whatmedia
 
-# ── 3. FFmpeg 静态二进制获取阶段 ─────────────────────────────────
-FROM debian:bookworm-slim AS ffmpeg
-
-ARG TARGETARCH
-
-RUN apt-get update && apt-get install -y --no-install-recommends \
-      ca-certificates curl xz-utils \
-    && rm -rf /var/lib/apt/lists/*
-
-RUN set -eux; \
-    case "$TARGETARCH" in \
-      arm64) arch=arm64 ;; \
-      *)     arch=amd64 ;; \
-    esac; \
-    url="https://johnvansickle.com/ffmpeg/releases/ffmpeg-release-${arch}-static.tar.xz"; \
-    curl -fsSL "$url" -o /tmp/ffmpeg.tar.xz; \
-    mkdir -p /tmp/ff; \
-    tar -xJf /tmp/ffmpeg.tar.xz -C /tmp/ff --strip-components=1 \
-      --wildcards '*/ffmpeg' '*/ffprobe'; \
-    mv /tmp/ff/ffmpeg /tmp/ff/ffprobe /usr/local/bin/; \
-    rm -rf /tmp/ffmpeg.tar.xz /tmp/ff; \
-    ffmpeg -version | head -1
-
-# ── 4. 运行环境阶段 ──────────────────────────────────────────────
+# ── 3. 运行环境阶段 ──────────────────────────────────────────────
 FROM debian:bookworm-slim
 
 RUN groupadd -r -g 1000 whatmedia && useradd -r -u 1000 -g whatmedia whatmedia \
     && mkdir -p /config /data /cache /logs /usr/local/share/whatmedia/web \
     && chown -R whatmedia:whatmedia /config /data /cache /logs /usr/local/share/whatmedia
 
-COPY --from=builder     /usr/local/bin/whatmedia /usr/local/bin/whatmedia
-COPY --from=ffmpeg      /usr/local/bin/ffmpeg    /usr/local/bin/ffmpeg
-COPY --from=ffmpeg      /usr/local/bin/ffprobe   /usr/local/bin/ffprobe
-COPY --from=web-builder /web/dist                /usr/local/share/whatmedia/web
+COPY --from=builder              /usr/local/bin/whatmedia /usr/local/bin/whatmedia
+COPY --from=mwader/static-ffmpeg:7.1 /ffmpeg             /usr/local/bin/ffmpeg
+COPY --from=mwader/static-ffmpeg:7.1 /ffprobe            /usr/local/bin/ffprobe
+COPY --from=web-builder          /web/dist                /usr/local/share/whatmedia/web
 COPY migrations /usr/local/share/whatmedia/migrations
 
 # 安装 wget 用于容器探针健康检查
