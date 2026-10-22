@@ -42,6 +42,11 @@ jobs:
       - name: Smoke (healthz)
         run: |
           cargo build -p whatmedia
+          WHATMEDIA_CONFIG_DIR=/tmp/whatmedia/config \
+          WHATMEDIA_DATA_DIR=/tmp/whatmedia/data \
+          WHATMEDIA_CACHE_DIR=/tmp/whatmedia/cache \
+          WHATMEDIA_LOG_DIR=/tmp/whatmedia/logs \
+          WHATMEDIA_DATABASE_URL="sqlite:/tmp/whatmedia/config/whatmedia.db?mode=rwc" \
           ./target/debug/whatmedia serve & SRV=$!
           for i in $(seq 1 30); do
             curl -fsS http://127.0.0.1:8080/healthz && break || sleep 1
@@ -84,6 +89,11 @@ jobs:
       - name: Smoke (healthz)
         run: |
           cargo build -p whatmedia
+          WHATMEDIA_CONFIG_DIR=/tmp/whatmedia/config \
+          WHATMEDIA_DATA_DIR=/tmp/whatmedia/data \
+          WHATMEDIA_CACHE_DIR=/tmp/whatmedia/cache \
+          WHATMEDIA_LOG_DIR=/tmp/whatmedia/logs \
+          WHATMEDIA_DATABASE_URL="sqlite:/tmp/whatmedia/config/whatmedia.db?mode=rwc" \
           ./target/debug/whatmedia serve & SRV=$!
           for i in $(seq 1 60); do
             curl -fsS http://127.0.0.1:8080/healthz && break || sleep 1
