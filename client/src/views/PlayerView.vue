@@ -27,6 +27,9 @@ const layout = useLayoutStore()
 
 const itemId = computed(() => String(route.params.id))
 const startMs = computed(() => Number(route.query.start ?? 0))
+const isVod = computed(() => !!route.query.vod_url || String(route.params.id) === 'vod')
+const vodTitle = computed(() => (route.query.vod_title as string) || '云端在线播放')
+const vodSource = computed(() => (route.query.vod_source as string) || '多源聚合')
 
 /** TV 形态。TV 上没有指针，也没有"鼠标不动就隐藏控制条"这回事。 */
 const isTv = computed(() => layout.isTv)
@@ -84,10 +87,28 @@ const isPlaying = computed(() => store.snapshot.state === 'playing')
 
 onMounted(async () => {
   if (!stage.value) return
-  await store.open({ container: stage.value, fullscreenTarget: shell.value ?? undefined }, itemId.value, {
-    startMs: startMs.value,
-    autoplay: true,
-  })
+  if (isVod.value) {
+    const rawVodUrl = route.query.vod_url as string
+    if (rawVodUrl) {
+      await store.openVodUrl(
+        { container: stage.value, fullscreenTarget: shell.value ?? undefined },
+        rawVodUrl,
+        {
+          startMs: startMs.value,
+          autoplay: true,
+        },
+      )
+    }
+  } else {
+    await store.open(
+      { container: stage.value, fullscreenTarget: shell.value ?? undefined },
+      itemId.value,
+      {
+        startMs: startMs.value,
+        autoplay: true,
+      },
+    )
+  }
   window.addEventListener('keydown', onKeyDown)
   window.addEventListener('pagehide', onPageHide)
   document.addEventListener('fullscreenchange', onFullscreenChange)
@@ -346,9 +367,9 @@ const bufferedPct = computed(() => {
       :class="{ 'is-hidden': !controlsVisible }"
     >
       <RouterLink
-        :to="{ name: 'item', params: { id: itemId } }"
+        :to="isVod ? { name: 'home' } : { name: 'item', params: { id: itemId } }"
         class="player-back-btn"
-        title="返回详情"
+        :title="isVod ? '返回首页' : '返回详情'"
       >
         <svg
           viewBox="0 0 24 24"
@@ -359,7 +380,11 @@ const bufferedPct = computed(() => {
         <span>返回</span>
       </RouterLink>
 
-      <div v-if="store.strategy" class="player-strategy-badge">
+      <div v-if="isVod" class="player-vod-info">
+        <span class="player-strategy-badge vod-badge">云端聚合 · {{ vodSource }}</span>
+        <span class="vod-play-title">{{ vodTitle }}</span>
+      </div>
+      <div v-else-if="store.strategy" class="player-strategy-badge">
         {{ store.strategy }}
       </div>
     </div>
@@ -418,10 +443,10 @@ const bufferedPct = computed(() => {
         {{ store.reasons.map((r) => r.message).join('；') }}
       </p>
       <RouterLink
-        :to="{ name: 'item', params: { id: itemId } }"
+        :to="isVod ? { name: 'home' } : { name: 'item', params: { id: itemId } }"
         class="btn btn-secondary"
       >
-        返回详情
+        {{ isVod ? '返回首页' : '返回详情' }}
       </RouterLink>
     </div>
 

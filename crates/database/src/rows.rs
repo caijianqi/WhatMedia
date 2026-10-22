@@ -434,6 +434,31 @@ impl StorageAccountRow {
     }
 }
 
+#[derive(Debug, Clone, FromRow)]
+pub struct VodSourceRow {
+    pub id: String,
+    pub name: String,
+    pub api_url: String,
+    pub is_active: i64,
+    pub weight: i64,
+    pub timeout_ms: i64,
+    pub created_at: String,
+    pub updated_at: String,
+}
+
+impl VodSourceRow {
+    pub fn into_config(self) -> whatmedia_aggregator::VodSourceConfig {
+        whatmedia_aggregator::VodSourceConfig {
+            id: self.id,
+            name: self.name,
+            api_url: self.api_url,
+            is_active: self.is_active != 0,
+            weight: self.weight as u32,
+            timeout_ms: self.timeout_ms as u64,
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

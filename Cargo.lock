@@ -2114,6 +2114,7 @@ dependencies = [
  "futures-core",
  "pin-project-lite",
  "tokio",
+ "tokio-util",
 ]
 
 [[package]]
@@ -2561,6 +2562,23 @@ dependencies = [
 ]
 
 [[package]]
+name = "whatmedia-aggregator"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "async-trait",
+ "chrono",
+ "regex",
+ "reqwest",
+ "serde",
+ "serde_json",
+ "tokio",
+ "tracing",
+ "utoipa",
+ "whatmedia-core",
+]
+
+[[package]]
 name = "whatmedia-ai"
 version = "0.1.0"
 dependencies = [
@@ -2593,12 +2611,14 @@ dependencies = [
  "sqlx",
  "tempfile",
  "tokio",
+ "tokio-stream",
  "tokio-util",
  "tower",
  "tower-http",
  "tracing",
  "utoipa",
  "uuid",
+ "whatmedia-aggregator",
  "whatmedia-ai",
  "whatmedia-auth",
  "whatmedia-config",
@@ -2670,6 +2690,7 @@ dependencies = [
  "tracing",
  "utoipa",
  "uuid",
+ "whatmedia-aggregator",
  "whatmedia-config",
  "whatmedia-core",
  "whatmedia-live",

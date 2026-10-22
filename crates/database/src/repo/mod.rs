@@ -12,9 +12,15 @@ pub mod metadata;
 pub mod playback;
 pub mod scan;
 pub mod search;
+pub mod aggregator;
 pub mod social;
 pub mod storage;
 pub mod tv;
+
+pub use aggregator::{
+    cleanup_expired_cache, delete_vod_source, get_search_cache, get_vod_source,
+    list_active_vod_sources, list_vod_sources, set_search_cache, upsert_vod_source,
+};
 
 pub use storage::{
     delete_storage_account, get_storage_account, insert_storage_account, list_storage_accounts,
@@ -120,16 +126,20 @@ pub struct ItemQuery {
     #[cfg_attr(feature = "openapi", schema(value_type = Option<uuid::Uuid>))]
     pub library_id: Option<Id>,
     pub kind: Option<MediaKind>,
+    #[serde(default, deserialize_with = "deserialize_opt_i32_lenient")]
     pub year: Option<i32>,
     #[serde(default)]
     pub sort: ItemSort,
     #[serde(default)]
     pub order: SortOrder,
-    #[serde(default = "default_page")]
+    #[serde(default = "default_page", deserialize_with = "deserialize_page_lenient")]
     pub page: u32,
-    #[serde(default = "default_page_size")]
+    #[serde(
+        default = "default_page_size",
+        deserialize_with = "deserialize_page_size_lenient"
+    )]
     pub page_size: u32,
-    #[serde(default)]
+    #[serde(default, deserialize_with = "deserialize_opt_bool_lenient")]
     pub aggregate_series: Option<bool>,
 }
 
@@ -139,6 +149,210 @@ fn default_page() -> u32 {
 
 fn default_page_size() -> u32 {
     50
+}
+
+fn deserialize_page_lenient<'de, D>(deserializer: D) -> Result<u32, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    struct Visitor;
+    impl<'de> serde::de::Visitor<'de> for Visitor {
+        type Value = u32;
+
+        fn expecting(&self, formatter: &mut std::fmt::Formatter) -> std::fmt::Result {
+            formatter.write_str("a u32 integer or string containing a u32")
+        }
+
+        fn visit_u64<E>(self, v: u64) -> Result<Self::Value, E>
+        where
+            E: serde::de::Error,
+        {
+            u32::try_from(v).map_err(serde::de::Error::custom)
+        }
+
+        fn visit_i64<E>(self, v: i64) -> Result<Self::Value, E>
+        where
+            E: serde::de::Error,
+        {
+            u32::try_from(v).map_err(serde::de::Error::custom)
+        }
+
+        fn visit_str<E>(self, v: &str) -> Result<Self::Value, E>
+        where
+            E: serde::de::Error,
+        {
+            let trimmed = v.trim();
+            if trimmed.is_empty() {
+                Ok(default_page())
+            } else {
+                trimmed.parse::<u32>().map_err(serde::de::Error::custom)
+            }
+        }
+    }
+
+    deserializer.deserialize_any(Visitor)
+}
+
+fn deserialize_page_size_lenient<'de, D>(deserializer: D) -> Result<u32, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    struct Visitor;
+    impl<'de> serde::de::Visitor<'de> for Visitor {
+        type Value = u32;
+
+        fn expecting(&self, formatter: &mut std::fmt::Formatter) -> std::fmt::Result {
+            formatter.write_str("a u32 integer or string containing a u32")
+        }
+
+        fn visit_u64<E>(self, v: u64) -> Result<Self::Value, E>
+        where
+            E: serde::de::Error,
+        {
+            u32::try_from(v).map_err(serde::de::Error::custom)
+        }
+
+        fn visit_i64<E>(self, v: i64) -> Result<Self::Value, E>
+        where
+            E: serde::de::Error,
+        {
+            u32::try_from(v).map_err(serde::de::Error::custom)
+        }
+
+        fn visit_str<E>(self, v: &str) -> Result<Self::Value, E>
+        where
+            E: serde::de::Error,
+        {
+            let trimmed = v.trim();
+            if trimmed.is_empty() {
+                Ok(default_page_size())
+            } else {
+                trimmed.parse::<u32>().map_err(serde::de::Error::custom)
+            }
+        }
+    }
+
+    deserializer.deserialize_any(Visitor)
+}
+
+fn deserialize_opt_i32_lenient<'de, D>(deserializer: D) -> Result<Option<i32>, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    struct Visitor;
+    impl<'de> serde::de::Visitor<'de> for Visitor {
+        type Value = Option<i32>;
+
+        fn expecting(&self, formatter: &mut std::fmt::Formatter) -> std::fmt::Result {
+            formatter.write_str("an optional i32 integer or string")
+        }
+
+        fn visit_none<E>(self) -> Result<Self::Value, E>
+        where
+            E: serde::de::Error,
+        {
+            Ok(None)
+        }
+
+        fn visit_unit<E>(self) -> Result<Self::Value, E>
+        where
+            E: serde::de::Error,
+        {
+            Ok(None)
+        }
+
+        fn visit_some<D2>(self, deserializer: D2) -> Result<Self::Value, D2::Error>
+        where
+            D2: serde::Deserializer<'de>,
+        {
+            deserializer.deserialize_any(Visitor)
+        }
+
+        fn visit_i64<E>(self, v: i64) -> Result<Self::Value, E>
+        where
+            E: serde::de::Error,
+        {
+            i32::try_from(v).map(Some).map_err(serde::de::Error::custom)
+        }
+
+        fn visit_u64<E>(self, v: u64) -> Result<Self::Value, E>
+        where
+            E: serde::de::Error,
+        {
+            i32::try_from(v).map(Some).map_err(serde::de::Error::custom)
+        }
+
+        fn visit_str<E>(self, v: &str) -> Result<Self::Value, E>
+        where
+            E: serde::de::Error,
+        {
+            let trimmed = v.trim();
+            if trimmed.is_empty() {
+                Ok(None)
+            } else {
+                trimmed.parse::<i32>().map(Some).map_err(serde::de::Error::custom)
+            }
+        }
+    }
+
+    deserializer.deserialize_any(Visitor)
+}
+
+fn deserialize_opt_bool_lenient<'de, D>(deserializer: D) -> Result<Option<bool>, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    struct Visitor;
+    impl<'de> serde::de::Visitor<'de> for Visitor {
+        type Value = Option<bool>;
+
+        fn expecting(&self, formatter: &mut std::fmt::Formatter) -> std::fmt::Result {
+            formatter.write_str("an optional boolean or string")
+        }
+
+        fn visit_none<E>(self) -> Result<Self::Value, E>
+        where
+            E: serde::de::Error,
+        {
+            Ok(None)
+        }
+
+        fn visit_unit<E>(self) -> Result<Self::Value, E>
+        where
+            E: serde::de::Error,
+        {
+            Ok(None)
+        }
+
+        fn visit_some<D2>(self, deserializer: D2) -> Result<Self::Value, D2::Error>
+        where
+            D2: serde::Deserializer<'de>,
+        {
+            deserializer.deserialize_any(Visitor)
+        }
+
+        fn visit_bool<E>(self, v: bool) -> Result<Self::Value, E>
+        where
+            E: serde::de::Error,
+        {
+            Ok(Some(v))
+        }
+
+        fn visit_str<E>(self, v: &str) -> Result<Self::Value, E>
+        where
+            E: serde::de::Error,
+        {
+            let s = v.trim().to_ascii_lowercase();
+            match s.as_str() {
+                "" => Ok(None),
+                "true" | "1" | "yes" => Ok(Some(true)),
+                "false" | "0" | "no" => Ok(Some(false)),
+                _ => Err(serde::de::Error::custom(format!("invalid boolean: {v}"))),
+            }
+        }
+    }
+
+    deserializer.deserialize_any(Visitor)
 }
 
 impl Default for ItemQuery {
@@ -207,4 +421,37 @@ impl ItemSummary {
 pub fn page_of<T>(data: Vec<T>, total: i64, query: &ItemQuery) -> Page<T> {
     let (page, size) = query.clamp();
     Page::new(data, total, page, size)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use serde::Deserialize;
+
+    #[derive(Debug, Deserialize)]
+    struct MockSearch {
+        pub q: String,
+        #[serde(flatten)]
+        pub page: ItemQuery,
+    }
+
+    #[test]
+    fn item_query_deserializes_flattened_strings_from_query_params() {
+        let json_str = r#"{"q":"狂飙","page_size":"6","page":"2","year":"2023","aggregate_series":"true"}"#;
+        let s: MockSearch = serde_json::from_str(json_str).unwrap();
+        assert_eq!(s.q, "狂飙");
+        assert_eq!(s.page.page_size, 6);
+        assert_eq!(s.page.page, 2);
+        assert_eq!(s.page.year, Some(2023));
+        assert_eq!(s.page.aggregate_series, Some(true));
+    }
+
+    #[test]
+    fn item_query_deserializes_defaults_when_empty() {
+        let json_str = r#"{"q":"狂飙","page_size":"","page":""}"#;
+        let s: MockSearch = serde_json::from_str(json_str).unwrap();
+        assert_eq!(s.page.page_size, 50);
+        assert_eq!(s.page.page, 1);
+        assert_eq!(s.page.year, None);
+    }
 }

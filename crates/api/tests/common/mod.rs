@@ -76,6 +76,24 @@ pub async fn member_token(db: &Db, username: &str) -> String {
     token_for(db, user).await
 }
 
+/// 儿童成员的会话票据。用于验证儿童安全门禁与分级闸门。
+pub async fn child_token(db: &Db, username: &str) -> String {
+    let user = insert_user(
+        db,
+        NewUser {
+            username,
+            display_name: None,
+            password_hash: &hash_password("password123").unwrap(),
+            role: "child",
+            parent_id: None,
+            max_rating: Some("PG"),
+        },
+    )
+    .await
+    .unwrap();
+    token_for(db, user).await
+}
+
 async fn token_for(db: &Db, user_id: Id) -> String {
     let (token, hash) = new_token();
     let expires = (chrono::Utc::now() + chrono::Duration::days(1)).to_rfc3339();

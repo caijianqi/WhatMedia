@@ -293,6 +293,7 @@ pub fn default_registry(allow_dangerous: bool) -> ToolRegistry {
     r.register(Arc::new(crate::tools::GetPlaybackCapabilityTool));
     r.register(Arc::new(crate::tools::ScanLibraryTool));
     r.register(Arc::new(crate::tools::IdentifyMediaTool));
+    r.register(Arc::new(crate::tools::SearchVodTool));
     r
 }
 
@@ -371,7 +372,9 @@ mod tests {
     }
 
     #[test]
-    fn default_registry_has_eight_tools() {
-        assert_eq!(default_registry(true).visible().len(), 8);
+    fn default_registry_has_nine_tools() {
+        let reg = default_registry(true);
+        assert_eq!(reg.visible().len(), 9);
+        assert!(reg.visible().iter().any(|s| s.name == "search_aggregated_vod"));
     }
 }

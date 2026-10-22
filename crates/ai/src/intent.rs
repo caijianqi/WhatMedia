@@ -437,6 +437,29 @@ impl RuleEngine {
             };
         }
 
+        if text.contains("全网")
+            || text.contains("网上找")
+            || text.contains("在线找")
+            || text.contains("聚合搜")
+            || text.contains("云端搜")
+        {
+            if let Some(t) = extract_text(raw) {
+                let clean_t = t
+                    .replace("全网", "")
+                    .replace("在线", "")
+                    .replace("聚合", "")
+                    .replace("网上", "")
+                    .replace("云端", "")
+                    .trim()
+                    .to_string();
+                let final_q = if clean_t.is_empty() { t } else { clean_t };
+                return Intent::Action {
+                    tool: "search_aggregated_vod".into(),
+                    args: json!({ "query": final_q }),
+                };
+            }
+        }
+
         let kind = first_match(&text, KINDS);
         let genres = all_matches(&text, GENRES);
         let region = first_match(&text, REGIONS).map(|s: &str| s.to_string());
@@ -742,5 +765,14 @@ mod tests {
         assert_eq!(args["kind"], "movie");
         assert_eq!(args["watch"], "partial");
         assert_eq!(args["genres"][0], "Sci-Fi");
+    }
+
+    #[test]
+    fn full_network_search_maps_to_vod_action() {
+        let (tool, args) = RuleEngine::parse("帮我全网搜索一下繁花")
+            .tool_call()
+            .unwrap();
+        assert_eq!(tool, "search_aggregated_vod");
+        assert_eq!(args["query"], "繁花");
     }
 }

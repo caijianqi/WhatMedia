@@ -11,6 +11,7 @@ import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import * as api from '../api/client'
 import { useSessionStore } from '../stores/session'
+import VodDetailModal from './VodDetailModal.vue'
 
 const props = withDefaults(defineProps<{ showSearch?: boolean }>(), { showSearch: true })
 
@@ -20,8 +21,11 @@ const session = useSessionStore()
 // ── 搜索 ──────────────────────────────────────────────────
 const query = ref('')
 const results = ref<api.ItemSummary[]>([])
+const remoteResults = ref<api.AggregatedVodItem[]>([])
 const searching = ref(false)
 const open = ref(false)
+const selectedVod = ref<api.AggregatedVodItem | null>(null)
+const vodModalOpen = ref(false)
 let debounce: number | undefined
 let inflight: AbortController | null = null
 const searchInput = ref<HTMLInputElement | null>(null)
@@ -37,6 +41,7 @@ async function run(): Promise<void> {
   const q = query.value.trim()
   if (q.length < MIN_QUERY) {
     results.value = []
+    remoteResults.value = []
     searching.value = false
     return
   }
@@ -44,13 +49,25 @@ async function run(): Promise<void> {
   inflight = new AbortController()
   searching.value = true
   try {
-    const page = await api.search(q, { page_size: 8 })
+    const res = await api.searchAggregate(q, { page_size: 6 })
     if (!inflight.signal.aborted) {
-      results.value = page.data
+      results.value = res.local.data
+      remoteResults.value = res.remote
       open.value = true
     }
-  } catch (e) {
-    if (!(e instanceof api.ApiError && e.isNetwork)) results.value = []
+  } catch {
+    // 降级回退到本地普通搜索
+    try {
+      const page = await api.search(q, { page_size: 6 })
+      if (!inflight.signal.aborted) {
+        results.value = page.data
+        remoteResults.value = []
+        open.value = true
+      }
+    } catch {
+      results.value = []
+      remoteResults.value = []
+    }
   } finally {
     searching.value = false
   }
@@ -62,7 +79,32 @@ function pick(item: api.ItemSummary): void {
   open.value = false
   query.value = ''
   results.value = []
+  remoteResults.value = []
   void router.push({ name: 'item', params: { id: item.id } })
+}
+
+function pickVod(vod: api.AggregatedVodItem): void {
+  open.value = false
+  selectedVod.value = vod
+  vodModalOpen.value = true
+}
+
+function playVodEpisode(payload: {
+  item: api.AggregatedVodItem
+  route: api.VodRoute
+  episode: api.VodEpisode
+}): void {
+  vodModalOpen.value = false
+  const proxyUrl = api.getVodStreamProxyUrl(payload.episode.play_url, payload.route.source_id)
+  void router.push({
+    name: 'play',
+    params: { id: 'vod' },
+    query: {
+      vod_url: proxyUrl,
+      vod_title: `${payload.item.title} - ${payload.episode.name}`,
+      vod_source: payload.route.source_name,
+    },
+  })
 }
 
 function submit(): void {
@@ -192,22 +234,53 @@ function fmtTime(iso: string): string {
 
       <!-- 搜索结果下拉浮层 -->
       <div v-if="open && query.trim().length >= MIN_QUERY" class="search-dropdown card">
-        <button
-          v-for="r in results"
-          :key="r.id"
-          type="button"
-          class="search-item"
-          @click="pick(r)"
-        >
-          <span class="chip">{{ r.year ?? '—' }}</span>
-          <span class="search-title">{{ r.title }}</span>
-        </button>
-        <p v-if="searching" class="search-tip">搜索中…</p>
-        <p v-else-if="results.length === 0" class="search-tip">
+        <!-- 本地媒体库结果 -->
+        <div v-if="results.length > 0" class="search-section">
+          <div class="search-section-title">本地媒体库 (原画)</div>
+          <button
+            v-for="r in results"
+            :key="r.id"
+            type="button"
+            class="search-item"
+            @click="pick(r)"
+          >
+            <span class="chip-local">本地</span>
+            <span class="chip">{{ r.year ?? '—' }}</span>
+            <span class="search-title">{{ r.title }}</span>
+          </button>
+        </div>
+
+        <!-- 云端多源聚合结果 (MoonTV 即播) -->
+        <div v-if="remoteResults.length > 0" class="search-section">
+          <div class="search-section-title">云端聚合在线源 (MoonTV 秒播)</div>
+          <button
+            v-for="r in remoteResults"
+            :key="r.id"
+            type="button"
+            class="search-item search-item-remote"
+            @click="pickVod(r)"
+          >
+            <span class="chip-remote">全网</span>
+            <span class="chip-routes">{{ r.routes.length }} 线路</span>
+            <span class="search-title">{{ r.title }}</span>
+            <span v-if="r.remark" class="search-remark">{{ r.remark }}</span>
+          </button>
+        </div>
+
+        <p v-if="searching" class="search-tip">跨源检索中…</p>
+        <p v-else-if="results.length === 0 && remoteResults.length === 0" class="search-tip">
           没有匹配「{{ query.trim() }}」的条目
         </p>
       </div>
     </div>
+
+    <!-- 聚合影视选集与详情弹窗 -->
+    <VodDetailModal
+      :open="vodModalOpen"
+      :item="selectedVod"
+      @close="vodModalOpen = false"
+      @play="playVodEpisode"
+    />
 
     <div class="top-spacer"></div>
 
@@ -501,5 +574,59 @@ function fmtTime(iso: string): string {
 }
 .dropdown-item:hover {
   background: rgba(255, 255, 255, 0.08);
+}
+
+.search-section {
+  padding: 4px 0;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+}
+.search-section:last-child {
+  border-bottom: 0;
+}
+.search-section-title {
+  padding: 6px 12px 2px;
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+  color: var(--muted);
+  letter-spacing: 0.5px;
+}
+.chip-local {
+  background: rgba(168, 85, 247, 0.2);
+  color: #c084fc;
+  font-size: 10px;
+  padding: 1px 6px;
+  border-radius: 4px;
+  font-weight: 600;
+  flex-shrink: 0;
+}
+.chip-remote {
+  background: rgba(245, 158, 11, 0.2);
+  color: #fbbf24;
+  font-size: 10px;
+  padding: 1px 6px;
+  border-radius: 4px;
+  font-weight: 600;
+  flex-shrink: 0;
+}
+.chip-routes {
+  background: rgba(59, 130, 246, 0.18);
+  color: #60a5fa;
+  font-size: 10px;
+  padding: 1px 6px;
+  border-radius: 4px;
+  font-weight: 500;
+  flex-shrink: 0;
+}
+.search-item-remote {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.search-remark {
+  margin-left: auto;
+  font-size: 11px;
+  color: var(--muted2);
+  white-space: nowrap;
 }
 </style>

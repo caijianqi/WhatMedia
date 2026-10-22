@@ -8,6 +8,7 @@
 //! 未接数据库时（例如只做健康检查的容器探针），数据类端点返回 503 而不是 501，
 //! 这样前端能区分"功能没做"和"后端没准备好"。
 
+pub mod aggregator;
 pub mod ai;
 pub mod auth;
 pub mod live;
@@ -141,6 +142,8 @@ pub struct AppState {
     /// 在途直播任务（P8）。与 `transcode.streams` 分开：
     /// 那张表按 job 索引，直播要的是**按频道**索引以便复用。
     pub live: live::LiveRegistry,
+    /// 多源影视聚合引擎（Phase 2）。
+    pub aggregator: Arc<tokio::sync::RwLock<whatmedia_aggregator::AggregatorEngine>>,
     /// 启动时被拒掉的设置覆盖项（`apply_setting_overrides` 的返回值）。
     ///
     /// 正常是空的。非空意味着库里存着不合法的值 —— 必须能通过
@@ -173,12 +176,20 @@ impl AppState {
             ai: None,
             signing,
             live: live::LiveRegistry::default(),
+            aggregator: Arc::new(tokio::sync::RwLock::new(
+                whatmedia_aggregator::AggregatorEngine::new(),
+            )),
             rejected_settings: Arc::new(Vec::new()),
             started_at: Utc::now(),
         }
     }
 
     pub fn with_db(mut self, db: Db) -> Self {
+        let db_clone = db.clone();
+        let aggregator_clone = Arc::clone(&self.aggregator);
+        tokio::spawn(async move {
+            let _ = aggregator::reload_aggregator_engine(&db_clone, &aggregator_clone).await;
+        });
         self.db = Some(db);
         self
     }
@@ -1176,6 +1187,27 @@ fn guarded_routes(state: AppState) -> Router {
         // ── 存储统计与文件系统浏览 ────────────────────────────
         .route("/api/v1/system/storage", get(social::storage_stats))
         .route("/api/v1/system/fs-browse", get(social::browse_fs_dir))
+        // ── 多源聚合搜索与流代理 (Phase 2) ───────────────────
+        .route(
+            "/api/v1/search/aggregate",
+            get(aggregator::search_aggregate),
+        )
+        .route(
+            "/api/v1/proxy/vod_stream",
+            get(aggregator::proxy_vod_stream),
+        )
+        .route(
+            "/api/v1/settings/vod_sources",
+            get(aggregator::list_vod_sources).post(aggregator::import_vod_sources),
+        )
+        .route(
+            "/api/v1/settings/vod_sources/{id}",
+            delete(aggregator::delete_vod_source),
+        )
+        .route(
+            "/api/v1/settings/vod_sources/{id}/toggle",
+            put(aggregator::toggle_vod_source),
+        )
         // 鉴权中间件放在with_state之前 —— 它需要自己持有 State，
         // 于是这条 router 里此后新增的路由**默认被保护**。
         .layer(axum::middleware::from_fn_with_state(

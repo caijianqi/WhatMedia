@@ -609,6 +609,66 @@ impl AiTool for IdentifyMediaTool {
     }
 }
 
+// ─────────────────────────────────────────────────────────────
+// 9. search_aggregated_vod（只读：全网多源流媒体聚合检索）
+// ─────────────────────────────────────────────────────────────
+
+pub struct SearchVodTool;
+
+#[async_trait]
+impl AiTool for SearchVodTool {
+    fn spec(&self) -> ToolSpec {
+        ToolSpec {
+            name: "search_aggregated_vod".into(),
+            description: "全网/多源聚合搜索在线流媒体视频（影视/综艺/动漫/纪录片）。\
+                          当本地媒体库未收录或查不到某部片子，或者用户明确要求全网搜索、在线找片时使用。"
+                .into(),
+            params: vec![
+                ParamSpec::new("query", ParamKind::String, "搜索片名或影视关键词").required(),
+            ],
+            risk: Risk::ReadOnly,
+        }
+    }
+
+    async fn preview(&self, _host: &dyn AiHost, _args: &Value) -> Result<Preview, AiError> {
+        Err(AiError::internal(
+            "search_aggregated_vod 是只读工具，不需要预览",
+        ))
+    }
+
+    async fn invoke(&self, host: &dyn AiHost, args: &Value) -> Result<Value, AiError> {
+        let q = req_str(args, "query")?;
+        let hits = host.search_vod(&q).await?;
+        let text = if hits.is_empty() {
+            format!("全网聚合搜索未找到与「{q}」匹配的在线片源。建议缩短关键词或检查片名拼写。")
+        } else {
+            let mut lines = Vec::new();
+            for (i, h) in hits.iter().enumerate() {
+                let mut meta = Vec::new();
+                if let Some(y) = h.year {
+                    meta.push(y.to_string());
+                }
+                if let Some(cat) = &h.category {
+                    meta.push(cat.clone());
+                }
+                meta.push(format!("{} 条线路", h.route_count));
+                meta.push(format!("共 {} 集", h.total_episodes));
+                if let Some(note) = &h.latest_note {
+                    meta.push(note.clone());
+                }
+                lines.push(format!("{}. 《{}》（{}）", i + 1, h.title, meta.join(" · ")));
+            }
+            format!(
+                "在全网聚合片源中找到 {} 部相关影视：\n{}\n（可直接在客户端顶栏聚合搜索面板或多源列表中点击即播）",
+                hits.len(),
+                lines.join("\n")
+            )
+        };
+        Ok(result(text, json!({ "query": q, "hits": hits })))
+    }
+}
+
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -775,5 +835,28 @@ mod tests {
         // 只读工具被问到 preview 说明调用方写错了分支。
         let h = host();
         assert!(SearchMediaTool.preview(&h, &json!({})).await.is_err());
+        assert!(SearchVodTool.preview(&h, &json!({})).await.is_err());
+    }
+
+    #[tokio::test]
+    async fn search_vod_tool_renders_human_text_and_data() {
+        use crate::host::AggregatedVodHit;
+        let mut h = host();
+        h.vod_hits = vec![AggregatedVodHit {
+            title: "繁花".into(),
+            category: Some("国产剧".into()),
+            year: Some(2023),
+            route_count: 3,
+            total_episodes: 30,
+            latest_note: Some("全30集".into()),
+        }];
+        let v = SearchVodTool
+            .invoke(&h, &json!({"query": "繁花"}))
+            .await
+            .unwrap();
+        let text = v["text"].as_str().unwrap();
+        assert!(text.contains("繁花"));
+        assert!(text.contains("3 条线路"));
+        assert_eq!(v["data"]["hits"][0]["title"], "繁花");
     }
 }

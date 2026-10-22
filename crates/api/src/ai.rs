@@ -349,6 +349,7 @@ pub struct DbHost {
     db: Arc<Db>,
     actions: Arc<dyn AiActions>,
     server: ServerCapability,
+    aggregator: Option<Arc<tokio::sync::RwLock<whatmedia_aggregator::AggregatorEngine>>>,
 }
 
 impl DbHost {
@@ -357,7 +358,16 @@ impl DbHost {
             db,
             actions,
             server,
+            aggregator: None,
         }
+    }
+
+    pub fn with_aggregator(
+        mut self,
+        agg: Arc<tokio::sync::RwLock<whatmedia_aggregator::AggregatorEngine>>,
+    ) -> Self {
+        self.aggregator = Some(agg);
+        self
     }
 }
 
@@ -494,6 +504,37 @@ impl AiHost for DbHost {
             ..Default::default()
         };
         self.search_media(&q).await
+    }
+
+    async fn search_vod(
+        &self,
+        query: &str,
+    ) -> Result<Vec<whatmedia_ai::AggregatedVodHit>, AiError> {
+        let Some(ref agg) = self.aggregator else {
+            return Ok(Vec::new());
+        };
+        let engine = agg.read().await;
+        let items = engine.search(query).await;
+        let hits = items
+            .into_iter()
+            .map(|item| {
+                let total_episodes = item
+                    .routes
+                    .iter()
+                    .map(|r| r.episodes.len())
+                    .max()
+                    .unwrap_or(0);
+                whatmedia_ai::AggregatedVodHit {
+                    title: item.title,
+                    category: item.type_name,
+                    year: item.year.map(|y| y as i32),
+                    route_count: item.routes.len(),
+                    total_episodes,
+                    latest_note: item.remark,
+                }
+            })
+            .collect();
+        Ok(hits)
     }
 
     // ── 危险动作：只有 runtime 确认后才会走到这里 ──
@@ -954,11 +995,10 @@ async fn provider_of(db: &Db, item_id: Id) -> Result<(Option<String>, Option<Str
 /// `DB_UNAVAILABLE`，而不是假装 AI 能用。
 pub fn build_ai_runtime(state: &AppState, actions: Arc<dyn AiActions>) -> Option<Arc<AiRuntime>> {
     let db = Arc::new(state.db.clone()?);
-    let host = Arc::new(DbHost::new(
-        db,
-        actions,
-        state.transcode.server_capability(),
-    ));
+    let host = Arc::new(
+        DbHost::new(db, actions, state.transcode.server_capability())
+            .with_aggregator(state.aggregator.clone()),
+    );
     let provider = build_provider(&state.config.ai);
     Some(Arc::new(whatmedia_ai::from_config(
         &state.config.ai,

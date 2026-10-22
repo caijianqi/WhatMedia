@@ -327,6 +327,7 @@ onMounted(async () => {
   void refreshTasks()
   void loadScrapeStats()
   void loadLiveSources()
+  void loadVodSources()
 
   // 自动恢复上次配置或保存的媒体库物理路径
   try {
@@ -403,6 +404,7 @@ const tabs = [
   { id: 'storage', label: '存储与媒体库', icon: '💾' },
   { id: 'metadata', label: '元数据与TMDB', icon: '🍿' },
   { id: 'live', label: '电视直播', icon: '📡' },
+  { id: 'aggregator', label: '聚合搜索源', icon: '🎬' },
   { id: 'entries', label: '可写设置', icon: '⚙' },
   { id: 'ai', label: 'AI 助手', icon: '🤖' },
   { id: 'about', label: '关于系统', icon: 'ⓘ' },
@@ -920,6 +922,62 @@ async function deleteSingleLiveSource(id: string, name: string): Promise<void> {
     liveNotice.value = `删除失败：${e instanceof Error ? e.message : String(e)}`
   } finally {
     liveBusy.value = false
+  }
+}
+
+// ── 多源影视聚合 (Phase 3) ─────────────────────────────────
+const vodSources = ref<api.VodSourceConfig[]>([])
+const loadingVodSources = ref(false)
+const vodSourcesError = ref<string | null>(null)
+const showAddVodModal = ref(false)
+const vodImportJson = ref('')
+const vodImportResult = ref<string | null>(null)
+
+async function loadVodSources(): Promise<void> {
+  loadingVodSources.value = true
+  vodSourcesError.value = null
+  try {
+    vodSources.value = await api.listVodSources()
+  } catch (err) {
+    vodSourcesError.value = err instanceof api.ApiError ? err.detail.message : String(err)
+  } finally {
+    loadingVodSources.value = false
+  }
+}
+
+async function toggleVodSource(id: string): Promise<void> {
+  try {
+    await api.toggleVodSource(id)
+    await loadVodSources()
+  } catch (e) {
+    alert(e instanceof Error ? e.message : String(e))
+  }
+}
+
+async function deleteVodSource(id: string, name: string): Promise<void> {
+  if (!confirm(`确定要删除采集源「${name}」吗？`)) return
+  try {
+    await api.deleteVodSource(id)
+    await loadVodSources()
+  } catch (e) {
+    alert(e instanceof Error ? e.message : String(e))
+  }
+}
+
+async function importVodSourcesFromText(): Promise<void> {
+  const raw = vodImportJson.value.trim()
+  if (!raw) return
+  try {
+    const parsed = JSON.parse(raw)
+    const res = await api.importVodSources(parsed)
+    vodImportResult.value = `✓ 成功导入 ${res.imported} 个采集源！`
+    vodImportJson.value = ''
+    await loadVodSources()
+    setTimeout(() => {
+      vodImportResult.value = null
+    }, 3500)
+  } catch {
+    vodImportResult.value = '导入失败：JSON 格式不合法或后端异常'
   }
 }
 </script>
@@ -1814,6 +1872,127 @@ async function deleteSingleLiveSource(id: string, name: string): Promise<void> {
                     @click="deleteSingleLiveSource(s.id, s.name)"
                   >
                     🗑️ 删除
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <!-- 5.5 多源影视聚合搜索配置 (MoonTV) -->
+        <section
+          v-if="activeTab === 'all' || activeTab === 'aggregator'"
+          class="settings-section"
+          data-test="aggregator-settings"
+        >
+          <div class="section-title">多源影视聚合搜索 (MoonTV)</div>
+          <p class="section-desc">
+            配置 MacCMS (苹果CMS V10) 等标准在线视频采集源。开启后全局搜索将跨源并发检索，并在库内未命中时提供全网在线即点即播。
+          </p>
+
+          <!-- 错误或结果提示 -->
+          <p v-if="vodSourcesError" class="error-box">
+            加载采集源失败：{{ vodSourcesError }}
+          </p>
+          <p v-if="vodImportResult" class="ok-box">
+            {{ vodImportResult }}
+          </p>
+
+          <!-- 采集源操作控制台 -->
+          <div class="web-scan-card live-console-card">
+            <div class="web-scan-head">
+              <div>
+                <h3 class="web-scan-title">采集源管理</h3>
+                <p class="web-scan-sub">
+                  支持快速导入兼容 MoonTV / TVBox 的标准 <code>config.json</code>，实现全网并发秒播。
+                </p>
+              </div>
+              <div class="btn-group-right">
+                <button
+                  type="button"
+                  class="btn-add-storage"
+                  @click="showAddVodModal = !showAddVodModal"
+                >
+                  <span>{{ showAddVodModal ? '收起导入' : '＋ 批量导入 MoonTV 配置' }}</span>
+                </button>
+                <button
+                  type="button"
+                  class="refresh-stats-btn"
+                  :disabled="loadingVodSources"
+                  @click="loadVodSources"
+                >
+                  🔄 刷新
+                </button>
+              </div>
+            </div>
+
+            <!-- 批量导入与添加抽屉 -->
+            <div v-if="showAddVodModal" class="vod-import-box">
+              <div class="vod-import-tabs">
+                <strong>快速导入 MoonTV config.json 格式：</strong>
+              </div>
+              <textarea
+                v-model="vodImportJson"
+                class="scan-input json-textarea"
+                rows="6"
+                placeholder='可直接粘贴 MoonTV config.json，例如：
+{
+  "api_site": {
+    "lz": { "name": "量子资源", "api": "https://cj.lziapi.com/api.php/provide/vod/", "active": true },
+    "ff": { "name": "非凡资源", "api": "https://cj.ffzyapi.com/api.php/provide/vod/", "active": true }
+  }
+}'
+              ></textarea>
+              <div class="import-actions">
+                <button
+                  type="button"
+                  class="btn btn-primary"
+                  :disabled="!vodImportJson.trim()"
+                  @click="importVodSourcesFromText"
+                >
+                  立即解析并导入
+                </button>
+              </div>
+            </div>
+
+            <!-- 采集源列表 -->
+            <div class="live-sources-list">
+              <div v-if="loadingVodSources" class="live-sources-empty">
+                加载采集源中…
+              </div>
+              <div v-else-if="!vodSources.length" class="live-sources-empty">
+                暂无配置任何在线采集源。点击上方「批量导入」添加您的第一个采集站。
+              </div>
+              <div
+                v-for="src in vodSources"
+                :key="src.id"
+                class="live-source-card"
+              >
+                <div class="live-source-info">
+                  <div class="live-source-name-row">
+                    <strong class="live-source-name">{{ src.name }}</strong>
+                    <span :class="['chip', src.is_active ? 'chip-ok' : 'chip-warn']">
+                      {{ src.is_active ? '已启用' : '已禁用' }}
+                    </span>
+                    <span class="chip font-mono">超时: {{ src.timeout_ms }}ms</span>
+                  </div>
+                  <span class="live-source-url font-mono">{{ src.api_url }}</span>
+                </div>
+
+                <div class="live-source-actions">
+                  <button
+                    type="button"
+                    class="action-btn"
+                    @click="toggleVodSource(src.id)"
+                  >
+                    {{ src.is_active ? '禁用' : '启用' }}
+                  </button>
+                  <button
+                    type="button"
+                    class="action-btn btn-danger"
+                    @click="deleteVodSource(src.id, src.name)"
+                  >
+                    删除
                   </button>
                 </div>
               </div>

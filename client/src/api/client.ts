@@ -770,4 +770,78 @@ export function browseStorage(id: string, path?: string): Promise<StorageEntry[]
   return request<StorageEntry[]>(`/storages/${id}/browse${qs({ path })}`)
 }
 
+// ── 多源影视聚合 (Phase 3) ─────────────────────────────────
+
+export interface VodEpisode {
+  name: string
+  play_url: string
+  index: number
+}
+
+export interface VodRoute {
+  source_id: string
+  source_name: string
+  play_from: string
+  episodes: VodEpisode[]
+}
+
+export interface AggregatedVodItem {
+  id: string
+  title: string
+  clean_title: string
+  sub_title?: string
+  year?: number
+  poster?: string
+  type_name?: string
+  remark?: string
+  actor?: string
+  director?: string
+  content?: string
+  routes: VodRoute[]
+}
+
+export interface AggregateSearchResponse {
+  local: ItemPage
+  remote: AggregatedVodItem[]
+}
+
+export interface VodSourceConfig {
+  id: string
+  name: string
+  api_url: string
+  is_active: boolean
+  weight: number
+  timeout_ms: number
+}
+
+/** 双轨多源聚合搜索 (本地库 + 云端 MacCMS 聚合) */
+export function searchAggregate(q: string, page: ItemQuery = {}): Promise<AggregateSearchResponse> {
+  return request<AggregateSearchResponse>(`/search/aggregate${qs({ q, ...page })}`)
+}
+
+/** 采集源列表 */
+export function listVodSources(): Promise<VodSourceConfig[]> {
+  return request<VodSourceConfig[]>('/settings/vod_sources')
+}
+
+/** 导入/添加采集源 (兼容单对象、数组或 MoonTV config.json 格式) */
+export function importVodSources(payload: unknown): Promise<{ imported: number }> {
+  return post<{ imported: number }>('/settings/vod_sources', payload)
+}
+
+/** 删除采集源 */
+export function deleteVodSource(id: string): Promise<void> {
+  return del<void>(`/settings/vod_sources/${id}`)
+}
+
+/** 切换采集源启用/禁用状态 */
+export function toggleVodSource(id: string): Promise<VodSourceConfig> {
+  return put<VodSourceConfig>(`/settings/vod_sources/${id}/toggle`, {})
+}
+
+/** 获取代理播放 URL */
+export function getVodStreamProxyUrl(rawUrl: string, sourceId?: string): string {
+  return `${BASE}/proxy/vod_stream?url=${encodeURIComponent(rawUrl)}${sourceId ? `&source=${encodeURIComponent(sourceId)}` : ''}`
+}
+
 

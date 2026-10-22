@@ -43,8 +43,8 @@ use std::sync::Arc;
 
 pub use error::{AiError, AiErrorKind};
 pub use host::{
-    AiHost, CapabilityReport, DuplicateGroup, IdentifyOutcome, MediaHit, MediaQuery, MissingKind,
-    RecommendSpec, ScanTicket, SortKey, WatchState,
+    AggregatedVodHit, AiHost, CapabilityReport, DuplicateGroup, IdentifyOutcome, MediaHit,
+    MediaQuery, MissingKind, RecommendSpec, ScanTicket, SortKey, WatchState,
 };
 // 排序是**单一真源**：`AiHost` 的每个实现都必须用这一个。
 // 此前 `crates/api/src/ai.rs` 自己抄了一份，默认排序写成了 AddedDesc（这里是 TitleAsc），

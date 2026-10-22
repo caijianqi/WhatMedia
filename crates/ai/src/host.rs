@@ -186,6 +186,17 @@ pub struct IdentifyOutcome {
     pub changed_fields: Vec<String>,
 }
 
+/// 全网聚合流媒体条目摘要（AI 搜索结果）。
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AggregatedVodHit {
+    pub title: String,
+    pub category: Option<String>,
+    pub year: Option<i32>,
+    pub route_count: usize,
+    pub total_episodes: usize,
+    pub latest_note: Option<String>,
+}
+
 #[async_trait]
 pub trait AiHost: Send + Sync {
     async fn search_media(&self, q: &MediaQuery) -> Result<Vec<MediaHit>, AiError>;
@@ -198,6 +209,10 @@ pub trait AiHost: Send + Sync {
     ) -> Result<CapabilityReport, AiError>;
     /// 推荐。`seed` 是可选的种子条目（"和这部差不多的"）。
     async fn recommend(&self, spec: &RecommendSpec) -> Result<Vec<MediaHit>, AiError>;
+    /// 全网多源流媒体聚合搜索
+    async fn search_vod(&self, _query: &str) -> Result<Vec<AggregatedVodHit>, AiError> {
+        Ok(Vec::new())
+    }
 
     // ── 危险动作：只能经 Plan→Preview→Confirm→Execute 调用 ──
     async fn scan_library(&self, library: Option<Id>) -> Result<ScanTicket, AiError>;
@@ -223,6 +238,7 @@ pub struct RecommendSpec {
 /// 这条约束最直接的证据。
 pub struct InMemoryHost {
     pub hits: Vec<MediaHit>,
+    pub vod_hits: Vec<AggregatedVodHit>,
     /// 固定"现在"，否则 `added_within_days` 的测试会随时间漂移。
     pub now: DateTime<Utc>,
     pub scans: std::sync::Mutex<Vec<Option<Id>>>,
@@ -233,10 +249,16 @@ impl InMemoryHost {
     pub fn new(hits: Vec<MediaHit>) -> Self {
         Self {
             hits,
+            vod_hits: Vec::new(),
             now: Utc::now(),
             scans: std::sync::Mutex::new(Vec::new()),
             identifies: std::sync::Mutex::new(Vec::new()),
         }
+    }
+
+    pub fn with_vod_hits(mut self, vod_hits: Vec<AggregatedVodHit>) -> Self {
+        self.vod_hits = vod_hits;
+        self
     }
 
     pub fn with_now(mut self, now: DateTime<Utc>) -> Self {
@@ -466,6 +488,17 @@ impl AiHost for InMemoryHost {
                 .unwrap_or(std::cmp::Ordering::Equal)
         });
         out.truncate(spec.limit.max(1) as usize);
+        Ok(out)
+    }
+
+    async fn search_vod(&self, query: &str) -> Result<Vec<AggregatedVodHit>, AiError> {
+        let q = query.trim().to_lowercase();
+        let out = self
+            .vod_hits
+            .iter()
+            .filter(|v| v.title.to_lowercase().contains(&q))
+            .cloned()
+            .collect();
         Ok(out)
     }
 

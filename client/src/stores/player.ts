@@ -335,19 +335,58 @@ export const usePlayerStore = defineStore('player', () => {
     navigator.sendBeacon?.(`/api/v1/playback/sessions/${id}/stop`, body)
   }
 
+  async function openVodUrl(
+    target: PlayerTarget,
+    streamUrl: string,
+    opts: { autoplay?: boolean; startMs?: number } = {},
+  ): Promise<void> {
+    busy.value = true
+    error.value = null
+    try {
+      const backend = await resolveBackend()
+      const p = createPlayer({ backend })
+      player.value = p
+      await p.initialize(target)
+
+      unsubState = p.subscribe((s) => {
+        snapshot.value = s
+      })
+      unsubEvent = p.on((e) => {
+        if (e.type === 'error') {
+          onPlayerError(e.error.code, e.error.message)
+        }
+      })
+
+      const source: PlaybackSource = { kind: 'hls', url: streamUrl }
+      lastSource = source
+      lastLoadOptions = {
+        startAt: (opts.startMs ?? 0) / 1000,
+        autoplay: opts.autoplay ?? true,
+      }
+      recovery.reset()
+      await p.load(source, lastLoadOptions)
+    } catch (e) {
+      error.value = describeError(e)
+    } finally {
+      busy.value = false
+    }
+  }
+
   return {
     snapshot,
+    player,
+    busy,
+    error,
     recovering,
     netNote,
     onNetworkChange,
     sessionId,
     strategy,
     reasons,
-    busy,
-    error,
     canSwitchAudio,
     hasQualities,
     open,
+    openVodUrl,
     close,
     play,
     pause,

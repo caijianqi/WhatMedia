@@ -29,6 +29,7 @@ whatmedia-api = { path = "crates/api" }
 whatmedia-ai = { path = "crates/ai" }
 whatmedia-auth = { path = "crates/auth" }
 whatmedia-live = { path = "crates/live" }
+whatmedia-aggregator = { path = "crates/aggregator" }
 
 tokio = { version = "1", features = ["rt-multi-thread", "macros", "signal", "time", "sync", "fs", "net", "process", "rt", "io-util"] }
 axum = { version = "0.8", features = ["macros"] }

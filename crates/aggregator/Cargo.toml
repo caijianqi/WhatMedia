@@ -1,0 +1,25 @@
+[package]
+name = "whatmedia-aggregator"
+description = "多源聚合搜索核心引擎：MacCMS V10 协议解析 / Tokio 并发广播 / 滑动窗口熔断 / 归一化与聚类"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+
+[features]
+openapi = ["dep:utoipa", "whatmedia-core/openapi"]
+
+[dependencies]
+whatmedia-core = { workspace = true }
+utoipa = { workspace = true, optional = true }
+anyhow = { workspace = true }
+async-trait = { workspace = true }
+chrono = { workspace = true }
+regex = { workspace = true }
+reqwest = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+tokio = { workspace = true }
+tracing = { workspace = true }
+
+[dev-dependencies]
+tokio = { workspace = true, features = ["macros", "rt-multi-thread"] }

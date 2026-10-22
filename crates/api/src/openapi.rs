@@ -143,8 +143,22 @@ use crate::{
         crate::social::reset_setting,
         crate::social::storage_stats,
         crate::social::browse_fs_dir,
+        // aggregator
+        crate::aggregator::search_aggregate,
+        crate::aggregator::proxy_vod_stream,
+        crate::aggregator::list_vod_sources,
+        crate::aggregator::import_vod_sources,
+        crate::aggregator::delete_vod_source,
+        crate::aggregator::toggle_vod_source,
     ),
     components(schemas(
+        // ── aggregator ───────────────────────────────────
+        crate::aggregator::AggregateSearchParams,
+        crate::aggregator::AggregateSearchResponse,
+        whatmedia_aggregator::AggregatedVodItem,
+        whatmedia_aggregator::VodRoute,
+        whatmedia_aggregator::VodEpisode,
+        whatmedia_aggregator::VodSourceConfig,
         // ── 传输层 ────────────────────────────────────────
         ErrorBody,
         ErrorDetail,

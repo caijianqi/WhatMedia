@@ -52,6 +52,7 @@ impl AgentId {
                 "get_media",
                 "get_playback_capability",
                 "recommend_media",
+                "search_aggregated_vod",
             ],
             AgentId::Library => &[
                 "search_media",
