@@ -20,7 +20,10 @@ RUN npm run build
 FROM rust:1.98-bookworm AS builder
 
 ARG TARGETARCH
-ENV CARGO_INCREMENTAL=0
+# 限制 codegen units 与关闭 LTO，以极大降低在 QEMU 模拟 arm64 下的链接内存占用与编译耗时
+ENV CARGO_INCREMENTAL=0 \
+    CARGO_PROFILE_RELEASE_CODEGEN_UNITS=16 \
+    CARGO_PROFILE_RELEASE_LTO=off
 
 WORKDIR /src
 
@@ -28,9 +31,9 @@ COPY Cargo.toml Cargo.lock* ./
 COPY crates ./crates
 COPY apps ./apps
 
-# 编译 release 二进制，并将产物从构建缓存挂载目录复制到持久层
-RUN --mount=type=cache,target=/usr/local/cargo/registry \
-    --mount=type=cache,target=/src/target \
+# 编译 release 二进制：缓存挂载根据 TARGETARCH 严格隔离，并将产物持久化
+RUN --mount=type=cache,id=cargo-registry-${TARGETARCH},target=/usr/local/cargo/registry \
+    --mount=type=cache,id=cargo-target-${TARGETARCH},target=/src/target \
     cargo build --release -p whatmedia && \
     cp /src/target/release/whatmedia /usr/local/bin/whatmedia
 
