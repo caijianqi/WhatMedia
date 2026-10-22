@@ -124,10 +124,14 @@ pub fn is_valid_stream_url(url: &str) -> bool {
     }
 
     // 3. 过滤明显不是流媒体的文件扩展名（静态网页、安装包等）
-    let path_part = after_scheme.split('?').next().unwrap_or("").trim_end_matches('/');
+    let path_part = after_scheme
+        .split('?')
+        .next()
+        .unwrap_or("")
+        .trim_end_matches('/');
     let invalid_exts = [
-        ".html", ".htm", ".apk", ".zip", ".rar", ".7z", ".exe", ".iso",
-        ".pdf", ".docx", ".xlsx", ".doc", ".txt", ".tar", ".gz",
+        ".html", ".htm", ".apk", ".zip", ".rar", ".7z", ".exe", ".iso", ".pdf", ".docx", ".xlsx",
+        ".doc", ".txt", ".tar", ".gz",
     ];
     for ext in invalid_exts {
         if path_part.ends_with(ext) {
@@ -204,13 +208,13 @@ pub fn parse_txt(text: &str) -> Result<Vec<ChannelDraft>, LiveError> {
         }
 
         // 频道与流地址：以逗号切分（支持英文逗号与中文逗号）
-        let parts = if let Some(idx) = line.find(',') {
-            Some((&line[..idx], &line[idx + 1..]))
-        } else if let Some(idx) = line.find('，') {
-            Some((&line[..idx], &line[idx + '，'.len_utf8()..]))
-        } else {
-            None
-        };
+        let parts = line
+            .find(',')
+            .map(|idx| (&line[..idx], &line[idx + 1..]))
+            .or_else(|| {
+                line.find('，')
+                    .map(|idx| (&line[..idx], &line[idx + '，'.len_utf8()..]))
+            });
 
         if let Some((name_part, url_part)) = parts {
             let name = name_part.trim();

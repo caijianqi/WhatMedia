@@ -633,8 +633,7 @@ pub async fn item_image(
     };
 
     let svg = if kind == "backdrop" {
-        format!(
-            r##"<svg xmlns="http://www.w3.org/2000/svg" width="1280" height="720" viewBox="0 0 1280 720">
+        r##"<svg xmlns="http://www.w3.org/2000/svg" width="1280" height="720" viewBox="0 0 1280 720">
   <defs>
     <radialGradient id="bg" cx="75%" cy="25%" r="75%">
       <stop offset="0%" stop-color="#1e293b" stop-opacity="0.6"/>
@@ -644,7 +643,7 @@ pub async fn item_image(
   </defs>
   <rect width="1280" height="720" fill="url(#bg)"/>
 </svg>"##
-        )
+            .to_string()
     } else {
         placeholder_svg(&clean_title, 300, 450)
     };

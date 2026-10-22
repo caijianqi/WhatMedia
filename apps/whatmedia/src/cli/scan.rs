@@ -139,7 +139,11 @@ pub async fn list_cmd(db: &Db, limit: u32, kind: Option<String>) -> Result<()> {
             it.year.unwrap_or(0)
         );
     }
-    println!("共 {} 条条目（展示前 {} 条）", page.page.total, page.data.len());
+    println!(
+        "共 {} 条条目（展示前 {} 条）",
+        page.page.total,
+        page.data.len()
+    );
     Ok(())
 }
 

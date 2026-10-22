@@ -1076,8 +1076,6 @@ pub async fn list_streams(State(state): State<AppState>) -> Response {
     }
 }
 
-
-
 // ─────────────────────────────────────────────────────────────
 // 硬件
 // ─────────────────────────────────────────────────────────────
@@ -1180,7 +1178,6 @@ async fn build_media(
         &streams,
     ))
 }
-
 
 /// 回收上次运行遗留的流式输出目录。
 ///
@@ -1324,7 +1321,6 @@ mod tests {
         assert_eq!(content_type(Some(&Container::Mp4)), "video/mp4");
         assert_eq!(content_type(None), "application/octet-stream");
     }
-
 
     #[tokio::test]
     async fn registry_stop_cancels_and_removes() {

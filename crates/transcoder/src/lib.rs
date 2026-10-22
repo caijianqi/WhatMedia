@@ -21,8 +21,8 @@ pub mod runner;
 pub mod temp;
 
 pub use args::{
-    build_args, master_playlist, media_playlist_entry, AccelArgs, AudioAction,
-    OutputSpec, StreamRequest, VideoAction,
+    build_args, master_playlist, media_playlist_entry, AccelArgs, AudioAction, OutputSpec,
+    StreamRequest, VideoAction,
 };
 pub use pool::{Slot, TranscodePool};
 pub use process::{CommandRunner, MockChild, MockRunner, TokioRunner};

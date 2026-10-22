@@ -621,7 +621,6 @@ mod tests {
         ));
     }
 
-
     #[test]
     fn weak_network_lowers_bitrate_and_transcodes() {
         let m = media(h264_1080p(), vec![aac()], Some(Container::Mp4));

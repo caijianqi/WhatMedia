@@ -52,12 +52,7 @@ async fn seed_library(db: &Db, root: &Path) {
 ///
 /// **为什么一定要写真实文件**：Direct Play 端点要读 `Content-Length` 并做 Range 切片，
 /// 用假路径测出来的 200/206 是自欺欺人。
-async fn seed_file(
-    db: &Db,
-    root: &Path,
-    rel: &str,
-    container: &str,
-) -> (Id, Id) {
+async fn seed_file(db: &Db, root: &Path, rel: &str, container: &str) -> (Id, Id) {
     let path = root.join(rel);
     std::fs::create_dir_all(path.parent().unwrap()).unwrap();
     let bytes: Vec<u8> = (0..4096u32).map(|i| (i % 251) as u8).collect();
@@ -539,7 +534,6 @@ async fn hardware_profile_reports_ffmpeg_absence() {
     assert!(v["profiles"].as_array().unwrap().is_empty());
     assert_eq!(v["streams"], 0);
 }
-
 
 #[tokio::test]
 async fn playback_endpoints_are_behind_auth_first() {

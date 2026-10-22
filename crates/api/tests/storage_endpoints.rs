@@ -49,7 +49,11 @@ async fn storage_account_endpoints_and_remote_library_creation() {
     assert_eq!(created["direct_stream"], true);
 
     // 3. 详情查询
-    let res = send(&state, get_authed(&token, &format!("/api/v1/storages/{storage_id}"))).await;
+    let res = send(
+        &state,
+        get_authed(&token, &format!("/api/v1/storages/{storage_id}")),
+    )
+    .await;
     assert_eq!(res.status, StatusCode::OK);
     let detail = res.json();
     assert_eq!(detail["id"], storage_id);
@@ -100,9 +104,17 @@ async fn storage_account_endpoints_and_remote_library_creation() {
     assert_eq!(lib["root_path"], "/影视/电影");
 
     // 7. 删除存储源
-    let res = send(&state, delete_authed(&token, &format!("/api/v1/storages/{storage_id}"))).await;
+    let res = send(
+        &state,
+        delete_authed(&token, &format!("/api/v1/storages/{storage_id}")),
+    )
+    .await;
     assert_eq!(res.status, StatusCode::OK);
 
-    let res = send(&state, get_authed(&token, &format!("/api/v1/storages/{storage_id}"))).await;
+    let res = send(
+        &state,
+        get_authed(&token, &format!("/api/v1/storages/{storage_id}")),
+    )
+    .await;
     assert_eq!(res.status, StatusCode::NOT_FOUND);
 }

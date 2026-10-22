@@ -337,32 +337,28 @@ pub async fn requeue_all(db: &Db, library_id: Option<Id>) -> Result<u64> {
     };
 
     let inserted = match library_id {
-        Some(l) => {
-            sqlx::query(
-                "INSERT INTO metadata_job (item_id, library_id, kind, status, attempts, updated_at)
+        Some(l) => sqlx::query(
+            "INSERT INTO metadata_job (item_id, library_id, kind, status, attempts, updated_at)
                  SELECT i.id, i.library_id, i.kind, 'pending', 0, ?
                  FROM media_item i
                  WHERE i.library_id = ?
                    AND NOT EXISTS (SELECT 1 FROM metadata_job j WHERE j.item_id = i.id)",
-            )
-            .bind(&now)
-            .bind(l.to_string())
-            .execute(db.pool())
-            .await?
-            .rows_affected()
-        }
-        None => {
-            sqlx::query(
-                "INSERT INTO metadata_job (item_id, library_id, kind, status, attempts, updated_at)
+        )
+        .bind(&now)
+        .bind(l.to_string())
+        .execute(db.pool())
+        .await?
+        .rows_affected(),
+        None => sqlx::query(
+            "INSERT INTO metadata_job (item_id, library_id, kind, status, attempts, updated_at)
                  SELECT i.id, i.library_id, i.kind, 'pending', 0, ?
                  FROM media_item i
                  WHERE NOT EXISTS (SELECT 1 FROM metadata_job j WHERE j.item_id = i.id)",
-            )
-            .bind(&now)
-            .execute(db.pool())
-            .await?
-            .rows_affected()
-        }
+        )
+        .bind(&now)
+        .execute(db.pool())
+        .await?
+        .rows_affected(),
     };
 
     Ok(updated + inserted)

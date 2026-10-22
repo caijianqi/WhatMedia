@@ -37,9 +37,9 @@ pub use live::{
     bump_live_session, current_program, delete_live_session, delete_live_source,
     find_channel_by_epg_id, get_live_channel, get_live_source, insert_live_source,
     list_channels_by_source, list_dead_live_sessions, list_live_channels, list_live_sources,
-    live_ref_count, release_live_session, replace_channels, replace_programs,
-    set_channel_enabled, set_channels_disabled, set_source_sync_result, upcoming_programs,
-    LiveChannelRow, LiveSourceRow, ProgramRow,
+    live_ref_count, release_live_session, replace_channels, replace_programs, set_channel_enabled,
+    set_channels_disabled, set_source_sync_result, upcoming_programs, LiveChannelRow,
+    LiveSourceRow, ProgramRow,
 };
 pub use media::{
     count_items, get_item, kind_counts, list_items, replace_streams, upsert_file, upsert_item,
@@ -54,15 +54,14 @@ pub use playback::{
     NewStreamSession, NewTranscodeJob, ResumePoint, StreamSession,
 };
 pub use scan::{file_index_for_library, mark_files_missing};
+pub use search::search_items;
 pub use social::{
     add_favorite, count_unread, delete_notification, delete_server_setting, delete_user_setting,
     favorite_count_for_item, is_favorited, library_storage, list_favorites, list_notifications,
-    list_server_settings, list_user_settings, mark_all_read, mark_notification_read,
-    notify_admins, notify_users, prune_notifications, remove_favorite, set_server_setting,
-    set_user_setting, FavoriteRow, LibraryStorage, NewNotification, NotificationRow, NotifyLevel,
-    SettingRow,
+    list_server_settings, list_user_settings, mark_all_read, mark_notification_read, notify_admins,
+    notify_users, prune_notifications, remove_favorite, set_server_setting, set_user_setting,
+    FavoriteRow, LibraryStorage, NewNotification, NotificationRow, NotifyLevel, SettingRow,
 };
-pub use search::search_items;
 pub use tv::{
     list_episodes, list_seasons, list_series, series_of_item, EpisodeSummary, SeasonSummary,
     SeriesRef, SeriesSummary,

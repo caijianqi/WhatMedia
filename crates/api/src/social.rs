@@ -19,27 +19,19 @@ use axum::http::StatusCode;
 use axum::response::{IntoResponse, Response};
 use axum::Json;
 use serde::{Deserialize, Serialize};
-use whatmedia_config::{
-    setting_spec, validate_setting, SettingKind, SettingScope, SETTING_SPECS,
-};
+use whatmedia_config::{setting_spec, validate_setting, SettingKind, SettingScope, SETTING_SPECS};
 use whatmedia_core::Id;
 
 use crate::auth::Current;
 use crate::{bad_request, internal, AppState};
 
 fn deny(code: &'static str, msg: impl Into<String>, status: StatusCode) -> Response {
-    crate::error_response(
-        status,
-        code,
-        msg,
-    )
+    crate::error_response(status, code, msg)
 }
 
-fn db<'a>(state: &'a AppState) -> Result<whatmedia_database::Db, Response> {
-    match state.db_or_503() {
-        Ok(d) => Ok(d),
-        Err(r) => Err(*r),
-    }
+#[allow(clippy::result_large_err)]
+fn db(state: &AppState) -> Result<whatmedia_database::Db, Response> {
+    state.db_or_503().map_err(|r| *r)
 }
 
 // ─────────────────────────────────────────────────────────────
@@ -267,7 +259,10 @@ pub async fn list_notifications(
 
     // 待审批只对能管人的人可见：孩子不该看到"有台设备等你批"这种提示。
     let pending = if p.can(Ability::ManageUsers) {
-        list_pending_approvals(&d, None).await.map(|v| v.len() as i64).unwrap_or(0)
+        list_pending_approvals(&d, None)
+            .await
+            .map(|v| v.len() as i64)
+            .unwrap_or(0)
     } else {
         0
     };
@@ -549,10 +544,7 @@ pub async fn put_setting(
     use whatmedia_auth::Ability;
     use whatmedia_database::repo::{set_server_setting, set_user_setting};
     let Some(spec) = setting_spec(&body.key) else {
-        return bad_request(format!(
-            "「{}」不在可写设置白名单内",
-            body.key
-        ));
+        return bad_request(format!("「{}」不在可写设置白名单内", body.key));
     };
     if let Err(e) = validate_setting(spec, &body.value) {
         return bad_request(format!("{}：{}", spec.label, e));
@@ -565,11 +557,7 @@ pub async fn put_setting(
     match spec.scope {
         SettingScope::Server => {
             if !p.can(Ability::ManageSettings) {
-                return deny(
-                    "FORBIDDEN",
-                    "只有管理员能改全服设置",
-                    StatusCode::FORBIDDEN,
-                );
+                return deny("FORBIDDEN", "只有管理员能改全服设置", StatusCode::FORBIDDEN);
             }
             if let Err(e) = set_server_setting(&d, spec.key, &body.value, p.user_id).await {
                 return internal(e);
@@ -644,11 +632,7 @@ pub async fn reset_setting(
     let r = match spec.scope {
         SettingScope::Server => {
             if !p.can(Ability::ManageSettings) {
-                return deny(
-                    "FORBIDDEN",
-                    "只有管理员能改全服设置",
-                    StatusCode::FORBIDDEN,
-                );
+                return deny("FORBIDDEN", "只有管理员能改全服设置", StatusCode::FORBIDDEN);
             }
             delete_server_setting(&d, &key).await
         }
@@ -748,7 +732,9 @@ fn dir_usage(dir: &std::path::Path) -> (i64, i64, bool) {
     let mut entries = 0i64;
     let mut stack = vec![dir.to_path_buf()];
     while let Some(p) = stack.pop() {
-        let Ok(rd) = std::fs::read_dir(&p) else { continue };
+        let Ok(rd) = std::fs::read_dir(&p) else {
+            continue;
+        };
         for e in rd.flatten() {
             // 上限是护栏：一个符号链接环或异常深的目录不该把请求挂死。
             if entries >= WALK_LIMIT as i64 {
@@ -871,9 +857,11 @@ fn list_server_dir(raw: &str) -> std::result::Result<BrowseDirView, String> {
     }
 
     let clean = whatmedia_storage::clean_path(target);
-    let parent = clean
-        .parent()
-        .map(|p| whatmedia_storage::clean_path(p).to_string_lossy().to_string());
+    let parent = clean.parent().map(|p| {
+        whatmedia_storage::clean_path(p)
+            .to_string_lossy()
+            .to_string()
+    });
     list_dir_contents(&clean, parent)
 }
 
@@ -902,12 +890,13 @@ fn list_dir_contents(
             }
         }
     }
-    directories.sort_by(|a, b| a.name.to_lowercase().cmp(&b.name.to_lowercase()));
+    directories.sort_by_key(|a| a.name.to_lowercase());
 
     Ok(BrowseDirView {
-        current: whatmedia_storage::clean_path(current).to_string_lossy().to_string(),
+        current: whatmedia_storage::clean_path(current)
+            .to_string_lossy()
+            .to_string(),
         parent,
         directories,
     })
 }
-

@@ -216,7 +216,8 @@ pub async fn run_cli(command: CliCommand) -> Result<()> {
             let db = open_db(&cfg).await?;
             let mut cfg = cfg.clone();
             if let Ok(rows) = whatmedia_database::repo::list_server_settings(&db).await {
-                let overrides: Vec<(String, String)> = rows.into_iter().map(|r| (r.key, r.value)).collect();
+                let overrides: Vec<(String, String)> =
+                    rows.into_iter().map(|r| (r.key, r.value)).collect();
                 cfg.apply_setting_overrides(&overrides);
             }
             scrape::scrape_cmd(&db, &cfg, library, retry_failed, review_only, no_images).await?;

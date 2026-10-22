@@ -221,7 +221,10 @@ async fn unread_filter_and_delete_are_scoped_to_the_owner() {
     assert_eq!(all[0].title, "二");
 
     mark_all_read(&db, a).await.unwrap();
-    assert!(list_notifications(&db, a, 20, true).await.unwrap().is_empty());
+    assert!(list_notifications(&db, a, 20, true)
+        .await
+        .unwrap()
+        .is_empty());
 
     // 删别人的通知删不掉：b 拿着 a 的通知 id 只能拿到 false。
     let b = user(&db, "b", "admin").await;

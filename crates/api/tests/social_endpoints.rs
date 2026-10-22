@@ -140,13 +140,21 @@ async fn favorite_can_be_set_read_and_cleared() {
     assert_eq!(r.json()["count"], json!(0));
 
     // 收藏。
-    let r = send(&h.state, put_json(&h.admin, &uri, json!({ "favorite": true }))).await;
+    let r = send(
+        &h.state,
+        put_json(&h.admin, &uri, json!({ "favorite": true })),
+    )
+    .await;
     assert_eq!(r.status, StatusCode::OK, "{}", r.text());
     assert_eq!(r.json()["favorite"], json!(true));
     assert_eq!(r.json()["count"], json!(1));
 
     // 再点一次 true 仍是 1 —— 幂等，不会变成 2。
-    let r = send(&h.state, put_json(&h.admin, &uri, json!({ "favorite": true }))).await;
+    let r = send(
+        &h.state,
+        put_json(&h.admin, &uri, json!({ "favorite": true })),
+    )
+    .await;
     assert_eq!(r.json()["count"], json!(1));
 
     // 我的收藏列表里出现它。
@@ -156,7 +164,11 @@ async fn favorite_can_be_set_read_and_cleared() {
     assert_eq!(r.json()["data"][0]["title"], json!("电影一"));
 
     // 取消。
-    let r = send(&h.state, put_json(&h.admin, &uri, json!({ "favorite": false }))).await;
+    let r = send(
+        &h.state,
+        put_json(&h.admin, &uri, json!({ "favorite": false })),
+    )
+    .await;
     assert_eq!(r.json()["favorite"], json!(false));
     assert_eq!(r.json()["count"], json!(0));
 }
@@ -165,7 +177,11 @@ async fn favorite_can_be_set_read_and_cleared() {
 async fn favorites_are_private_to_each_user() {
     let h = harness().await;
     let uri = format!("/api/v1/items/{}/favorite", h.item);
-    let _ = send(&h.state, put_json(&h.admin, &uri, json!({ "favorite": true }))).await;
+    let _ = send(
+        &h.state,
+        put_json(&h.admin, &uri, json!({ "favorite": true })),
+    )
+    .await;
 
     // 成员看到的是"被 1 人收藏"，但自己没收。
     let r = send(&h.state, get(&h.member, &uri)).await;
@@ -193,8 +209,9 @@ async fn notifications_start_empty_and_can_be_read_and_deleted() {
     // social_repo 里测；这里只测端点层）。
     {
         let d = h.state.db.clone().unwrap();
-        let uid = uuid::Uuid::parse_str(&get_user_by_username(&d, "admin").await.unwrap().unwrap().id)
-            .unwrap();
+        let uid =
+            uuid::Uuid::parse_str(&get_user_by_username(&d, "admin").await.unwrap().unwrap().id)
+                .unwrap();
         notify_users(
             &d,
             &[uid],
@@ -215,25 +232,45 @@ async fn notifications_start_empty_and_can_be_read_and_deleted() {
     let id = r.json()["data"][0]["id"].as_str().unwrap().to_string();
 
     // 未读过滤。
-    let r = send(&h.state, get(&h.admin, "/api/v1/notifications?unread_only=true")).await;
+    let r = send(
+        &h.state,
+        get(&h.admin, "/api/v1/notifications?unread_only=true"),
+    )
+    .await;
     assert_eq!(r.json()["data"].as_array().unwrap().len(), 1);
 
     // 标记已读。
     let r = send(
         &h.state,
-        post_json(&h.admin, &format!("/api/v1/notifications/{id}/read"), json!({})),
+        post_json(
+            &h.admin,
+            &format!("/api/v1/notifications/{id}/read"),
+            json!({}),
+        ),
     )
     .await;
     assert_eq!(r.status, StatusCode::NO_CONTENT);
 
-    let r = send(&h.state, get(&h.admin, "/api/v1/notifications?unread_only=true")).await;
+    let r = send(
+        &h.state,
+        get(&h.admin, "/api/v1/notifications?unread_only=true"),
+    )
+    .await;
     assert!(r.json()["data"].as_array().unwrap().is_empty());
 
     // 删除。
-    let r = send(&h.state, common::delete(&h.admin, &format!("/api/v1/notifications/{id}"))).await;
+    let r = send(
+        &h.state,
+        common::delete(&h.admin, &format!("/api/v1/notifications/{id}")),
+    )
+    .await;
     assert_eq!(r.status, StatusCode::NO_CONTENT);
     // 已经删了 —— 再删是 404 而不是 204。
-    let r = send(&h.state, common::delete(&h.admin, &format!("/api/v1/notifications/{id}"))).await;
+    let r = send(
+        &h.state,
+        common::delete(&h.admin, &format!("/api/v1/notifications/{id}")),
+    )
+    .await;
     assert_eq!(r.status, StatusCode::NOT_FOUND);
 }
 
@@ -242,7 +279,7 @@ async fn one_user_cannot_read_or_delete_anothers_notification() {
     let h = harness().await;
     let d = h.state.db.clone().unwrap();
     let uid = uuid::Uuid::parse_str(&get_user_by_username(&d, "admin").await.unwrap().unwrap().id)
-            .unwrap();
+        .unwrap();
     notify_users(
         &d,
         &[uid],
@@ -264,12 +301,20 @@ async fn one_user_cannot_read_or_delete_anothers_notification() {
 
     let r = send(
         &h.state,
-        post_json(&h.member, &format!("/api/v1/notifications/{id}/read"), json!({})),
+        post_json(
+            &h.member,
+            &format!("/api/v1/notifications/{id}/read"),
+            json!({}),
+        ),
     )
     .await;
     assert_eq!(r.status, StatusCode::NOT_FOUND, "不该能标别人的已读");
 
-    let r = send(&h.state, common::delete(&h.member, &format!("/api/v1/notifications/{id}"))).await;
+    let r = send(
+        &h.state,
+        common::delete(&h.member, &format!("/api/v1/notifications/{id}")),
+    )
+    .await;
     assert_eq!(r.status, StatusCode::NOT_FOUND, "不该能删别人的通知");
 }
 
@@ -278,7 +323,7 @@ async fn read_all_reports_how_many_it_cleared() {
     let h = harness().await;
     let d = h.state.db.clone().unwrap();
     let uid = uuid::Uuid::parse_str(&get_user_by_username(&d, "admin").await.unwrap().unwrap().id)
-            .unwrap();
+        .unwrap();
     notify_users(
         &d,
         &[uid],
@@ -306,11 +351,19 @@ async fn read_all_reports_how_many_it_cleared() {
     .await
     .unwrap();
 
-    let r = send(&h.state, post_json(&h.admin, "/api/v1/notifications/read-all", json!({}))).await;
+    let r = send(
+        &h.state,
+        post_json(&h.admin, "/api/v1/notifications/read-all", json!({})),
+    )
+    .await;
     assert_eq!(r.status, StatusCode::OK);
     assert_eq!(r.json()["updated"], json!(2));
     // 第二次是 0 —— 幂等，不报错。
-    let r = send(&h.state, post_json(&h.admin, "/api/v1/notifications/read-all", json!({}))).await;
+    let r = send(
+        &h.state,
+        post_json(&h.admin, "/api/v1/notifications/read-all", json!({})),
+    )
+    .await;
     assert_eq!(r.json()["updated"], json!(0));
 }
 
@@ -372,7 +425,11 @@ async fn keys_outside_the_whitelist_are_refused() {
     ] {
         let r = send(
             &h.state,
-            put_json(&h.admin, "/api/v1/settings", json!({ "key": key, "value": "x" })),
+            put_json(
+                &h.admin,
+                "/api/v1/settings",
+                json!({ "key": key, "value": "x" }),
+            ),
         )
         .await;
         assert_eq!(
@@ -415,7 +472,11 @@ async fn invalid_values_are_refused_before_anything_is_written() {
     // 布尔值不是布尔。
     let r = send(
         &h.state,
-        put_json(&h.admin, "/api/v1/settings", json!({ "key": "ai.enabled", "value": "maybe" })),
+        put_json(
+            &h.admin,
+            "/api/v1/settings",
+            json!({ "key": "ai.enabled", "value": "maybe" }),
+        ),
     )
     .await;
     assert_eq!(r.status, StatusCode::BAD_REQUEST);
@@ -423,7 +484,10 @@ async fn invalid_values_are_refused_before_anything_is_written() {
     // 上面三次都失败了，所以库里不该留下任何覆盖行。
     let d = h.state.db.clone().unwrap();
     assert!(list_server_settings(&d).await.unwrap().is_empty());
-    assert!(list_user_settings(&d, whatmedia_core::Id::new_v4()).await.unwrap().is_empty());
+    assert!(list_user_settings(&d, whatmedia_core::Id::new_v4())
+        .await
+        .unwrap()
+        .is_empty());
 }
 
 #[tokio::test]

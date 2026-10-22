@@ -79,19 +79,16 @@ static RE_CN_EPISODE: LazyLock<Regex> = LazyLock::new(|| {
 });
 
 /// 中文季目录 / 季：`第一季` / `第1季`
-static RE_CN_SEASON: LazyLock<Regex> = LazyLock::new(|| {
-    Regex::new(r"(?i)第\s*([0-9一二两三四五六七八九十]+)\s*季").unwrap()
-});
+static RE_CN_SEASON: LazyLock<Regex> =
+    LazyLock::new(|| Regex::new(r"(?i)第\s*([0-9一二两三四五六七八九十]+)\s*季").unwrap());
 
 /// 英文季目录：`Season 1` / `Season01` / `S01` / `SE01`
-static RE_EN_SEASON: LazyLock<Regex> = LazyLock::new(|| {
-    Regex::new(r"(?i)^(?:season|s|se)[ ._\-]*(?P<s>\d{1,2})$").unwrap()
-});
+static RE_EN_SEASON: LazyLock<Regex> =
+    LazyLock::new(|| Regex::new(r"(?i)^(?:season|s|se)[ ._\-]*(?P<s>\d{1,2})$").unwrap());
 
 /// 纯数字文件名：`01` / `1` / `001` (可带版本如 `01v2`)
-static RE_PURE_DIGITS: LazyLock<Regex> = LazyLock::new(|| {
-    Regex::new(r"^(?P<e>\d{1,4})(?:v\d)?$").unwrap()
-});
+static RE_PURE_DIGITS: LazyLock<Regex> =
+    LazyLock::new(|| Regex::new(r"^(?P<e>\d{1,4})(?:v\d)?$").unwrap());
 
 /// 数字开头带副标题：`01.相遇` / `01 - 相遇` / `01 相遇` / `1.开始`
 static RE_LEADING_NUMBER_SUBTITLE: LazyLock<Regex> = LazyLock::new(|| {
@@ -248,7 +245,15 @@ pub fn detect_kind_from_path(dir_path: &std::path::Path) -> Option<MediaKind> {
         // 动画 / 动漫
         if matches!(
             lower.as_str(),
-            "动画" | "动画片" | "动漫" | "国漫" | "日漫" | "anime" | "animation" | "cartoons" | "cartoon"
+            "动画"
+                | "动画片"
+                | "动漫"
+                | "国漫"
+                | "日漫"
+                | "anime"
+                | "animation"
+                | "cartoons"
+                | "cartoon"
         ) {
             return Some(MediaKind::Anime);
         }
@@ -264,11 +269,17 @@ pub fn detect_kind_from_path(dir_path: &std::path::Path) -> Option<MediaKind> {
             return Some(MediaKind::Variety);
         }
         // 电影
-        if matches!(lower.as_str(), "电影" | "movie" | "movies" | "films" | "film") {
+        if matches!(
+            lower.as_str(),
+            "电影" | "movie" | "movies" | "films" | "film"
+        ) {
             return Some(MediaKind::Movie);
         }
         // 电视剧
-        if matches!(lower.as_str(), "电视剧" | "剧集" | "连续剧" | "tv" | "series" | "tv shows") {
+        if matches!(
+            lower.as_str(),
+            "电视剧" | "剧集" | "连续剧" | "tv" | "series" | "tv shows"
+        ) {
             return Some(MediaKind::Series);
         }
     }
@@ -912,4 +923,3 @@ mod tests {
         assert_eq!(p.kind_hint, Some(MediaKind::Anime));
     }
 }
-

@@ -545,7 +545,12 @@ pub fn spawn_channel_probe_task(db: whatmedia_database::Db, source_id: Id) {
                 } else {
                     format!("探测完成：共 {total} 个频道，全部正常可用")
                 };
-                let _ = whatmedia_database::repo::set_source_sync_result(&db, source_id, Some(&summary)).await;
+                let _ = whatmedia_database::repo::set_source_sync_result(
+                    &db,
+                    source_id,
+                    Some(&summary),
+                )
+                .await;
                 tracing::info!(
                     "直播源 {} 探测完成：共 {} 个频道，活跃 {} 个，已禁用 {} 个失效频道",
                     source_id,
@@ -556,13 +561,17 @@ pub fn spawn_channel_probe_task(db: whatmedia_database::Db, source_id: Id) {
             }
             Err(e) => {
                 let err_msg = format!("探测失败：{e}");
-                let _ = whatmedia_database::repo::set_source_sync_result(&db, source_id, Some(&err_msg)).await;
+                let _ = whatmedia_database::repo::set_source_sync_result(
+                    &db,
+                    source_id,
+                    Some(&err_msg),
+                )
+                .await;
                 tracing::error!("直播源 {} 探测失败: {e}", source_id);
             }
         }
     });
 }
-
 
 /// 取一段文本。http(s) 走网络，其它当本地路径读。
 ///
@@ -999,9 +1008,15 @@ pub async fn proxy_stream(Query(query): Query<LiveProxyQuery>) -> Response {
         return (
             status,
             [
-                (axum::http::header::CONTENT_TYPE, "application/vnd.apple.mpegurl"),
+                (
+                    axum::http::header::CONTENT_TYPE,
+                    "application/vnd.apple.mpegurl",
+                ),
                 (axum::http::header::ACCESS_CONTROL_ALLOW_ORIGIN, "*"),
-                (axum::http::header::CACHE_CONTROL, "no-cache, no-store, must-revalidate"),
+                (
+                    axum::http::header::CACHE_CONTROL,
+                    "no-cache, no-store, must-revalidate",
+                ),
             ],
             rewritten,
         )
@@ -1053,7 +1068,12 @@ fn rewrite_m3u8(text: &str, base_url: &reqwest::Url) -> String {
                         let orig_uri = &after[..end];
                         if let Ok(abs_url) = base_url.join(orig_uri) {
                             let proxy_uri = encode_proxy_url(abs_url.as_str());
-                            let new_line = format!("{}URI=\"{}\"{}", &trimmed[..start], proxy_uri, &after[end + 1..]);
+                            let new_line = format!(
+                                "{}URI=\"{}\"{}",
+                                &trimmed[..start],
+                                proxy_uri,
+                                &after[end + 1..]
+                            );
                             out.push_str(&new_line);
                             out.push('\n');
                             continue;
@@ -1080,4 +1100,3 @@ fn rewrite_m3u8(text: &str, base_url: &reqwest::Url) -> String {
     }
     out
 }
-

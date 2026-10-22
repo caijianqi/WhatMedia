@@ -415,8 +415,8 @@ pub struct StorageAccountRow {
 
 impl StorageAccountRow {
     pub fn into_domain(self) -> Option<StorageAccount> {
-        let extra_headers = serde_json::from_str(&self.extra_headers)
-            .unwrap_or_else(|_| serde_json::json!({}));
+        let extra_headers =
+            serde_json::from_str(&self.extra_headers).unwrap_or_else(|_| serde_json::json!({}));
         Some(StorageAccount {
             id: to_id(&self.id)?,
             name: self.name,

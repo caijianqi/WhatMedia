@@ -397,10 +397,14 @@ async fn create_library(
             return bad_request(format!("目录不存在：{}", body.path));
         }
         let canonical = match std::path::Path::new(&body.path).canonicalize() {
-            Ok(p) => whatmedia_storage::clean_path(&p).to_string_lossy().to_string(),
+            Ok(p) => whatmedia_storage::clean_path(&p)
+                .to_string_lossy()
+                .to_string(),
             Err(_) => body.path.clone(),
         };
-        if let Ok(Some(existing)) = whatmedia_database::repo::find_library_by_root(&db, "local", &canonical).await {
+        if let Ok(Some(existing)) =
+            whatmedia_database::repo::find_library_by_root(&db, "local", &canonical).await
+        {
             return (StatusCode::OK, Json(existing)).into_response();
         }
         match whatmedia_database::repo::insert_library(
@@ -418,7 +422,9 @@ async fn create_library(
         }
     } else {
         // 远程存储（WebDAV / 云盘中转）
-        if let Ok(Some(existing)) = whatmedia_database::repo::find_library_by_root(&db, provider, &body.path).await {
+        if let Ok(Some(existing)) =
+            whatmedia_database::repo::find_library_by_root(&db, provider, &body.path).await
+        {
             return (StatusCode::OK, Json(existing)).into_response();
         }
         match whatmedia_database::repo::insert_library(
@@ -951,7 +957,41 @@ async fn start_scan(State(state): State<AppState>, Json(body): Json<ScanRequest>
         .into_response()
 }
 
-async fn fallback() -> Response {
+async fn fallback(state: AppState, uri: axum::http::Uri, req: axum::extract::Request) -> Response {
+    let path = uri.path();
+    // 严格隔离：API 端点、系统端点与 HLS 流一律走 404 JSON 信封，不回退为 HTML
+    if path.starts_with("/api/") || path == "/healthz" || path.starts_with("/hls/") {
+        return error_response(StatusCode::NOT_FOUND, "NOT_FOUND", "资源不存在");
+    }
+
+    if let Some(ref web_dir) = state.config.paths.web_dir {
+        if web_dir.is_dir() {
+            use tower::ServiceExt;
+            use tower_http::services::{ServeDir, ServeFile};
+
+            let index_path = web_dir.join("index.html");
+            let res = if index_path.is_file() {
+                ServeDir::new(web_dir)
+                    .fallback(ServeFile::new(index_path))
+                    .oneshot(req)
+                    .await
+            } else {
+                ServeDir::new(web_dir).oneshot(req).await
+            };
+
+            match res {
+                Ok(res) => return res.into_response(),
+                Err(_) => {
+                    return error_response(
+                        StatusCode::INTERNAL_SERVER_ERROR,
+                        "STATIC_SERVE_ERROR",
+                        "静态资源加载失败",
+                    );
+                }
+            }
+        }
+    }
+
     error_response(StatusCode::NOT_FOUND, "NOT_FOUND", "资源不存在")
 }
 
@@ -1117,9 +1157,18 @@ fn guarded_routes(state: AppState) -> Router {
         .route("/api/v1/items/{id}/favorite", put(social::set_favorite))
         // ── 通知 ──────────────────────────────────────────────
         .route("/api/v1/notifications", get(social::list_notifications))
-        .route("/api/v1/notifications/read-all", post(social::read_all_notifications))
-        .route("/api/v1/notifications/{id}/read", post(social::read_notification))
-        .route("/api/v1/notifications/{id}", delete(social::delete_notification))
+        .route(
+            "/api/v1/notifications/read-all",
+            post(social::read_all_notifications),
+        )
+        .route(
+            "/api/v1/notifications/{id}/read",
+            post(social::read_notification),
+        )
+        .route(
+            "/api/v1/notifications/{id}",
+            delete(social::delete_notification),
+        )
         // ── 设置 ──────────────────────────────────────────────
         .route("/api/v1/settings", get(social::get_settings))
         .route("/api/v1/settings", put(social::put_setting))
@@ -1137,11 +1186,15 @@ fn guarded_routes(state: AppState) -> Router {
 }
 
 pub fn build_router(state: AppState) -> Router {
+    let fallback_state = state.clone();
     Router::new()
         .merge(public_routes(state.clone()))
         .merge(guarded_routes(state))
+        .fallback(move |uri: axum::http::Uri, req: axum::extract::Request| {
+            let s = fallback_state.clone();
+            async move { fallback(s, uri, req).await }
+        })
         .layer(TraceLayer::new_for_http())
-        .fallback(fallback)
 }
 
 /// 供集成测试使用：无需绑定端口即可发起请求。
@@ -1268,5 +1321,58 @@ mod tests {
         let p: Page<u32> = Page::new(vec![1, 2], 10, 1, 50);
         assert_eq!(json!(p)["page"]["total"], 10);
         assert_eq!(json!(p)["page"]["page_size"], 50);
+    }
+
+    #[tokio::test]
+    async fn static_web_serving_and_spa_fallback_work() {
+        let temp = tempfile::tempdir().unwrap();
+        let index_content = "<!DOCTYPE html><html><body>WhatMedia Web</body></html>";
+        std::fs::write(temp.path().join("index.html"), index_content).unwrap();
+
+        let mut cfg = AppConfig::default();
+        cfg.paths.web_dir = Some(temp.path().to_path_buf());
+        let router = build_router(AppState::new(cfg));
+
+        // 访问根路径 / 应该返回 index.html
+        let res = router
+            .clone()
+            .oneshot(Request::builder().uri("/").body(Body::empty()).unwrap())
+            .await
+            .unwrap();
+        assert_eq!(res.status(), StatusCode::OK);
+        let body = axum::body::to_bytes(res.into_body(), usize::MAX)
+            .await
+            .unwrap();
+        assert_eq!(std::str::from_utf8(&body).unwrap(), index_content);
+
+        // 访问前端 SPA 页面 /movies 应该回退返回 index.html
+        let res = router
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .uri("/movies")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(res.status(), StatusCode::OK);
+
+        // 访问不存在的 API 路径 /api/v1/nope 依然必须严格返回 404 JSON，不可被 SPA 吞掉
+        let res = router
+            .oneshot(
+                Request::builder()
+                    .uri("/api/v1/nope")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(res.status(), StatusCode::NOT_FOUND);
+        let body = axum::body::to_bytes(res.into_body(), usize::MAX)
+            .await
+            .unwrap();
+        let json: serde_json::Value = serde_json::from_slice(&body).unwrap();
+        assert_eq!(json["error"]["code"], "NOT_FOUND");
     }
 }

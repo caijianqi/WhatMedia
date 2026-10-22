@@ -233,7 +233,8 @@ pub async fn count_items(db: &Db, q: &ItemQuery) -> Result<i64> {
                      WHERE se.series_id = s.id",
             );
             if let Some(lib_id) = q.library_id {
-                b2.push(" AND m.library_id = ").push_bind(lib_id.to_string());
+                b2.push(" AND m.library_id = ")
+                    .push_bind(lib_id.to_string());
             }
             b2.push(")");
             if let Some(year) = q.year {
@@ -265,7 +266,8 @@ pub async fn count_items(db: &Db, q: &ItemQuery) -> Result<i64> {
                 WHERE se.series_id = s.id",
         );
         if let Some(lib_id) = q.library_id {
-            b2.push(" AND m.library_id = ").push_bind(lib_id.to_string());
+            b2.push(" AND m.library_id = ")
+                .push_bind(lib_id.to_string());
         }
         b2.push(")");
         if let Some(year) = q.year {
@@ -455,7 +457,10 @@ pub async fn list_items(db: &Db, q: &ItemQuery) -> Result<Page<ItemSummary>> {
         b.push(" OFFSET ");
         b.push_bind(q.offset());
 
-        let rows = b.build_query_as::<ItemSummaryRow>().fetch_all(db.pool()).await?;
+        let rows = b
+            .build_query_as::<ItemSummaryRow>()
+            .fetch_all(db.pool())
+            .await?;
         let data = rows
             .into_iter()
             .filter_map(|r| {
@@ -491,7 +496,10 @@ pub async fn list_items(db: &Db, q: &ItemQuery) -> Result<Page<ItemSummary>> {
     b.push(" OFFSET ");
     b.push_bind(q.offset());
 
-    let rows = b.build_query_as::<ItemSummaryRow>().fetch_all(db.pool()).await?;
+    let rows = b
+        .build_query_as::<ItemSummaryRow>()
+        .fetch_all(db.pool())
+        .await?;
     let data = rows
         .into_iter()
         .filter_map(|r| {

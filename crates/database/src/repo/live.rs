@@ -172,10 +172,7 @@ pub async fn get_live_channel(db: &crate::Db, id: Id) -> Result<Option<LiveChann
     Ok(row)
 }
 
-pub async fn list_channels_by_source(
-    db: &crate::Db,
-    source_id: Id,
-) -> Result<Vec<LiveChannelRow>> {
+pub async fn list_channels_by_source(db: &crate::Db, source_id: Id) -> Result<Vec<LiveChannelRow>> {
     let rows = sqlx::query_as::<_, LiveChannelRow>(
         "SELECT * FROM live_channel WHERE source_id = ? ORDER BY number IS NULL, number, sort_order",
     )
@@ -208,7 +205,6 @@ pub async fn set_channels_disabled(db: &crate::Db, ids: &[Id]) -> Result<()> {
     tx.commit().await?;
     Ok(())
 }
-
 
 // ───────────────── 节目单 ─────────────────
 

@@ -1,6 +1,19 @@
-# 家庭部署最小模板。ARM64 与 x86_64 同一份文件，镜像按本机架构自动拉取。
+# WhatMedia 家庭部署模板（x86_64 / ARM64 通用）
 #
-# 更完整的版本（含硬件直通、uid/gid、健康检查说明）见 docker/compose.yml。
+# 使用方式：
+#   docker compose up -d
+#
+# 注意事项：
+#   1. **PUID/PGID 与权限**：
+#      镜像默认以内置用户 whatmedia (uid 1000, gid 1000) 运行。
+#      宿主机挂载目录（./config, ./data, ./cache, ./logs）建议确保 uid 1000 可读写。
+#   2. **媒体目录只读挂载**（:ro）：
+#      WhatMedia 服务端仅需要读取媒体，只读挂载更安全（防误删）。
+#   3. **硬件编解码直通**（按需取消对应注释）：
+#      - Intel / AMD 核显：开启 /dev/dri
+#      - Rockchip RK3588：开启 /dev/dri, /dev/mpp_service, /dev/rga
+#      - NVIDIA GPU：配置 deploy.resources.reservations.devices
+
 services:
   whatmedia:
     image: ghcr.io/whatmedia/whatmedia:latest
@@ -18,13 +31,27 @@ services:
       - ./data:/data
       - ./cache:/cache
       - ./logs:/logs
-      # 媒体目录按需挂载，只读更安全（服务端不需要写媒体文件）
+      # 媒体目录：请替换为宿主机实际路径，保持 :ro 只读
       - /path/to/media:/media:ro
-    # 硬件直通按需开启（x86 为 /dev/dri，Rockchip 另需 mpp/rga）。
-    # 挂了但驱动不对不会报错，只会静默降级到软件转码 —— 用
-    # GET /api/v1/hardware/profile 看 render_node 判断是否真的生效。
+    # ── 硬件直通示例（按需选择解开注释）────────────────────────
+    # 选项 A: Intel QSV / AMD VAAPI（常见 x86 小主机、NAS、NUC）
     # devices:
     #   - /dev/dri:/dev/dri
+    #
+    # 选项 B: Rockchip RK3588（R5S / R6S / 树莓派香橙派等）
+    # devices:
+    #   - /dev/dri:/dev/dri
+    #   - /dev/mpp_service:/dev/mpp_service
+    #   - /dev/rga:/dev/rga
+    #
+    # 选项 C: NVIDIA GPU（需宿主机安装 nvidia-container-toolkit）
+    # deploy:
+    #   resources:
+    #     reservations:
+    #       devices:
+    #         - driver: nvidia
+    #           count: 1
+    #           capabilities: [gpu]
     healthcheck:
       test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1:8080/healthz"]
       interval: 30s

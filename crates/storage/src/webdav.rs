@@ -43,7 +43,9 @@ pub struct WebDavStorage {
 impl WebDavStorage {
     pub fn new(cfg: WebDavConfig) -> Result<Self> {
         let endpoint = cfg.endpoint.trim_end_matches('/').to_string();
-        if endpoint.is_empty() || (!endpoint.starts_with("http://") && !endpoint.starts_with("https://")) {
+        if endpoint.is_empty()
+            || (!endpoint.starts_with("http://") && !endpoint.starts_with("https://"))
+        {
             return Err(WhatMediaError::Storage {
                 provider: cfg.id.clone(),
                 message: format!("WebDAV 端点地址无效：{}", cfg.endpoint),
@@ -97,7 +99,12 @@ impl WebDavStorage {
         } else if clean_path.is_empty() {
             format!("{}/{}", self.endpoint, url_encode_path(base_root))
         } else {
-            format!("{}/{}/{}", self.endpoint, url_encode_path(base_root), url_encode_path(clean_path))
+            format!(
+                "{}/{}/{}",
+                self.endpoint,
+                url_encode_path(base_root),
+                url_encode_path(clean_path)
+            )
         }
     }
 }
@@ -161,7 +168,11 @@ pub fn parse_propfind_xml(xml: &str, base_url_prefix: &str) -> Vec<StorageEntry>
     let mut entries = Vec::new();
 
     for node in doc.descendants().filter(|n| n.has_tag_name("response")) {
-        let href = match node.descendants().find(|n| n.has_tag_name("href")).and_then(|n| n.text()) {
+        let href = match node
+            .descendants()
+            .find(|n| n.has_tag_name("href"))
+            .and_then(|n| n.text())
+        {
             Some(h) => h,
             None => continue,
         };
@@ -172,13 +183,22 @@ pub fn parse_propfind_xml(xml: &str, base_url_prefix: &str) -> Vec<StorageEntry>
         // 提取名称与路径
         let (name, is_dir) = {
             let resourcetype = node.descendants().find(|n| n.has_tag_name("resourcetype"));
-            let is_col = resourcetype.map(|r| r.descendants().any(|n| n.has_tag_name("collection"))).unwrap_or(false)
+            let is_col = resourcetype
+                .map(|r| r.descendants().any(|n| n.has_tag_name("collection")))
+                .unwrap_or(false)
                 || href.ends_with('/');
 
-            let displayname = node.descendants().find(|n| n.has_tag_name("displayname")).and_then(|n| n.text());
+            let displayname = node
+                .descendants()
+                .find(|n| n.has_tag_name("displayname"))
+                .and_then(|n| n.text());
             let n = match displayname {
                 Some(dn) if !dn.trim().is_empty() => dn.to_string(),
-                _ => trimmed_href.split('/').last().unwrap_or("").to_string(),
+                _ => trimmed_href
+                    .split('/')
+                    .next_back()
+                    .unwrap_or("")
+                    .to_string(),
             };
             (n, is_col)
         };
@@ -204,8 +224,8 @@ pub fn parse_propfind_xml(xml: &str, base_url_prefix: &str) -> Vec<StorageEntry>
 
         let norm_base = base_url_prefix.trim_end_matches('/');
         // 相对路径
-        let path = if trimmed_href.starts_with(norm_base) {
-            trimmed_href[norm_base.len()..].trim_start_matches('/').to_string()
+        let path = if let Some(rest) = trimmed_href.strip_prefix(norm_base) {
+            rest.trim_start_matches('/').to_string()
         } else {
             trimmed_href.to_string()
         };
@@ -322,10 +342,13 @@ impl StorageProvider for WebDavStorage {
         })?;
 
         let entries = parse_propfind_xml(&body, &url);
-        entries.into_iter().next().ok_or_else(|| WhatMediaError::NotFound {
-            entity: "webdav_file",
-            id: path.into(),
-        })
+        entries
+            .into_iter()
+            .next()
+            .ok_or_else(|| WhatMediaError::NotFound {
+                entity: "webdav_file",
+                id: path.into(),
+            })
     }
 
     async fn exists(&self, path: &str) -> Result<bool> {
@@ -378,10 +401,15 @@ impl StorageProvider for WebDavStorage {
 
     async fn read(&self, path: &str) -> Result<Vec<u8>> {
         let url = self.build_url(path);
-        let res = self.client.get(&url).send().await.map_err(|e| WhatMediaError::Storage {
-            provider: self.id().into(),
-            message: format!("WebDAV GET 失败 {url}: {e}"),
-        })?;
+        let res = self
+            .client
+            .get(&url)
+            .send()
+            .await
+            .map_err(|e| WhatMediaError::Storage {
+                provider: self.id().into(),
+                message: format!("WebDAV GET 失败 {url}: {e}"),
+            })?;
 
         if !res.status().is_success() {
             return Err(WhatMediaError::Storage {
@@ -411,7 +439,10 @@ impl StorageProvider for WebDavStorage {
                 message: format!("WebDAV PUT 写入失败 {url}: {e}"),
             })?;
 
-        if !res.status().is_success() && res.status() != StatusCode::CREATED && res.status() != StatusCode::NO_CONTENT {
+        if !res.status().is_success()
+            && res.status() != StatusCode::CREATED
+            && res.status() != StatusCode::NO_CONTENT
+        {
             return Err(WhatMediaError::Storage {
                 provider: self.id().into(),
                 message: format!("WebDAV PUT 返回错误 {}: {url}", res.status()),

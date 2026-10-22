@@ -29,14 +29,12 @@ pub struct FavoriteRow {
 /// 加收藏。重复点是 `INSERT OR IGNORE`，**不是错误** ——
 /// 用户双击一下就报 409 是最没必要的失败。
 pub async fn add_favorite(db: &Db, user_id: Id, item_id: Id) -> Result<()> {
-    sqlx::query(
-        "INSERT OR IGNORE INTO favorite (user_id, item_id, created_at) VALUES (?,?,?)",
-    )
-    .bind(user_id.to_string())
-    .bind(item_id.to_string())
-    .bind(chrono::Utc::now().to_rfc3339())
-    .execute(db.pool())
-    .await?;
+    sqlx::query("INSERT OR IGNORE INTO favorite (user_id, item_id, created_at) VALUES (?,?,?)")
+        .bind(user_id.to_string())
+        .bind(item_id.to_string())
+        .bind(chrono::Utc::now().to_rfc3339())
+        .execute(db.pool())
+        .await?;
     Ok(())
 }
 
@@ -225,27 +223,39 @@ pub async fn list_notifications(
     if unread_only {
         b.push(" AND read_at IS NULL");
     }
-    b.push(" ORDER BY created_at DESC LIMIT ").push_bind(limit as i64);
+    b.push(" ORDER BY created_at DESC LIMIT ")
+        .push_bind(limit as i64);
 
     let rows = b
-        .build_query_as::<(String, String, String, String, Option<String>, Option<String>, String, Option<String>)>()
+        .build_query_as::<(
+            String,
+            String,
+            String,
+            String,
+            Option<String>,
+            Option<String>,
+            String,
+            Option<String>,
+        )>()
         .fetch_all(db.pool())
         .await?;
 
     Ok(rows
         .into_iter()
-        .filter_map(|(id, kind, level, title, body, link, created_at, read_at)| {
-            Some(NotificationRow {
-                id: crate::rows::to_id(&id)?,
-                kind,
-                level,
-                title,
-                body,
-                link,
-                created_at,
-                read_at,
-            })
-        })
+        .filter_map(
+            |(id, kind, level, title, body, link, created_at, read_at)| {
+                Some(NotificationRow {
+                    id: crate::rows::to_id(&id)?,
+                    kind,
+                    level,
+                    title,
+                    body,
+                    link,
+                    created_at,
+                    read_at,
+                })
+            },
+        )
         .collect())
 }
 
@@ -274,13 +284,12 @@ pub async fn mark_notification_read(db: &Db, user_id: Id, id: Id) -> Result<bool
 }
 
 pub async fn mark_all_read(db: &Db, user_id: Id) -> Result<u64> {
-    let r = sqlx::query(
-        "UPDATE notification SET read_at = ? WHERE user_id = ? AND read_at IS NULL",
-    )
-    .bind(chrono::Utc::now().to_rfc3339())
-    .bind(user_id.to_string())
-    .execute(db.pool())
-    .await?;
+    let r =
+        sqlx::query("UPDATE notification SET read_at = ? WHERE user_id = ? AND read_at IS NULL")
+            .bind(chrono::Utc::now().to_rfc3339())
+            .bind(user_id.to_string())
+            .execute(db.pool())
+            .await?;
     Ok(r.rows_affected())
 }
 
@@ -448,18 +457,20 @@ pub async fn library_storage(db: &Db) -> Result<Vec<LibraryStorage>> {
 
     Ok(rows
         .into_iter()
-        .filter_map(|(id, name, kind, root_path, item_count, file_count, bytes)| {
-            Some(LibraryStorage {
-                id: crate::rows::to_id(&id)?,
-                name,
-                kind,
-                // 可达性只能问文件系统，这一下是 stat 而不是遍历，很便宜。
-                reachable: std::path::Path::new(&root_path).exists(),
-                root_path,
-                item_count,
-                file_count,
-                bytes,
-            })
-        })
+        .filter_map(
+            |(id, name, kind, root_path, item_count, file_count, bytes)| {
+                Some(LibraryStorage {
+                    id: crate::rows::to_id(&id)?,
+                    name,
+                    kind,
+                    // 可达性只能问文件系统，这一下是 stat 而不是遍历，很便宜。
+                    reachable: std::path::Path::new(&root_path).exists(),
+                    root_path,
+                    item_count,
+                    file_count,
+                    bytes,
+                })
+            },
+        )
         .collect())
 }

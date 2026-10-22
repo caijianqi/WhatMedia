@@ -2,11 +2,11 @@
 //!
 //! 提供转码加速芯片自检、多端播放策略离线预演、字幕轨详情透视及数据库迁移脚本查看。
 
+use crate::common::{human_ms, parse_id};
 use anyhow::{Context, Result};
 use std::path::PathBuf;
 use whatmedia_config::AppConfig;
 use whatmedia_database::{repo, Db};
-use crate::common::{human_ms, parse_id};
 
 /// 打印最终生效的配置（合并环境变量与 TOML 结果），便于黑屏运维排障。
 pub fn config_cmd(file: Option<PathBuf>) -> Result<()> {
@@ -63,7 +63,11 @@ pub async fn hardware_cmd(cfg: &AppConfig) -> Result<()> {
     let ffmpeg_ok = runner.is_available().await;
     println!(
         "\nFFmpeg    {}（路径：{}）",
-        if ffmpeg_ok { "就绪可用" } else { "不可用" },
+        if ffmpeg_ok {
+            "就绪可用"
+        } else {
+            "不可用"
+        },
         ffmpeg_bin
     );
     if !ffmpeg_ok {

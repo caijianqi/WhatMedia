@@ -160,7 +160,9 @@ fn genre_boost(query_kind: Option<whatmedia_core::MediaKind>, genres: &[String])
     match k {
         whatmedia_core::MediaKind::Anime => {
             let is_anime = genres.iter().any(|g| {
-                g.contains("动画") || g.to_ascii_lowercase().contains("animation") || g.contains("动漫")
+                g.contains("动画")
+                    || g.to_ascii_lowercase().contains("animation")
+                    || g.contains("动漫")
             });
             if is_anime {
                 0.15
@@ -169,9 +171,9 @@ fn genre_boost(query_kind: Option<whatmedia_core::MediaKind>, genres: &[String])
             }
         }
         whatmedia_core::MediaKind::Documentary => {
-            let is_doc = genres.iter().any(|g| {
-                g.contains("纪录") || g.to_ascii_lowercase().contains("documentary")
-            });
+            let is_doc = genres
+                .iter()
+                .any(|g| g.contains("纪录") || g.to_ascii_lowercase().contains("documentary"));
             if is_doc {
                 0.15
             } else {
@@ -179,9 +181,9 @@ fn genre_boost(query_kind: Option<whatmedia_core::MediaKind>, genres: &[String])
             }
         }
         whatmedia_core::MediaKind::Variety => {
-            let is_variety = genres.iter().any(|g| {
-                g.contains("综艺") || g.to_ascii_lowercase().contains("variety")
-            });
+            let is_variety = genres
+                .iter()
+                .any(|g| g.contains("综艺") || g.to_ascii_lowercase().contains("variety"));
             if is_variety {
                 0.15
             } else {

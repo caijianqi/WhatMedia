@@ -106,8 +106,12 @@ async fn kind_counts_reports_series_when_episodes_are_linked() {
 
     let series = tv::upsert_series(&db, "早春晴朗", None).await.unwrap();
     let season = tv::upsert_season(&db, series.id, 1).await.unwrap();
-    tv::upsert_episode(&db, season.id, 1, ep1, None).await.unwrap();
-    tv::upsert_episode(&db, season.id, 2, ep2, None).await.unwrap();
+    tv::upsert_episode(&db, season.id, 1, ep1, None)
+        .await
+        .unwrap();
+    tv::upsert_episode(&db, season.id, 2, ep2, None)
+        .await
+        .unwrap();
 
     let counts = kind_counts(&db).await.unwrap();
     assert_eq!(counts.len(), 1);
@@ -115,14 +119,30 @@ async fn kind_counts_reports_series_when_episodes_are_linked() {
     assert_eq!(counts[0].count, 1);
 
     // 显式聚合查询列表时，聚合为 1 个 series 卡片
-    let page = list_items(&db, &ItemQuery { aggregate_series: Some(true), ..Default::default() }).await.unwrap();
+    let page = list_items(
+        &db,
+        &ItemQuery {
+            aggregate_series: Some(true),
+            ..Default::default()
+        },
+    )
+    .await
+    .unwrap();
     assert_eq!(page.page.total, 1);
     assert_eq!(page.data[0].kind, MediaKind::Series);
     assert_eq!(page.data[0].title, "早春晴朗");
     assert_eq!(page.data[0].episode_count, Some(2));
 
     // 按 Series 过滤时，自动聚合为 1 个 series 卡片
-    let series_page = list_items(&db, &ItemQuery { kind: Some(MediaKind::Series), ..Default::default() }).await.unwrap();
+    let series_page = list_items(
+        &db,
+        &ItemQuery {
+            kind: Some(MediaKind::Series),
+            ..Default::default()
+        },
+    )
+    .await
+    .unwrap();
     assert_eq!(series_page.page.total, 1);
     assert_eq!(series_page.data[0].kind, MediaKind::Series);
     assert_eq!(series_page.data[0].title, "早春晴朗");
@@ -249,47 +269,73 @@ async fn anime_series_aggregation_and_deduplication() {
     // 2. 一部电视剧《早春晴朗》（2 集，kind 均为 episode）
     let tv_ep1 = add_item(&db, tv_lib, "早春晴朗 第1集", MediaKind::Episode).await;
     let tv_ep2 = add_item(&db, tv_lib, "早春晴朗 第2集", MediaKind::Episode).await;
-    let tv_series = tv::upsert_series(&db, "早春晴朗", Some(2024)).await.unwrap();
+    let tv_series = tv::upsert_series(&db, "早春晴朗", Some(2024))
+        .await
+        .unwrap();
     let tv_season = tv::upsert_season(&db, tv_series.id, 1).await.unwrap();
-    tv::upsert_episode(&db, tv_season.id, 1, tv_ep1, None).await.unwrap();
-    tv::upsert_episode(&db, tv_season.id, 2, tv_ep2, None).await.unwrap();
+    tv::upsert_episode(&db, tv_season.id, 1, tv_ep1, None)
+        .await
+        .unwrap();
+    tv::upsert_episode(&db, tv_season.id, 2, tv_ep2, None)
+        .await
+        .unwrap();
 
     // 3. 一部动画剧集《凡人修仙传》（1 集，kind 为 anime）
     let anime_ep1 = add_item(&db, anime_lib, "凡人修仙传 第1集", MediaKind::Anime).await;
-    let anime_series = tv::upsert_series(&db, "凡人修仙传", Some(2020)).await.unwrap();
+    let anime_series = tv::upsert_series(&db, "凡人修仙传", Some(2020))
+        .await
+        .unwrap();
     let anime_season = tv::upsert_season(&db, anime_series.id, 1).await.unwrap();
-    tv::upsert_episode(&db, anime_season.id, 1, anime_ep1, None).await.unwrap();
+    tv::upsert_episode(&db, anime_season.id, 1, anime_ep1, None)
+        .await
+        .unwrap();
 
     // 验证 kind_counts：电影 1，电视剧 1，动画 1
     let counts = kind_counts(&db).await.unwrap();
     assert_eq!(counts.len(), 3);
-    let count_of = |k: MediaKind| counts.iter().find(|c| c.kind == k).map(|c| c.count).unwrap_or(0);
+    let count_of = |k: MediaKind| {
+        counts
+            .iter()
+            .find(|c| c.kind == k)
+            .map(|c| c.count)
+            .unwrap_or(0)
+    };
     assert_eq!(count_of(MediaKind::Movie), 1);
     assert_eq!(count_of(MediaKind::Series), 1);
     assert_eq!(count_of(MediaKind::Anime), 1);
 
     // 验证浏览全部（aggregate_series: true）：严格返回 3 部，无任何重复！
-    let page_all = list_items(&db, &ItemQuery {
-        aggregate_series: Some(true),
-        ..Default::default()
-    })
+    let page_all = list_items(
+        &db,
+        &ItemQuery {
+            aggregate_series: Some(true),
+            ..Default::default()
+        },
+    )
     .await
     .unwrap();
     assert_eq!(page_all.page.total, 3);
     assert_eq!(page_all.data.len(), 3);
 
     // 验证 titles 和 kind
-    let titles: Vec<(String, MediaKind)> = page_all.data.iter().map(|d| (d.title.clone(), d.kind)).collect();
+    let titles: Vec<(String, MediaKind)> = page_all
+        .data
+        .iter()
+        .map(|d| (d.title.clone(), d.kind))
+        .collect();
     assert!(titles.contains(&("倩女幽魂".into(), MediaKind::Movie)));
     assert!(titles.contains(&("早春晴朗".into(), MediaKind::Series)));
     assert!(titles.contains(&("凡人修仙传".into(), MediaKind::Anime)));
 
     // 验证按类型筛选：筛选 anime 时只有凡人修仙传 1 部
-    let page_anime = list_items(&db, &ItemQuery {
-        kind: Some(MediaKind::Anime),
-        aggregate_series: Some(true),
-        ..Default::default()
-    })
+    let page_anime = list_items(
+        &db,
+        &ItemQuery {
+            kind: Some(MediaKind::Anime),
+            aggregate_series: Some(true),
+            ..Default::default()
+        },
+    )
     .await
     .unwrap();
     assert_eq!(page_anime.page.total, 1);
@@ -299,11 +345,14 @@ async fn anime_series_aggregation_and_deduplication() {
     assert_eq!(page_anime.data[0].episode_count, Some(1));
 
     // 验证按类型筛选：筛选 series 时只有早春晴朗 1 部（凡人修仙传被正确隔离）
-    let page_series = list_items(&db, &ItemQuery {
-        kind: Some(MediaKind::Series),
-        aggregate_series: Some(true),
-        ..Default::default()
-    })
+    let page_series = list_items(
+        &db,
+        &ItemQuery {
+            kind: Some(MediaKind::Series),
+            aggregate_series: Some(true),
+            ..Default::default()
+        },
+    )
     .await
     .unwrap();
     assert_eq!(page_series.page.total, 1);
@@ -312,4 +361,3 @@ async fn anime_series_aggregation_and_deduplication() {
     assert_eq!(page_series.data[0].kind, MediaKind::Series);
     assert_eq!(page_series.data[0].episode_count, Some(2));
 }
-

@@ -30,7 +30,7 @@ use crate::playback::{
 };
 use crate::social::{
     BrowseDirView, DirEntryView, FavoritePage, FavoriteState, NotificationList, ReadAllResult,
-    SetFavoriteInput, SettingEntry, SetSettingInput, SettingsView, StorageView,
+    SetFavoriteInput, SetSettingInput, SettingEntry, SettingsView, StorageView,
 };
 use crate::{
     CreateLibrary, CreditsView, EpisodeParams, ErrorBody, ErrorDetail, Paging, ScanAccepted,

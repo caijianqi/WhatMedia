@@ -71,7 +71,10 @@ pub async fn detect_ffmpeg(config: &AppConfig) -> Option<Arc<whatmedia_transcode
         info!(bin = runner.bin(), "已检测到 ffmpeg，转码服务可用");
         Some(runner)
     } else {
-        warn!(bin = runner.bin(), "未检测到 ffmpeg，Direct Play 之外的转码路径将不可用");
+        warn!(
+            bin = runner.bin(),
+            "未检测到 ffmpeg，Direct Play 之外的转码路径将不可用"
+        );
         None
     }
 }
@@ -93,7 +96,10 @@ pub async fn detect_ffprobe() -> Option<Arc<whatmedia_media::FfprobeRunner>> {
         info!("已检测到 ffprobe，扫描入库将包含精确音视频流信息");
         Some(Arc::new(runner))
     } else {
-        warn!("未检测到 ffprobe（{}），扫描入库将只做文件名规则解析", runner.bin());
+        warn!(
+            "未检测到 ffprobe（{}），扫描入库将只做文件名规则解析",
+            runner.bin()
+        );
         None
     }
 }
@@ -102,10 +108,7 @@ pub async fn detect_ffprobe() -> Option<Arc<whatmedia_media::FfprobeRunner>> {
 ///
 /// 即使缓存目录由于权限等原因创建失败，系统仅记录告警并降级为无缓存模式，
 /// 确保核心服务正常可用。
-pub fn init_image_cache(
-    config: &AppConfig,
-    db: Db,
-) -> Option<Arc<whatmedia_metadata::ImageCache>> {
+pub fn init_image_cache(config: &AppConfig, db: Db) -> Option<Arc<whatmedia_metadata::ImageCache>> {
     let dir = config.images_dir();
     let cfg = whatmedia_metadata::ImageCacheConfig {
         dir: dir.clone(),

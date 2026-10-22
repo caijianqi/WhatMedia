@@ -52,6 +52,10 @@ pub struct PathsConfig {
     /// 容器里是 `/usr/local/share/whatmedia/migrations`，进程 CWD 却是 `/config`，
     /// 所以必须可配置 —— 这也是 `Db::migrate` 用运行时路径而非编译期常量的原因。
     pub migrations_dir: PathBuf,
+    /// 前端 Web 静态资源目录（可选）。
+    /// 容器部署中通常位于 `/usr/local/share/whatmedia/web`。
+    #[serde(default)]
+    pub web_dir: Option<PathBuf>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -237,6 +241,14 @@ impl Default for AppConfig {
                 migrations_dir: PathBuf::from(env!("CARGO_MANIFEST_DIR"))
                     .join("../..")
                     .join("migrations"),
+                web_dir: {
+                    let default_web = PathBuf::from("/usr/local/share/whatmedia/web");
+                    if default_web.is_dir() {
+                        Some(default_web)
+                    } else {
+                        None
+                    }
+                },
             },
             database: DatabaseConfig {
                 kind: "sqlite".into(),
@@ -313,6 +325,14 @@ impl AppConfig {
         }
         if let Ok(v) = std::env::var("WHATMEDIA_MIGRATIONS_DIR") {
             self.paths.migrations_dir = PathBuf::from(v);
+        }
+        if let Ok(v) = std::env::var("WHATMEDIA_WEB_DIR") {
+            let trimmed = v.trim();
+            self.paths.web_dir = if trimmed.is_empty() {
+                None
+            } else {
+                Some(PathBuf::from(trimmed))
+            };
         }
         if let Ok(v) = std::env::var("WHATMEDIA_DATABASE_URL") {
             if v.starts_with("postgres") {
@@ -840,7 +860,9 @@ impl AppConfig {
             "metadata.requests_per_second" => Some(self.metadata.requests_per_second.to_string()),
             "metadata.tmdb_api_key" => Some(self.metadata.tmdb_api_key.clone().unwrap_or_default()),
             "metadata.tmdb_bearer" => Some(self.metadata.tmdb_bearer.clone().unwrap_or_default()),
-            "metadata.tmdb_base_url" => Some(self.metadata.tmdb_base_url.clone().unwrap_or_default()),
+            "metadata.tmdb_base_url" => {
+                Some(self.metadata.tmdb_base_url.clone().unwrap_or_default())
+            }
             "images.max_bytes_mb" => Some((self.images.max_bytes / (1024 * 1024)).to_string()),
             "images.max_age_days" => Some(self.images.max_age_days.to_string()),
             "transcode.max_concurrent" => Some(self.transcode.max_concurrent.to_string()),
@@ -877,7 +899,8 @@ impl AppConfig {
                 self.metadata.tmdb_bearer = Some(raw.trim().to_string()).filter(|s| !s.is_empty());
             }
             "metadata.tmdb_base_url" => {
-                self.metadata.tmdb_base_url = Some(raw.trim().to_string()).filter(|s| !s.is_empty());
+                self.metadata.tmdb_base_url =
+                    Some(raw.trim().to_string()).filter(|s| !s.is_empty());
             }
             "images.max_bytes_mb" => {
                 if let Ok(v) = raw.trim().parse::<u64>() {
@@ -1006,9 +1029,8 @@ mod tests {
                 .get_setting(spec.key)
                 .unwrap_or_else(|| panic!("server 级设置「{}」读不出值", spec.key));
             // 读出来的默认值必须能通过自己的校验，否则界面一打开就是一片红。
-            validate_setting(spec, &v).unwrap_or_else(|e| {
-                panic!("「{}」的默认值 {v:?} 通不过自己的校验：{e}", spec.key)
-            });
+            validate_setting(spec, &v)
+                .unwrap_or_else(|e| panic!("「{}」的默认值 {v:?} 通不过自己的校验：{e}", spec.key));
         }
     }
 

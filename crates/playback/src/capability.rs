@@ -272,10 +272,7 @@ impl MediaCapability {
     /// 注意 codec 名可能是不认识的（媒体世界的 codec 永远比我们的枚举多），
     /// 这里一律走 `Other(...)`，绝不 panic —— 扫描 10 万个文件时崩在一个
     /// 没见过的 codec 上是不可接受的。
-    pub fn from_streams(
-        file: &MediaFile,
-        streams: &[MediaStream],
-    ) -> Self {
+    pub fn from_streams(file: &MediaFile, streams: &[MediaStream]) -> Self {
         Self::from_parts(
             file.container.clone(),
             file.duration_ms,

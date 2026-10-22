@@ -96,4 +96,3 @@ pub struct ProviderChainConfig {
     pub language: String,
     pub requests_per_second: f64,
 }
-

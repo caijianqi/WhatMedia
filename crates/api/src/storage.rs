@@ -100,7 +100,9 @@ pub fn router() -> Router<AppState> {
         .route("/api/v1/storages/test", post(test_storage))
         .route(
             "/api/v1/storages/{id}",
-            get(get_storage).put(update_storage).delete(delete_storage_endpoint),
+            get(get_storage)
+                .put(update_storage)
+                .delete(delete_storage_endpoint),
         )
         .route("/api/v1/storages/{id}/browse", get(browse_storage))
 }
@@ -151,10 +153,7 @@ async fn create_storage(
     }
 }
 
-async fn get_storage(
-    State(state): State<AppState>,
-    AxumPath(id): AxumPath<String>,
-) -> Response {
+async fn get_storage(State(state): State<AppState>, AxumPath(id): AxumPath<String>) -> Response {
     let db = match state.db_or_503() {
         Ok(d) => d,
         Err(r) => return *r,

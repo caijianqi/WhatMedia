@@ -256,4 +256,3 @@ fn overall_no_reencode_coverage_meets_dod() {
         overall * 100.0
     );
 }
-

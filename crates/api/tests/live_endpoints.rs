@@ -366,14 +366,21 @@ http://example.com/live/cctv1.m3u8
     // 播放该 HTTP 直播频道：必须秒级返回 direct = true 且指向代理流，无需启动 ffmpeg
     let r = send(
         &st,
-        post_json(&tok, &format!("/api/v1/live/channels/{cid}/play"), json!({})),
+        post_json(
+            &tok,
+            &format!("/api/v1/live/channels/{cid}/play"),
+            json!({}),
+        ),
     )
     .await;
     assert_eq!(r.status, StatusCode::OK);
     let view = r.json();
     assert_eq!(view["direct"], true, "HTTP/M3U8 直播流必须走直出通道");
     assert!(
-        view["playlist_url"].as_str().unwrap().starts_with("/api/v1/live/proxy?url="),
+        view["playlist_url"]
+            .as_str()
+            .unwrap()
+            .starts_with("/api/v1/live/proxy?url="),
         "必须返回轻量内存代理地址"
     );
 }
@@ -399,4 +406,3 @@ async fn live_endpoints_are_in_the_openapi_contract() {
         assert!(json.contains(&format!("\"{p}\"")), "契约里缺少 {p}");
     }
 }
-

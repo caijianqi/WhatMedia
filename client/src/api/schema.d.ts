@@ -509,23 +509,6 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/v1/items/{id}/subtitles": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /** `GET /api/v1/items/{id}/subtitles` */
-        get: operations["item_subtitles"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
     "/api/v1/libraries": {
         parameters: {
             query?: never;
@@ -599,6 +582,27 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/live/proxy": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * `GET /api/v1/live/proxy` —— 纯内存直播流式透传代理端点。
+         * @description 1. M3U8 播放列表：解析并重写内部各分片为代理路由，消除跨域与混合内容阻断；
+         *     2. TS / 媒体流分片：纯内存 bytes_stream 透传，0 磁盘写入，0 ffmpeg 进程。
+         */
+        get: operations["proxy_stream"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/live/sources": {
         parameters: {
             query?: never;
@@ -629,6 +633,23 @@ export interface paths {
         post?: never;
         /** `DELETE /api/v1/live/sources/{id}` */
         delete: operations["delete_source"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/live/sources/{id}/probe": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** `POST /api/v1/live/sources/{id}/probe` —— 后台重新探测该源下的所有频道可用性并过滤死链。 */
+        post: operations["probe_source"];
+        delete?: never;
         options?: never;
         head?: never;
         patch?: never;
@@ -743,6 +764,23 @@ export interface paths {
             cookie?: never;
         };
         get: operations["candidates"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/metadata/image_proxy": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** 远程图片直连代理端点，避免浏览器直接请求外网 CDN（如 TMDB image.tmdb.org）被拦截或超时。 */
+        get: operations["image_proxy"];
         put?: never;
         post?: never;
         delete?: never;
@@ -1143,27 +1181,6 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/v1/subtitles/external": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /**
-         * `POST /api/v1/subtitles/external` —— 转换并输出外挂字幕。
-         * @description 路径走 POST + JSON 而不是 GET 参数：字幕路径含冒号与反斜杠，
-         *     塞在 URL 里既难编码又容易被网关改写。
-         */
-        post: operations["external_subtitle"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
     "/api/v1/system/fs-browse": {
         parameters: {
             query?: never;
@@ -1294,6 +1311,7 @@ export interface components {
             original_title?: string | null;
             overview?: string | null;
             poster?: string | null;
+            poster_url?: string | null;
             provider: string;
             provider_id: string;
             /** Format: double */
@@ -1309,6 +1327,7 @@ export interface components {
             kind?: null | components["schemas"]["MediaKind"];
             name: string;
             path: string;
+            storage_provider?: string | null;
         };
         CreateSessionBody: {
             client?: string;
@@ -1375,7 +1394,6 @@ export interface components {
             reason: string;
             reasons: components["schemas"]["ReasonView"][];
             strategy: components["schemas"]["PlaybackStrategy"];
-            subtitles: components["schemas"]["SubtitleView"][];
         };
         DeviceRow: {
             app_version?: string | null;
@@ -1550,6 +1568,7 @@ export interface components {
         };
         /** @description 列表查询参数。分页 / 排序 / 过滤的统一入口。 */
         ItemQuery: {
+            aggregate_series?: boolean | null;
             kind?: null | components["schemas"]["MediaKind"];
             /** Format: uuid */
             library_id?: string | null;
@@ -1570,6 +1589,8 @@ export interface components {
         /** @description 列表项视图：海报墙只需要这些字段，不该把 overview 也拉出来。 */
         ItemSummary: {
             added_at: string;
+            /** Format: int64 */
+            episode_count?: number | null;
             /** Format: uuid */
             id: string;
             kind: components["schemas"]["MediaKind"];
@@ -1661,6 +1682,7 @@ export interface components {
             viewers: number;
         };
         LivePlayView: {
+            direct?: boolean;
             /** Format: int64 */
             dvr_window_secs: number;
             job_id: string;
@@ -1813,6 +1835,8 @@ export interface components {
         Page_ItemSummary: {
             data: {
                 added_at: string;
+                /** Format: int64 */
+                episode_count?: number | null;
                 /** Format: uuid */
                 id: string;
                 kind: components["schemas"]["MediaKind"];
@@ -1972,6 +1996,8 @@ export interface components {
             run_id: string;
         };
         ScrapeRequest: {
+            /** @description 强制全量重新刮削所有条目（无论是否已完成），用于凭据变更或重新刷新图片与演职员。 */
+            force?: boolean;
             /** Format: uuid */
             library_id?: string | null;
             /** @description 只重跑失败项。 */
@@ -2011,11 +2037,11 @@ export interface components {
         SeriesRef: {
             /** Format: uuid */
             id: string;
-            title: string;
             original_title?: string | null;
+            overview?: string | null;
+            title: string;
             /** Format: int32 */
             year?: number | null;
-            overview?: string | null;
         };
         SeriesSummary: {
             /** Format: int64 */
@@ -2040,7 +2066,6 @@ export interface components {
             strategy: components["schemas"]["PlaybackStrategy"];
             /** @description Remux / 转码用这个。 */
             stream_url?: string | null;
-            subtitles: components["schemas"]["SubtitleView"][];
             /** @description Direct Play 用这个。 */
             url?: string | null;
         };
@@ -2143,24 +2168,6 @@ export interface components {
         StreamType: "video" | "audio" | "subtitle" | "attachment" | "data";
         SubtitleCodec: "srt" | "ass" | "ssa" | "vtt" | "pgs" | "dvb_sub" | "dvd_sub" | {
             other: string;
-        };
-        SubtitleConvertBody: {
-            path: string;
-            to?: string;
-        };
-        SubtitleItemView: {
-            codec: string;
-            forced: boolean;
-            language?: string | null;
-            name?: string | null;
-            track_id: string;
-            url?: string | null;
-        };
-        SubtitleView: {
-            language?: string | null;
-            mode: string;
-            track_id: string;
-            url?: string | null;
         };
         SyncReply: {
             channels: number;
@@ -3470,47 +3477,6 @@ export interface operations {
             };
         };
     };
-    item_subtitles: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                /** @description 条目 id */
-                id: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description 内嵌 + 外挂字幕 */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["SubtitleItemView"][];
-                };
-            };
-            /** @description 条目下没有文件 */
-            404: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorBody"];
-                };
-            };
-            /** @description 数据库未就绪 */
-            503: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorBody"];
-                };
-            };
-        };
-    };
     list_libraries: {
         parameters: {
             query?: never;
@@ -3675,6 +3641,47 @@ export interface operations {
             };
         };
     };
+    proxy_stream: {
+        parameters: {
+            query: {
+                /** @description 目标上游流地址 */
+                url: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description 流式数据或重写后的播放列表 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "*/*": number[];
+                };
+            };
+            /** @description URL 非法 */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description 上游请求失败 */
+            502: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+        };
+    };
     list_sources: {
         parameters: {
             query?: never;
@@ -3759,6 +3766,38 @@ export interface operations {
                 };
             };
             /** @description 不存在 */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+        };
+    };
+    probe_source: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description 直播源 id */
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description 探测任务已下发 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AckView"];
+                };
+            };
+            /** @description 源不存在 */
             404: {
                 headers: {
                     [name: string]: unknown;
@@ -3859,6 +3898,8 @@ export interface operations {
                 page?: number;
                 /** @description 上限 200 */
                 page_size?: number;
+                /** @description 是否聚合剧集为单张卡片，默认 true */
+                aggregate_series?: boolean;
             };
             header?: never;
             path?: never;
@@ -4012,6 +4053,29 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+        };
+    };
+    image_proxy: {
+        parameters: {
+            query: {
+                /** @description 远程图片绝对 URL */
+                url: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description 图片流 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "image/*": number[];
                 };
             };
         };
@@ -4901,39 +4965,6 @@ export interface operations {
             };
             /** @description 服务端没有 ffmpeg */
             501: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorBody"];
-                };
-            };
-        };
-    };
-    external_subtitle: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["SubtitleConvertBody"];
-            };
-        };
-        responses: {
-            /** @description 转换后的字幕（默认 text/vtt） */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "text/vtt": string;
-                };
-            };
-            /** @description 字幕不存在或不在库内 */
-            404: {
                 headers: {
                     [name: string]: unknown;
                 };

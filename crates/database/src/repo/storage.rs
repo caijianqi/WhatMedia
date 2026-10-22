@@ -76,12 +76,10 @@ pub async fn list_storage_accounts(db: &Db) -> Result<Vec<StorageAccount>> {
 }
 
 pub async fn get_storage_account(db: &Db, id: Id) -> Result<Option<StorageAccount>> {
-    let row = sqlx::query_as::<_, StorageAccountRow>(
-        "SELECT * FROM storage_account WHERE id = ?",
-    )
-    .bind(id.to_string())
-    .fetch_optional(db.pool())
-    .await?;
+    let row = sqlx::query_as::<_, StorageAccountRow>("SELECT * FROM storage_account WHERE id = ?")
+        .bind(id.to_string())
+        .fetch_optional(db.pool())
+        .await?;
 
     Ok(row.and_then(|r| r.into_domain()))
 }
