@@ -1,5 +1,4 @@
 target/
-client/
 docs/
 tests/
 test-media/
@@ -8,3 +7,9 @@ scripts/
 .github/
 *.md
 !migrations/
+
+# 前端构建上下文细粒度忽略：保留 client 源码，排除依赖包与本地产物
+client/node_modules/
+client/dist/
+client/src-tauri/target/
+client/.vscode/
