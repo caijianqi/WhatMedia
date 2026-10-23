@@ -1,5 +1,5 @@
-use std::path::{Path, PathBuf};
 use anyhow::Result;
+use std::path::{Path, PathBuf};
 use whatmedia_aggregator::VodSourceConfig;
 use whatmedia_database::{db::Db, repo};
 

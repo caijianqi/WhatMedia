@@ -151,7 +151,9 @@ mod tests {
             vod_director: None,
             vod_content: None,
             vod_play_from: None, // 缺失
-            vod_play_url: Some("https://example.com/movie.m3u8\r\nhttps://example.com/movie2.m3u8".into()),
+            vod_play_url: Some(
+                "https://example.com/movie.m3u8\r\nhttps://example.com/movie2.m3u8".into(),
+            ),
         };
 
         let routes = parse_routes("src_2", "备用站", &raw);
@@ -159,7 +161,10 @@ mod tests {
         assert_eq!(routes[0].play_from, "m3u8");
         assert_eq!(routes[0].episodes.len(), 2);
         assert_eq!(routes[0].episodes[0].name, "第01集");
-        assert_eq!(routes[0].episodes[0].play_url, "https://example.com/movie.m3u8");
+        assert_eq!(
+            routes[0].episodes[0].play_url,
+            "https://example.com/movie.m3u8"
+        );
         assert_eq!(routes[0].episodes[1].name, "第02集");
     }
 

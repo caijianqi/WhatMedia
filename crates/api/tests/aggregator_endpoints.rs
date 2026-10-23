@@ -54,18 +54,18 @@ async fn aggregator_settings_and_search_endpoints() {
     // 4. 切换状态 (Toggle)
     let res = send(
         &state,
-        put_authed(&token, "/api/v1/settings/vod_sources/ff_source/toggle", json!({})),
+        put_authed(
+            &token,
+            "/api/v1/settings/vod_sources/ff_source/toggle",
+            json!({}),
+        ),
     )
     .await;
     assert_eq!(res.status, StatusCode::OK);
     assert_eq!(res.json()["is_active"], true);
 
     // 5. 聚合搜索接口验证 (空关键词)
-    let res = send(
-        &state,
-        get_authed(&token, "/api/v1/search/aggregate?q="),
-    )
-    .await;
+    let res = send(&state, get_authed(&token, "/api/v1/search/aggregate?q=")).await;
     assert_eq!(res.status, StatusCode::OK);
     let search_res = res.json();
     assert_eq!(search_res["local"]["data"].as_array().unwrap().len(), 0);
@@ -182,4 +182,3 @@ async fn search_with_string_query_parameters_succeeds() {
     let json = res.json();
     assert_eq!(json["local"]["page"]["page_size"], 6);
 }
-

@@ -78,7 +78,11 @@ pub fn string_similarity(a: &str, b: &str) -> f64 {
 
     for i in 1..=a_len {
         for j in 1..=b_len {
-            let cost = if a_chars[i - 1] == b_chars[j - 1] { 0 } else { 1 };
+            let cost = if a_chars[i - 1] == b_chars[j - 1] {
+                0
+            } else {
+                1
+            };
             dp[i][j] = (dp[i - 1][j] + 1)
                 .min(dp[i][j - 1] + 1)
                 .min(dp[i - 1][j - 1] + cost);
@@ -167,7 +171,8 @@ pub fn cluster_items(inputs: Vec<ClusterInput>) -> Vec<AggregatedVodItem> {
 
     // 对每个聚合条目的线路按选集数量降序排列
     for item in &mut clustered {
-        item.routes.sort_by_key(|a| std::cmp::Reverse(a.episodes.len()));
+        item.routes
+            .sort_by_key(|a| std::cmp::Reverse(a.episodes.len()));
     }
 
     clustered
@@ -221,10 +226,7 @@ mod tests {
             normalizer.clean("繁花 [4K超清国语中字] (2023未删减版)"),
             "繁花"
         );
-        assert_eq!(
-            normalizer.clean("【蓝光1080P】流浪地球2"),
-            "流浪地球2"
-        );
+        assert_eq!(normalizer.clean("【蓝光1080P】流浪地球2"), "流浪地球2");
         assert_eq!(
             normalizer.clean("Oppenheimer.2023.UHD.Remux"),
             "oppenheimer 2023 remux"

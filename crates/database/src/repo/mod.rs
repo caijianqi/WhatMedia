@@ -3,6 +3,7 @@
 //! 调用方拿到的都是 `whatmedia_core` 的领域模型，不是 Row。
 //! 这样"SQLite → PostgreSQL"的切换只需要重写本目录。
 
+pub mod aggregator;
 pub mod auth;
 pub mod image;
 pub mod library;
@@ -12,7 +13,6 @@ pub mod metadata;
 pub mod playback;
 pub mod scan;
 pub mod search;
-pub mod aggregator;
 pub mod social;
 pub mod storage;
 pub mod tv;
@@ -132,7 +132,10 @@ pub struct ItemQuery {
     pub sort: ItemSort,
     #[serde(default)]
     pub order: SortOrder,
-    #[serde(default = "default_page", deserialize_with = "deserialize_page_lenient")]
+    #[serde(
+        default = "default_page",
+        deserialize_with = "deserialize_page_lenient"
+    )]
     pub page: u32,
     #[serde(
         default = "default_page_size",
@@ -290,7 +293,10 @@ where
             if trimmed.is_empty() {
                 Ok(None)
             } else {
-                trimmed.parse::<i32>().map(Some).map_err(serde::de::Error::custom)
+                trimmed
+                    .parse::<i32>()
+                    .map(Some)
+                    .map_err(serde::de::Error::custom)
             }
         }
     }
@@ -437,7 +443,8 @@ mod tests {
 
     #[test]
     fn item_query_deserializes_flattened_strings_from_query_params() {
-        let json_str = r#"{"q":"狂飙","page_size":"6","page":"2","year":"2023","aggregate_series":"true"}"#;
+        let json_str =
+            r#"{"q":"狂飙","page_size":"6","page":"2","year":"2023","aggregate_series":"true"}"#;
         let s: MockSearch = serde_json::from_str(json_str).unwrap();
         assert_eq!(s.q, "狂飙");
         assert_eq!(s.page.page_size, 6);

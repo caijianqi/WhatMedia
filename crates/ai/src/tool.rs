@@ -375,6 +375,9 @@ mod tests {
     fn default_registry_has_nine_tools() {
         let reg = default_registry(true);
         assert_eq!(reg.visible().len(), 9);
-        assert!(reg.visible().iter().any(|s| s.name == "search_aggregated_vod"));
+        assert!(reg
+            .visible()
+            .iter()
+            .any(|s| s.name == "search_aggregated_vod"));
     }
 }

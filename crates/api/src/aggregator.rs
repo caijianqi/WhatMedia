@@ -516,7 +516,11 @@ pub async fn import_vod_sources(
         tracing::warn!("重载 AggregatorEngine 失败: {e}");
     }
 
-    (StatusCode::OK, Json(serde_json::json!({ "imported": count }))).into_response()
+    (
+        StatusCode::OK,
+        Json(serde_json::json!({ "imported": count })),
+    )
+        .into_response()
 }
 
 /// DELETE /api/v1/settings/vod_sources/{id}

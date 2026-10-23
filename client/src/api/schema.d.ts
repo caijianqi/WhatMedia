@@ -988,6 +988,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/proxy/vod_stream": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** GET /api/v1/proxy/vod_stream */
+        get: operations["proxy_vod_stream"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/scan": {
         parameters: {
             query?: never;
@@ -1072,6 +1089,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/search/aggregate": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** GET /api/v1/search/aggregate */
+        get: operations["search_aggregate"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/series": {
         parameters: {
             query?: never;
@@ -1123,6 +1157,58 @@ export interface paths {
          *     那时界面已经打开不了，用户无法自己改回来。
          */
         put: operations["put_setting"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/settings/vod_sources": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** GET /api/v1/settings/vod_sources */
+        get: operations["list_vod_sources"];
+        put?: never;
+        /** POST /api/v1/settings/vod_sources (支持单个、批量或 MoonTV config.json 格式) */
+        post: operations["import_vod_sources"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/settings/vod_sources/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /** DELETE /api/v1/settings/vod_sources/{id} */
+        delete: operations["delete_vod_source"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/settings/vod_sources/{id}/toggle": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /** PUT /api/v1/settings/vod_sources/{id}/toggle */
+        put: operations["toggle_vod_source"];
         post?: never;
         delete?: never;
         options?: never;
@@ -1235,6 +1321,50 @@ export interface components {
     schemas: {
         AckView: {
             ok: boolean;
+        };
+        /** @description 聚合搜索查询参数 */
+        AggregateSearchParams: components["schemas"]["ItemQuery"] & {
+            /** @description 搜索关键词 */
+            q: string;
+            /** @description 是否以 SSE 流式输出 (默认 false 为 JSON) */
+            sse?: boolean;
+        };
+        /** @description 聚合搜索响应结构 (JSON 模式) */
+        AggregateSearchResponse: {
+            /** @description 本地媒体库命中条目 */
+            local: components["schemas"]["Page_ItemSummary"];
+            /** @description 云端多源聚合影视条目 */
+            remote: components["schemas"]["AggregatedVodItem"][];
+        };
+        /** @description 聚合后的独立影视实体 */
+        AggregatedVodItem: {
+            /** @description 主演 */
+            actor?: string | null;
+            /** @description 清洗后的纯净比对标题 (全小写、去修饰词) */
+            clean_title: string;
+            /** @description 简介 */
+            content?: string | null;
+            /** @description 导演 */
+            director?: string | null;
+            /** @description 确定性聚合 ID (如 SHA256 派生) */
+            id: string;
+            /** @description 封面海报 URL */
+            poster?: string | null;
+            /** @description 更新状态 (如 "更新至30集") */
+            remark?: string | null;
+            /** @description 聚合的多条播放线路 */
+            routes: components["schemas"]["VodRoute"][];
+            /** @description 原始标题或副标题 */
+            sub_title?: string | null;
+            /** @description 规范化主标题 */
+            title: string;
+            /** @description 分类名称 (电影 / 电视剧 / 动漫等) */
+            type_name?: string | null;
+            /**
+             * Format: int32
+             * @description 上映年份
+             */
+            year?: number | null;
         };
         AiChatReply: {
             /** @description 路由到的 Agent：`media` / `library` / `subtitle` / `maintenance` / `recommendation`。 */
@@ -2222,6 +2352,50 @@ export interface components {
         };
         VideoCodec: "h264" | "hevc" | "av1" | "vp9" | "mpeg2" | "mpeg4" | "vc1" | {
             other: string;
+        };
+        /** @description 选集信息 */
+        VodEpisode: {
+            /**
+             * Format: int32
+             * @description 排序序号 (从 1 开始)
+             */
+            index: number;
+            /** @description 集数名称，如 "第01集"、"HD国语"、"预告片" */
+            name: string;
+            /** @description 播放流地址，通常为 m3u8 */
+            play_url: string;
+        };
+        /** @description 播放线路 (对应具体采集站的一个播放列表) */
+        VodRoute: {
+            /** @description 选集列表 */
+            episodes: components["schemas"]["VodEpisode"][];
+            /** @description 原始编码标识，如 "lzm3u8" */
+            play_from: string;
+            /** @description 采集源 ID */
+            source_id: string;
+            /** @description 采集源名称或线路名，如 "量子资源 [lzm3u8]" */
+            source_name: string;
+        };
+        /** @description 视频采集源配置 */
+        VodSourceConfig: {
+            /** @description MacCMS API 接口根地址，如 "https://cj.lziapi.com/api.php/provide/vod/" */
+            api_url: string;
+            /** @description 唯一标识，如 "api_lz" */
+            id: string;
+            /** @description 是否激活 */
+            is_active?: boolean;
+            /** @description 友好名称，如 "量子资源" */
+            name: string;
+            /**
+             * Format: int64
+             * @description 单源超时阈值 (毫秒)
+             */
+            timeout_ms?: number;
+            /**
+             * Format: int32
+             * @description 权重（数字越小优先级越高）
+             */
+            weight?: number;
         };
     };
     responses: never;
@@ -4533,6 +4707,47 @@ export interface operations {
             };
         };
     };
+    proxy_vod_stream: {
+        parameters: {
+            query: {
+                /** @description 目标 M3U8 或切片 URL */
+                url: string;
+                /** @description 源标识 */
+                source?: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description 重写或代理后的流数据 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description 非法 URL */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description 上游请求失败 */
+            502: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+        };
+    };
     start_scan: {
         parameters: {
             query?: never;
@@ -4697,6 +4912,40 @@ export interface operations {
             };
         };
     };
+    search_aggregate: {
+        parameters: {
+            query: {
+                /** @description 搜索词 */
+                q: string;
+                /** @description 是否走 SSE 流式输出 */
+                sse?: boolean;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description 搜索结果 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AggregateSearchResponse"];
+                };
+            };
+            /** @description 数据库未就绪 */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+        };
+    };
     list_series: {
         parameters: {
             query?: {
@@ -4832,6 +5081,155 @@ export interface operations {
             };
             /** @description 无权改 server 级设置 */
             403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+        };
+    };
+    list_vod_sources: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description 采集源列表 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["VodSourceConfig"][];
+                };
+            };
+            /** @description 数据库未就绪 */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+        };
+    };
+    import_vod_sources: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": unknown;
+            };
+        };
+        responses: {
+            /** @description 导入结果 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description 配置不合法 */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description 数据库未就绪 */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+        };
+    };
+    delete_vod_source: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description 采集源标识 */
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description 删除成功 */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description 采集源不存在 */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description 数据库未就绪 */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+        };
+    };
+    toggle_vod_source: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description 采集源标识 */
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description 更新后状态 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["VodSourceConfig"];
+                };
+            };
+            /** @description 采集源不存在 */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description 数据库未就绪 */
+            503: {
                 headers: {
                     [name: string]: unknown;
                 };

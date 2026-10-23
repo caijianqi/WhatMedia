@@ -31,12 +31,10 @@ pub async fn list_active_vod_sources(db: &Db) -> Result<Vec<VodSourceConfig>> {
 
 /// 根据 ID 获取单个采集源
 pub async fn get_vod_source(db: &Db, id: &str) -> Result<Option<VodSourceConfig>> {
-    let row = sqlx::query_as::<_, VodSourceRow>(
-        "SELECT * FROM vod_remote_source WHERE id = ?",
-    )
-    .bind(id)
-    .fetch_optional(db.pool())
-    .await?;
+    let row = sqlx::query_as::<_, VodSourceRow>("SELECT * FROM vod_remote_source WHERE id = ?")
+        .bind(id)
+        .fetch_optional(db.pool())
+        .await?;
 
     Ok(row.map(|r| r.into_config()))
 }

@@ -656,7 +656,12 @@ impl AiTool for SearchVodTool {
                 if let Some(note) = &h.latest_note {
                     meta.push(note.clone());
                 }
-                lines.push(format!("{}. 《{}》（{}）", i + 1, h.title, meta.join(" · ")));
+                lines.push(format!(
+                    "{}. 《{}》（{}）",
+                    i + 1,
+                    h.title,
+                    meta.join(" · ")
+                ));
             }
             format!(
                 "在全网聚合片源中找到 {} 部相关影视：\n{}\n（可直接在客户端顶栏聚合搜索面板或多源列表中点击即播）",
@@ -667,7 +672,6 @@ impl AiTool for SearchVodTool {
         Ok(result(text, json!({ "query": q, "hits": hits })))
     }
 }
-
 
 #[cfg(test)]
 mod tests {

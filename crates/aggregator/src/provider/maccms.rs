@@ -1,11 +1,11 @@
 //! MacCMS V10 标准协议 Provider 实现。
 
-use std::time::Duration;
 use anyhow::{Context, Result};
 use async_trait::async_trait;
+use std::time::Duration;
 
-use crate::model::{MacCmsResponse, RawVodItem, VodSourceConfig};
 use super::VodProvider;
+use crate::model::{MacCmsResponse, RawVodItem, VodSourceConfig};
 
 pub struct MacCmsProvider {
     config: VodSourceConfig,
@@ -55,7 +55,9 @@ impl VodProvider for MacCmsProvider {
             .timeout(Duration::from_millis(timeout_ms))
             .send()
             .await
-            .with_context(|| format!("请求 MacCMS 采集源 [{}] 失败: {endpoint}", self.config.name))?;
+            .with_context(|| {
+                format!("请求 MacCMS 采集源 [{}] 失败: {endpoint}", self.config.name)
+            })?;
 
         if !resp.status().is_success() {
             anyhow::bail!(
