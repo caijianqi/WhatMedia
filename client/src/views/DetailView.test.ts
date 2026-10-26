@@ -19,7 +19,11 @@ import DetailView from './DetailView.vue'
 // 所以直接把 useRoute 换成固定值 —— 这里测的是数据渲染，不是路由。
 vi.mock('vue-router', async (importOriginal) => {
   const actual = await importOriginal<typeof import('vue-router')>()
-  return { ...actual, useRoute: () => ({ params: { id: 'i1' }, fullPath: '/item/i1' }) }
+  return {
+    ...actual,
+    useRoute: () => ({ params: { id: 'i1' }, fullPath: '/item/i1' }),
+    useRouter: () => ({ push: vi.fn(), replace: vi.fn() }),
+  }
 })
 
 const item = {

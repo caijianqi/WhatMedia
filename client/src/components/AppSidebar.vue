@@ -70,6 +70,21 @@
       </RouterLink>
 
       <RouterLink
+        :to="{ name: 'aggregator' }"
+        active-class=""
+        exact-active-class=""
+        :class="{ active: $route.name === 'aggregator' }"
+      >
+        <span class="ico">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M17.5 19H9a7 7 0 1 1 6.71-9h1.79a4.5 4.5 0 1 1 0 9Z" />
+            <polygon points="12 11 16 13.5 12 16 12 11" fill="currentColor" />
+          </svg>
+        </span>
+        <span class="nav-text">全网聚合</span>
+      </RouterLink>
+
+      <RouterLink
         :to="{ name: 'library', query: { filter: 'continue' } }"
         active-class=""
         exact-active-class=""
@@ -82,7 +97,6 @@
           </svg>
         </span>
         <span class="nav-text">继续观看</span>
-        <span class="count">3</span>
       </RouterLink>
 
       <RouterLink
@@ -112,21 +126,6 @@
           </svg>
         </span>
         <span class="nav-text">最近添加</span>
-      </RouterLink>
-
-      <RouterLink
-        :to="{ name: 'library', query: { focus: 'search' } }"
-        active-class=""
-        exact-active-class=""
-        :class="{ active: $route.name === 'library' && $route.query.focus === 'search' }"
-      >
-        <span class="ico">
-          <svg viewBox="0 0 24 24">
-            <circle cx="10.5" cy="10.5" r="6.5" />
-            <path d="m16 16 5 5" />
-          </svg>
-        </span>
-        <span class="nav-text">搜索</span>
       </RouterLink>
     </nav>
 

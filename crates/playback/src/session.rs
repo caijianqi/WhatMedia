@@ -11,8 +11,8 @@ use anyhow::Result;
 use chrono::Utc;
 use whatmedia_core::{Id, PlaybackSession, PlaybackStrategy};
 use whatmedia_database::repo::{
-    create_session, force_position, get_session, heartbeat, resume_points, stop_session,
-    NewSession, ResumePoint,
+    create_session, delete_session, force_position, get_session, heartbeat, resume_points,
+    stop_session, NewSession, ResumePoint,
 };
 use whatmedia_database::Db;
 
@@ -86,6 +86,11 @@ impl SessionManager {
             force_position(&self.db, id, p).await?;
         }
         stop_session(&self.db, id, position_ms).await
+    }
+
+    /// 删除会话（例如用户主动从“继续观看”列表中移除）。
+    pub async fn delete(&self, id: Id) -> Result<()> {
+        delete_session(&self.db, id).await
     }
 
     pub async fn get(&self, id: Id) -> Result<Option<PlaybackSession>> {

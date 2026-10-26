@@ -107,31 +107,19 @@ const noSeasons = computed(() => !loading.value && seasons.value.length === 0)
         </button>
       </div>
 
-      <!-- 快速数字选集条（方便多集快速点选） -->
-      <div v-if="episodes.length > 1" class="quick-episodes-bar">
-        <span class="quick-label">快速选集</span>
-        <div class="quick-list">
-          <RouterLink
-            v-for="ep in episodes"
-            :key="ep.id"
-            :to="{ name: 'play', params: { id: ep.item_id } }"
-            class="quick-ep-btn"
-            :title="displayEpTitle(ep)"
-          >
-            {{ ep.episode_number }}
-          </RouterLink>
-        </div>
-      </div>
-
       <div v-if="listLoading" class="episodes-skeleton">
         <div v-for="n in 4" :key="n" class="skeleton skeleton-card" />
       </div>
 
-      <!-- 现代科技流剧集磁贴网格（干净紧凑、告别大字方块占位） -->
+      <!-- 现代科技流剧集磁贴网格 -->
       <ol v-else class="episodes-grid">
         <li v-for="ep in episodes" :key="ep.id" class="episode-item">
           <RouterLink
-            :to="{ name: 'play', params: { id: ep.item_id } }"
+            :to="{
+              name: 'play',
+              params: { id: ep.item_id },
+              query: { episode: ep.episode_number, season: activeNumber },
+            }"
             class="episode-tech-card"
           >
             <!-- 科技数字徽标 -->
@@ -226,54 +214,6 @@ const noSeasons = computed(() => !loading.value && seasons.value.length === 0)
   color: #fff;
 }
 
-/* 快速选集条 */
-.quick-episodes-bar {
-  display: flex;
-  align-items: center;
-  gap: 14px;
-  margin-bottom: 20px;
-  padding: 10px 16px;
-  background: rgba(16, 24, 42, 0.6);
-  border: 1px solid rgba(174, 193, 226, 0.1);
-  border-radius: 12px;
-}
-.quick-label {
-  font-size: 12px;
-  font-weight: 600;
-  color: var(--muted);
-  white-space: nowrap;
-}
-.quick-list {
-  display: flex;
-  gap: 8px;
-  overflow-x: auto;
-  padding: 2px 0;
-  scrollbar-width: thin;
-}
-.quick-ep-btn {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  min-width: 36px;
-  height: 36px;
-  padding: 0 10px;
-  border-radius: 8px;
-  background: rgba(255, 255, 255, 0.04);
-  border: 1px solid rgba(174, 193, 226, 0.12);
-  color: var(--text);
-  font-size: 13px;
-  font-weight: 600;
-  font-variant-numeric: tabular-nums;
-  transition: all 0.2s ease;
-  text-decoration: none;
-}
-.quick-ep-btn:hover {
-  background: rgba(121, 91, 255, 0.25);
-  border-color: var(--purple);
-  color: #fff;
-  transform: translateY(-2px);
-  box-shadow: 0 4px 12px rgba(121, 91, 255, 0.25);
-}
 
 /* 科技分集磁贴网格 */
 .episodes-grid {

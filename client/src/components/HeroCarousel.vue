@@ -156,11 +156,6 @@ onBeforeUnmount(() => {
       </div>
 
       <div class="hero-bottom">
-        <div class="hero-tags">
-          <span class="tag">高画质</span>
-          <span class="tag">多音轨</span>
-        </div>
-
         <!-- 轮播长胶囊指示点 -->
         <div v-if="slides.length > 1" class="hero-dots" aria-label="精选轮播指示">
           <button

@@ -642,7 +642,6 @@ pub async fn get_item(db: &Db, id: Id) -> Result<Option<ItemDetail>> {
         });
     }
 
-    // 类型在另一张关联表上，单独取。刮削没跑过时 `genres_of` 返回空数组。
     let genres = crate::repo::metadata::genres_of(db, id)
         .await
         .unwrap_or_default();
@@ -654,3 +653,87 @@ pub async fn get_item(db: &Db, id: Id) -> Result<Option<ItemDetail>> {
         versions,
     }))
 }
+
+/// 彻底删除媒体条目及其所有下属版本、文件、流信息和关联数据。
+pub async fn delete_item(db: &Db, id: Id) -> Result<bool> {
+    let id_str = id.to_string();
+    let mut tx = db.pool().begin().await?;
+
+    // 1. 查询版本 ID 列表
+    let version_ids: Vec<String> =
+        sqlx::query_scalar("SELECT id FROM media_version WHERE item_id = ?")
+            .bind(&id_str)
+            .fetch_all(&mut *tx)
+            .await?;
+
+    if !version_ids.is_empty() {
+        // 2. 查询文件 ID 列表
+        let mut file_ids = Vec::new();
+        for vid in &version_ids {
+            let fids: Vec<String> =
+                sqlx::query_scalar("SELECT id FROM media_file WHERE version_id = ?")
+                    .bind(vid)
+                    .fetch_all(&mut *tx)
+                    .await?;
+            file_ids.extend(fids);
+        }
+
+        // 3. 删除 media_stream
+        for fid in &file_ids {
+            sqlx::query("DELETE FROM media_stream WHERE file_id = ?")
+                .bind(fid)
+                .execute(&mut *tx)
+                .await?;
+        }
+
+        // 4. 删除 media_file
+        for vid in &version_ids {
+            sqlx::query("DELETE FROM media_file WHERE version_id = ?")
+                .bind(vid)
+                .execute(&mut *tx)
+                .await?;
+        }
+
+        // 5. 删除 media_version
+        sqlx::query("DELETE FROM media_version WHERE item_id = ?")
+            .bind(&id_str)
+            .execute(&mut *tx)
+            .await?;
+    }
+
+    // 6. 删除关联元数据、会话、任务等
+    let _ = sqlx::query("DELETE FROM tv_episode WHERE item_id = ?")
+        .bind(&id_str)
+        .execute(&mut *tx)
+        .await;
+    let _ = sqlx::query("DELETE FROM playback_session WHERE item_id = ?")
+        .bind(&id_str)
+        .execute(&mut *tx)
+        .await;
+    let _ = sqlx::query("DELETE FROM metadata_job WHERE item_id = ?")
+        .bind(&id_str)
+        .execute(&mut *tx)
+        .await;
+    let _ = sqlx::query("DELETE FROM item_image WHERE item_id = ?")
+        .bind(&id_str)
+        .execute(&mut *tx)
+        .await;
+    let _ = sqlx::query("DELETE FROM user_favorite WHERE item_id = ?")
+        .bind(&id_str)
+        .execute(&mut *tx)
+        .await;
+    let _ = sqlx::query("DELETE FROM item_genre WHERE item_id = ?")
+        .bind(&id_str)
+        .execute(&mut *tx)
+        .await;
+
+    // 7. 删除 media_item 本身
+    let r = sqlx::query("DELETE FROM media_item WHERE id = ?")
+        .bind(&id_str)
+        .execute(&mut *tx)
+        .await?;
+
+    tx.commit().await?;
+    Ok(r.rows_affected() > 0)
+}
+

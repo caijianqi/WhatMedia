@@ -126,6 +126,24 @@ impl Scraper {
         repo::metadata::requeue_failed(&self.db, library_id).await
     }
 
+    pub async fn requeue_item(&self, item_id: Id) -> Result<()> {
+        repo::metadata::requeue_item(&self.db, item_id).await
+    }
+
+    pub async fn scrape_single(&self, item_id: Id) -> Result<Outcome> {
+        let (outcome, provider, provider_id, error) = self.process_one(item_id).await;
+        let _ = repo::metadata::finish_job(
+            &self.db,
+            item_id,
+            outcome.job_status(),
+            provider.as_deref(),
+            provider_id.as_deref(),
+            error.as_deref(),
+        )
+        .await;
+        Ok(outcome)
+    }
+
     pub async fn requeue_all(&self, library_id: Option<Id>) -> Result<u64> {
         repo::metadata::requeue_all(&self.db, library_id).await
     }
@@ -221,6 +239,11 @@ impl Scraper {
             None => return Ok((Outcome::Skipped, None, None, None)),
         };
 
+        let is_series_like = target.series_id.is_some()
+            || target.kind == "episode"
+            || target.kind == "series"
+            || target.kind == "anime"
+            || target.kind == "variety";
         let is_episode = target.series_id.is_some() || target.kind == "episode";
         let kind = match target.kind.as_str() {
             "movie" => Some(whatmedia_core::MediaKind::Movie),
@@ -234,7 +257,7 @@ impl Scraper {
         let query = MetadataQuery {
             // 用 match_title（文件名派生）而不是 title：用户把标题改成
             // "黑客帝国" 之后，拿它去 TMDB 搜是搜不到的。
-            title: if is_episode {
+            title: if is_series_like {
                 target
                     .series_match_title
                     .clone()
@@ -249,30 +272,73 @@ impl Scraper {
             kind,
         };
 
-        let mut last_error: Option<String> = None;
+        let (clean_title, clean_year) = crate::matcher::clean_search_title(&query.title);
+        let mut clean_query = query.clone();
+        clean_query.title = clean_title;
+        if clean_query.year.is_none() {
+            clean_query.year = clean_year;
+        }
+
+        let last_error: Option<String> = None;
         let mut best: Option<(ScoredCandidate, Arc<dyn MetadataProvider>)> = None;
 
         for p in &self.providers {
-            let records = if is_episode {
-                p.search_series(&query).await
-            } else {
-                p.search_movie(&query).await
-            };
-            match records {
-                Ok(list) => {
-                    let scored = score_candidates(&query, list, &self.cfg.thresholds);
-                    if let Some(c) = scored.first() {
-                        if c.confidence != Confidence::Reject
-                            && best
-                                .as_ref()
-                                .map(|(b, _)| c.score > b.score)
-                                .unwrap_or(true)
-                        {
-                            best = Some((c.clone(), p.clone()));
+            let mut records = Vec::new();
+            if is_series_like {
+                // 1. 优先使用净化后的核心片名搜索剧集
+                if let Ok(mut list) = p.search_series(&clean_query).await {
+                    records.append(&mut list);
+                }
+                // 2. 若无结果且原标题不同，尝试原标题搜索
+                if records.is_empty() && query.title != clean_query.title {
+                    if let Ok(mut list) = p.search_series(&query).await {
+                        records.append(&mut list);
+                    }
+                }
+                // 3. 兜底搜索电影（防剧场版/大电影或分类误判）
+                if records.is_empty() {
+                    if let Ok(mut list) = p.search_movie(&clean_query).await {
+                        records.append(&mut list);
+                    }
+                    if records.is_empty() && query.title != clean_query.title {
+                        if let Ok(mut list) = p.search_movie(&query).await {
+                            records.append(&mut list);
                         }
                     }
                 }
-                Err(e) => last_error = Some(truncate(&e.to_string(), 300)),
+            } else {
+                // 1. 优先使用净化后的核心片名搜索电影
+                if let Ok(mut list) = p.search_movie(&clean_query).await {
+                    records.append(&mut list);
+                }
+                if records.is_empty() && query.title != clean_query.title {
+                    if let Ok(mut list) = p.search_movie(&query).await {
+                        records.append(&mut list);
+                    }
+                }
+                // 2. 兜底搜索剧集
+                if records.is_empty() {
+                    if let Ok(mut list) = p.search_series(&clean_query).await {
+                        records.append(&mut list);
+                    }
+                    if records.is_empty() && query.title != clean_query.title {
+                        if let Ok(mut list) = p.search_series(&query).await {
+                            records.append(&mut list);
+                        }
+                    }
+                }
+            }
+
+            let scored = score_candidates(&query, records, &self.cfg.thresholds);
+            if let Some(c) = scored.first() {
+                if c.confidence != Confidence::Reject
+                    && best
+                        .as_ref()
+                        .map(|(b, _)| c.score > b.score)
+                        .unwrap_or(true)
+                {
+                    best = Some((c.clone(), p.clone()));
+                }
             }
         }
 
@@ -293,16 +359,22 @@ impl Scraper {
         }
 
         // 命中之后拉详情（搜索结果里通常没有演职员和完整图片）
-        let record = if is_episode {
-            provider
-                .get_series(&candidate.record.provider_id)
-                .await
-                .unwrap_or_else(|_| candidate.record.clone())
+        let record = if is_series_like {
+            match provider.get_series(&candidate.record.provider_id).await {
+                Ok(rec) => rec,
+                Err(_) => provider
+                    .get_movie(&candidate.record.provider_id)
+                    .await
+                    .unwrap_or_else(|_| candidate.record.clone()),
+            }
         } else {
-            provider
-                .get_movie(&candidate.record.provider_id)
-                .await
-                .unwrap_or_else(|_| candidate.record.clone())
+            match provider.get_movie(&candidate.record.provider_id).await {
+                Ok(rec) => rec,
+                Err(_) => provider
+                    .get_series(&candidate.record.provider_id)
+                    .await
+                    .unwrap_or_else(|_| candidate.record.clone()),
+            }
         };
 
         self.apply_record(&target, &record, is_episode).await?;
@@ -331,11 +403,22 @@ impl Scraper {
             .find(|p| p.id() == provider_name)
             .ok_or_else(|| anyhow::anyhow!("未配置的 Provider：{provider_name}"))?;
 
+        let is_series_like = target.series_id.is_some()
+            || target.kind == "episode"
+            || target.kind == "series"
+            || target.kind == "anime"
+            || target.kind == "variety";
         let is_episode = target.kind == "episode" && target.series_id.is_some();
-        let record = if is_episode {
-            p.get_series(provider_id).await?
+        let record = if is_series_like {
+            match p.get_series(provider_id).await {
+                Ok(rec) => rec,
+                Err(_) => p.get_movie(provider_id).await?,
+            }
         } else {
-            p.get_movie(provider_id).await?
+            match p.get_movie(provider_id).await {
+                Ok(rec) => rec,
+                Err(_) => p.get_series(provider_id).await?,
+            }
         };
 
         self.apply_record(&target, &record, is_episode).await?;
@@ -390,15 +473,63 @@ impl Scraper {
             kind,
         };
 
+        let is_series_like = target.series_id.is_some()
+            || target.kind == "episode"
+            || target.kind == "series"
+            || target.kind == "anime"
+            || target.kind == "variety";
+
+        let (clean_title, clean_year) = crate::matcher::clean_search_title(&query.title);
+        let mut clean_query = query.clone();
+        clean_query.title = clean_title;
+        if clean_query.year.is_none() {
+            clean_query.year = clean_year;
+        }
+
         let mut out = Vec::new();
         for p in &self.providers {
-            let list = if is_episode {
-                p.search_series(&query).await
+            let mut list = Vec::new();
+            if is_series_like {
+                if let Ok(mut series_res) = p.search_series(&clean_query).await {
+                    list.append(&mut series_res);
+                }
+                if list.is_empty() && query.title != clean_query.title {
+                    if let Ok(mut series_res) = p.search_series(&query).await {
+                        list.append(&mut series_res);
+                    }
+                }
+                if list.is_empty() {
+                    if let Ok(mut movie_res) = p.search_movie(&clean_query).await {
+                        list.append(&mut movie_res);
+                    }
+                    if list.is_empty() && query.title != clean_query.title {
+                        if let Ok(mut movie_res) = p.search_movie(&query).await {
+                            list.append(&mut movie_res);
+                        }
+                    }
+                }
             } else {
-                p.search_movie(&query).await
-            };
-            if let Ok(list) = list {
-                for c in score_candidates(&query, list, &self.cfg.thresholds) {
+                if let Ok(mut movie_res) = p.search_movie(&clean_query).await {
+                    list.append(&mut movie_res);
+                }
+                if list.is_empty() && query.title != clean_query.title {
+                    if let Ok(mut movie_res) = p.search_movie(&query).await {
+                        list.append(&mut movie_res);
+                    }
+                }
+                if list.is_empty() {
+                    if let Ok(mut series_res) = p.search_series(&clean_query).await {
+                        list.append(&mut series_res);
+                    }
+                    if list.is_empty() && query.title != clean_query.title {
+                        if let Ok(mut series_res) = p.search_series(&query).await {
+                            list.append(&mut series_res);
+                        }
+                    }
+                }
+            }
+
+            for c in score_candidates(&query, list, &self.cfg.thresholds) {
                     // 不过滤 Reject：人工确认界面要能看到"最接近的几部"，
                     // 哪怕分数很低 —— 空白列表比低分候选更让人无从下手。
                     let poster = c
@@ -421,7 +552,6 @@ impl Scraper {
                     });
                 }
             }
-        }
         out.sort_by(|a, b| {
             b.score
                 .partial_cmp(&a.score)
@@ -435,7 +565,7 @@ impl Scraper {
         &self,
         target: &repo::ScrapeTarget,
         record: &MetadataRecord,
-        is_episode: bool,
+        _is_episode: bool,
     ) -> Result<()> {
         let locked: HashSet<String> = parse_locked(&target.locked_fields);
         let mut ctx = MergeContext::new(locked);
@@ -447,8 +577,9 @@ impl Scraper {
             ..Default::default()
         };
 
-        // 剧集：剧集级信息写 series，单集信息写 item
-        if is_episode {
+        let is_real_episode = target.kind == "episode";
+        // 剧集单集：单集信息写 item，剧集级信息写 series
+        if is_real_episode {
             if let Some(series_id) = target.series_id {
                 let mut s_meta = ItemMeta {
                     title: target.series_title.clone(),
@@ -492,7 +623,34 @@ impl Scraper {
                 }
             }
         } else {
+            // 电影、电视剧总条目、动漫总条目：直接写入 media_item 元数据
             crate::merge::merge_record(&mut meta, record, &mut ctx, false);
+
+            // 若有关联的 series 结构，同步更新 series 表
+            if let Some(series_id) = target.series_id {
+                let mut s_meta = ItemMeta {
+                    title: target.series_title.clone(),
+                    year: target.year,
+                    ..Default::default()
+                };
+                let mut s_ctx =
+                    MergeContext::new(parse_locked(&series_locked_of(&self.db, series_id).await));
+                crate::merge::merge_record(&mut s_meta, record, &mut s_ctx, false);
+                let _ = repo::metadata::update_series_meta(
+                    &self.db,
+                    series_id,
+                    &repo::metadata::SeriesMetaUpdate {
+                        title: s_meta.title,
+                        original_title: s_meta.original_title,
+                        year: s_meta.year,
+                        overview: s_meta.overview,
+                        provider: Some(record.provider.clone()),
+                        provider_id: Some(record.provider_id.clone()),
+                        ..Default::default()
+                    },
+                )
+                .await;
+            }
         }
 
         // 剧集单集若无独立简介或评分，自动继承所属剧集的数据
@@ -527,13 +685,11 @@ impl Scraper {
         self.cache_images(target.id, record).await?;
 
         // 剧集：将电视剧封面海报与背景图广播同步给所属剧集下的所有分集，保证各分集与卡片全部有封面
-        if is_episode {
-            if let Some(series_id) = target.series_id {
-                if let Ok(siblings) = repo::metadata::series_item_ids(&self.db, series_id).await {
-                    for sib_id in siblings {
-                        if sib_id != target.id {
-                            let _ = self.cache_images(sib_id, record).await;
-                        }
+        if let Some(series_id) = target.series_id {
+            if let Ok(siblings) = repo::metadata::series_item_ids(&self.db, series_id).await {
+                for sib_id in siblings {
+                    if sib_id != target.id {
+                        let _ = self.cache_images(sib_id, record).await;
                     }
                 }
             }

@@ -254,3 +254,23 @@ async fn item_detail_carries_genres() {
     let json = get_json(&h, &format!("/api/v1/items/{id}")).await;
     assert_eq!(json["genres"], json!(["动作"]));
 }
+
+#[tokio::test]
+async fn delete_item_cascades_and_removes_from_library() {
+    let h = harness().await;
+    let page = get_json(&h, "/api/v1/media?kind=movie&page_size=10").await;
+    let id = page["data"][0]["id"].as_str().unwrap().to_string();
+
+    let resp = send(&h.state, get(&h.tok, &format!("/api/v1/items/{id}"))).await;
+    assert_eq!(resp.status, StatusCode::OK);
+
+    let resp = send(
+        &h.state,
+        common::delete(&h.tok, &format!("/api/v1/items/{id}")),
+    )
+    .await;
+    assert_eq!(resp.status, StatusCode::OK);
+
+    let resp = send(&h.state, get(&h.tok, &format!("/api/v1/items/{id}"))).await;
+    assert_eq!(resp.status, StatusCode::NOT_FOUND);
+}

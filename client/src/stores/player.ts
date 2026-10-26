@@ -238,7 +238,7 @@ export const usePlayerStore = defineStore('player', () => {
     const raw = view.url ?? view.hls_url ?? view.stream_url
     if (!raw) return null
     const url = await signed(raw)
-    if (view.hls_url) return { kind: 'hls', url }
+    if (view.hls_url || raw.includes('.m3u8') || raw.includes('/vod_stream')) return { kind: 'hls', url }
     return { kind: 'progressive', url }
   }
 
@@ -338,12 +338,29 @@ export const usePlayerStore = defineStore('player', () => {
   async function openVodUrl(
     target: PlayerTarget,
     streamUrl: string,
-    opts: { autoplay?: boolean; startMs?: number } = {},
+    opts: { autoplay?: boolean; startMs?: number; itemId?: string; fileId?: string } = {},
   ): Promise<void> {
     busy.value = true
     error.value = null
     try {
       const backend = await resolveBackend()
+
+      // 若属于已入库的条目，创建会话以支持继续观看
+      if (opts.itemId) {
+        try {
+          const view = await api.createSession({
+            item_id: opts.itemId,
+            file_id: opts.fileId ?? null,
+            client: backend === 'mpv' ? 'tauri-mpv' : 'web',
+            start_ms: opts.startMs ?? 0,
+          })
+          sessionId.value = view.session_id
+          strategy.value = view.strategy
+        } catch {
+          // 容错：会话创建失败不阻断在线流播放
+        }
+      }
+
       const p = createPlayer({ backend })
       player.value = p
       await p.initialize(target)
@@ -352,10 +369,22 @@ export const usePlayerStore = defineStore('player', () => {
         snapshot.value = s
       })
       unsubEvent = p.on((e) => {
-        if (e.type === 'error') {
+        if (e.type === 'timeupdate') {
+          reporter?.onTimeUpdate(e.position, e.duration)
+          recovery.recordPosition(e.position, e.duration)
+          recovery.markHealthy()
+        } else if (e.type === 'error') {
           onPlayerError(e.error.code, e.error.message)
         }
       })
+
+      if (sessionId.value) {
+        reporter = new ProgressReporter((posSec, durSec) => {
+          const id = sessionId.value
+          if (!id) return
+          return api.heartbeat(id, posSec * 1000, durSec === undefined ? null : durSec * 1000)
+        })
+      }
 
       const source: PlaybackSource = { kind: 'hls', url: streamUrl }
       lastSource = source

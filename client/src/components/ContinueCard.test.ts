@@ -74,4 +74,26 @@ describe('ContinueCard', () => {
 
     expect(w.text()).toContain('流')
   })
+
+  it('点击移除按钮发出 remove 事件', async () => {
+    const w = mount(ContinueCard, {
+      props: {
+        resume: sampleResume,
+      },
+      global: {
+        stubs: {
+          RouterLink: {
+            template: '<div><slot /></div>',
+          },
+        },
+      },
+    })
+
+    const removeBtn = w.find('.remove-resume-btn')
+    expect(removeBtn.exists()).toBe(true)
+    await removeBtn.trigger('click')
+
+    expect(w.emitted('remove')).toBeTruthy()
+    expect(w.emitted('remove')![0]).toEqual([sampleResume])
+  })
 })

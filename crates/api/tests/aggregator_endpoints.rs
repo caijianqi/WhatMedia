@@ -182,3 +182,78 @@ async fn search_with_string_query_parameters_succeeds() {
     let json = res.json();
     assert_eq!(json["local"]["page"]["page_size"], 6);
 }
+
+#[tokio::test]
+async fn import_vod_item_and_check_imported_flow() {
+    let db = db().await;
+    let token = admin_token(&db).await;
+
+    let mut state = AppState::new(AppConfig::default());
+    state.db = Some(db);
+
+    let vod_payload = json!({
+        "item": {
+            "id": "vod_12345",
+            "title": "流浪地球 2",
+            "year": 2023,
+            "type_name": "科幻片",
+            "poster": "https://example.com/poster.jpg",
+            "content": "太阳即将毁灭，人类在地球表面建造出巨大的推进器...",
+            "routes": [
+                {
+                    "source_id": "lz_source",
+                    "source_name": "量子资源",
+                    "play_from": "lzm3u8",
+                    "episodes": [
+                        {
+                            "name": "HD国语",
+                            "play_url": "https://example.com/stream.m3u8",
+                            "index": 1
+                        }
+                    ]
+                }
+            ]
+        }
+    });
+
+    // 1. 初始状态检查：未入库
+    let res = send(
+        &state,
+        get_authed(&token, "/api/v1/aggregator/check_imported?title=%E6%B5%81%E6%B5%AA%E5%9C%B0%E7%90%83%202"),
+    )
+    .await;
+    assert_eq!(res.status, StatusCode::OK);
+    assert_eq!(res.json()["imported"], false);
+
+    // 2. 调用入库接口
+    let res = send(
+        &state,
+        post_authed(&token, "/api/v1/aggregator/import", vod_payload.clone()),
+    )
+    .await;
+    assert_eq!(res.status, StatusCode::OK);
+    let res_json = res.json();
+    assert_eq!(res_json["is_new"], true);
+    assert_eq!(res_json["title"], "流浪地球 2");
+    let item_id = res_json["item_id"].as_str().unwrap().to_string();
+
+    // 3. 再次检查：已入库
+    let res = send(
+        &state,
+        get_authed(&token, "/api/v1/aggregator/check_imported?title=%E6%B5%81%E6%B5%AA%E5%9C%B0%E7%90%83%202"),
+    )
+    .await;
+    assert_eq!(res.status, StatusCode::OK);
+    assert_eq!(res.json()["imported"], true);
+    assert_eq!(res.json()["item_id"], item_id);
+
+    // 4. 重复导入幂等性校验 (is_new = false)
+    let res = send(
+        &state,
+        post_authed(&token, "/api/v1/aggregator/import", vod_payload),
+    )
+    .await;
+    assert_eq!(res.status, StatusCode::OK);
+    assert_eq!(res.json()["is_new"], false);
+    assert_eq!(res.json()["item_id"], item_id);
+}

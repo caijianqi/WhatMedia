@@ -29,6 +29,8 @@ vi.mock('../api/client', async (importOriginal) => {
     mediaKinds: vi.fn(),
     getSettings: vi.fn(),
     putSetting: vi.fn(),
+    resumeList: vi.fn(),
+    stopSession: vi.fn(),
   }
 })
 
@@ -122,5 +124,30 @@ describe('LibraryView', () => {
 
     expect(w.text()).toContain('找到 0 项内容')
     expect(w.findComponent({ name: 'EmptyState' }).exists()).toBe(true)
+  })
+
+  it('当 filter=continue 时拉取真实续播列表而非展示全部媒体', async () => {
+    mockQuery = { filter: 'continue' }
+    vi.mocked(api.resumeList).mockResolvedValueOnce([
+      {
+        item_id: 'res-1',
+        file_id: 'file-1',
+        session_id: 'sess-1',
+        title: '流浪地球 2 观看中',
+        position_ms: 100000,
+        duration_ms: 200000,
+        kind: 'movie',
+        strategy: 'direct',
+        updated_at: '2026-01-01T00:00:00Z',
+      },
+    ])
+
+    const w = mountLibrary()
+    await flushPromises()
+
+    expect(api.resumeList).toHaveBeenCalledWith(100)
+    expect(w.text()).toContain('继续观看')
+    expect(w.text()).toContain('流浪地球 2 观看中')
+    expect(w.findComponent({ name: 'ContinueCard' }).exists()).toBe(true)
   })
 })

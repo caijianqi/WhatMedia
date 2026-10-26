@@ -13,6 +13,7 @@ import { useRoute, useRouter } from 'vue-router'
 import { usePlayerStore } from '../stores/player'
 import { useLayoutStore } from '../stores/layout'
 import { toast } from '../stores/toast'
+import * as api from '../api/client'
 import {
   TV_CONTROLS_TIMEOUT_MS,
   remoteKeyToAction,
@@ -26,7 +27,11 @@ const store = usePlayerStore()
 const layout = useLayoutStore()
 
 const itemId = computed(() => String(route.params.id))
-const startMs = computed(() => Number(route.query.start ?? 0))
+const startMs = computed(() => {
+  const v = Number(route.query.start ?? 0)
+  if (v > 0 && v < 10000) return v * 1000
+  return v
+})
 const isVod = computed(() => !!route.query.vod_url || String(route.params.id) === 'vod')
 const vodTitle = computed(() => (route.query.vod_title as string) || '云端在线播放')
 const vodSource = computed(() => (route.query.vod_source as string) || '多源聚合')
@@ -83,6 +88,9 @@ function skip(deltaSeconds: number): void {
 
 const isPlaying = computed(() => store.snapshot.state === 'playing')
 
+const mediaTitle = ref('')
+const isCloudVodItem = ref(false)
+
 // ── 生命周期 ────────────────────────────────────────────────
 
 onMounted(async () => {
@@ -100,14 +108,69 @@ onMounted(async () => {
       )
     }
   } else {
-    await store.open(
-      { container: stage.value, fullscreenTarget: shell.value ?? undefined },
-      itemId.value,
-      {
-        startMs: startMs.value,
-        autoplay: true,
-      },
-    )
+    try {
+      const itemDetail = await api.getItem(itemId.value).catch(() => null)
+      const targetEpisodeNum = route.query.episode ? Number(route.query.episode) : null
+
+      const defaultVersion =
+        itemDetail?.versions?.find((v) => v.is_default) ?? itemDetail?.versions?.[0]
+      const files = defaultVersion?.files ?? []
+
+      // 智能匹配分集文件（优先根据 fingerprint 结尾的 _集数，其次按索引定位）
+      const matchedFile = targetEpisodeNum
+        ? files.find((f) => f.file_fingerprint?.endsWith(`_${targetEpisodeNum}`)) ??
+          files[targetEpisodeNum - 1]
+        : files[0]
+
+      const targetFile = matchedFile ?? files[0]
+
+      if (itemDetail) {
+        let title = itemDetail.title || ''
+        if (targetEpisodeNum) {
+          title += ` 第 ${String(targetEpisodeNum).padStart(2, '0')} 集`
+        }
+        mediaTitle.value = title
+      }
+
+      const isCloudVod =
+        (itemDetail as any)?.provider === 'vod_aggregate' ||
+        targetFile?.storage_provider === 'cloud_vod' ||
+        targetFile?.path?.startsWith('http://') ||
+        targetFile?.path?.startsWith('https://')
+
+      isCloudVodItem.value = isCloudVod
+
+      if (isCloudVod && targetFile?.path) {
+        await store.openVodUrl(
+          { container: stage.value, fullscreenTarget: shell.value ?? undefined },
+          targetFile.path,
+          {
+            startMs: startMs.value,
+            autoplay: true,
+            itemId: itemId.value,
+            fileId: targetFile.id,
+          },
+        )
+      } else {
+        await store.open(
+          { container: stage.value, fullscreenTarget: shell.value ?? undefined },
+          itemId.value,
+          {
+            startMs: startMs.value,
+            autoplay: true,
+          },
+        )
+      }
+    } catch {
+      await store.open(
+        { container: stage.value, fullscreenTarget: shell.value ?? undefined },
+        itemId.value,
+        {
+          startMs: startMs.value,
+          autoplay: true,
+        },
+      )
+    }
   }
   window.addEventListener('keydown', onKeyDown)
   window.addEventListener('pagehide', onPageHide)
@@ -380,9 +443,11 @@ const bufferedPct = computed(() => {
         <span>返回</span>
       </RouterLink>
 
-      <div v-if="isVod" class="player-vod-info">
-        <span class="player-strategy-badge vod-badge">云端聚合 · {{ vodSource }}</span>
-        <span class="vod-play-title">{{ vodTitle }}</span>
+      <div v-if="isVod || mediaTitle" class="player-vod-info">
+        <span class="player-strategy-badge vod-badge">
+          {{ isVod ? `云端聚合 · ${vodSource}` : isCloudVodItem ? '全网聚合线路' : (store.strategy || '直出播放') }}
+        </span>
+        <span class="vod-play-title">{{ isVod ? vodTitle : mediaTitle }}</span>
       </div>
       <div v-else-if="store.strategy" class="player-strategy-badge">
         {{ store.strategy }}

@@ -2769,6 +2769,7 @@ dependencies = [
  "anyhow",
  "async-trait",
  "chrono",
+ "regex",
  "reqwest",
  "serde",
  "serde_json",

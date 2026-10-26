@@ -387,6 +387,8 @@ fn default_role() -> String {
 #[derive(Debug, Deserialize)]
 #[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 pub struct UpdateUserInput {
+    pub display_name: Option<String>,
+    pub password: Option<String>,
     pub role: Option<String>,
     pub max_rating: Option<String>,
     #[cfg_attr(feature = "openapi", schema(value_type = Option<uuid::Uuid>))]
@@ -944,6 +946,24 @@ pub async fn update_account(
         Ok(d) => d,
         Err(r) => return *r,
     };
+    if let Some(display_name) = &body.display_name {
+        let name = if display_name.trim().is_empty() {
+            None
+        } else {
+            Some(display_name.trim())
+        };
+        if let Err(e) = whatmedia_database::repo::set_user_display_name(&db, id, name).await {
+            return crate::internal(e);
+        }
+    }
+    if let Some(password) = &body.password {
+        let Ok(hash) = hash_password(password) else {
+            return crate::bad_request("口令不合策略：至少 8 个字符");
+        };
+        if let Err(e) = whatmedia_database::repo::set_user_password(&db, id, &hash).await {
+            return crate::internal(e);
+        }
+    }
     if let Some(role) = &body.role {
         let Some(role) = Role::parse(role) else {
             return crate::bad_request(format!("未知角色：{role}"));

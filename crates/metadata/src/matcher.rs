@@ -194,6 +194,71 @@ fn genre_boost(query_kind: Option<whatmedia_core::MediaKind>, genres: &[String])
     }
 }
 
+/// 清洗片名用于外部元数据接口（TMDB / Bangumi）搜索。
+/// 剥离采集源或文件名中常见的年份后缀、版本修饰词、括号标签等。
+pub fn clean_search_title(raw: &str) -> (String, Option<i32>) {
+    let mut s = raw.trim().to_string();
+    if s.is_empty() {
+        return (s, None);
+    }
+
+    // 1. 去除常见的中括号/小括号包裹的内容，如 [4K] [国语] (重制版) 【国语中字】
+    static BRACKET_RE: std::sync::OnceLock<regex::Regex> = std::sync::OnceLock::new();
+    let bracket_re = BRACKET_RE.get_or_init(|| {
+        regex::Regex::new(r"\[[^\]]*\]|\([^\)]*\)|【[^】]*】|（[^）]*）").unwrap()
+    });
+    s = bracket_re.replace_all(&s, " ").to_string();
+
+    // 2. 剥离副标题分隔符之后的部分，如 "经验派护士～数字化到底是什么啊！？～" -> "经验派护士"
+    if let Some(idx) = s.find('～') {
+        let prefix = s[..idx].trim();
+        if prefix.chars().count() >= 2 {
+            s = prefix.to_string();
+        }
+    }
+
+    // 3. 提取并剥离 4 位数字年份（1950 ~ 2035）
+    let mut year_hint = None;
+    static YEAR_RE: std::sync::OnceLock<regex::Regex> = std::sync::OnceLock::new();
+    let year_re = YEAR_RE.get_or_init(|| {
+        regex::Regex::new(r"(19\d\d|20[0-3]\d)").unwrap()
+    });
+    if let Some(m) = year_re.find(&s) {
+        if let Ok(y) = m.as_str().parse::<i32>() {
+            year_hint = Some(y);
+            let start = m.start();
+            let end = m.end();
+            s.replace_range(start..end, " ");
+        }
+    }
+
+    // 4. 剥离中文/英文剧集常见修饰词（后缀）
+    static MOD_RE: std::sync::OnceLock<regex::Regex> = std::sync::OnceLock::new();
+    let mod_re = MOD_RE.get_or_init(|| {
+        regex::Regex::new(r"(?i)(重制版|重置版|年番|国语版|粤语版|国语|粤语|普通话|未删减版|未删减|抢先版|抢先看|特别篇|特辑|真人版|剧场版|修仙篇|篇|第[0-9一二三四五六七八九十]+季|season\s*\d+|s\d+)").unwrap()
+    });
+    s = mod_re.replace_all(&s, " ").to_string();
+
+    // 5. 清理连续空格和首尾符号
+    let mut cleaned = String::with_capacity(s.len());
+    let mut last_space = false;
+    for c in s.chars() {
+        if c.is_alphanumeric() || (c >= '\u{4e00}' && c <= '\u{9fa5}') {
+            cleaned.push(c);
+            last_space = false;
+        } else if !last_space && (c.is_whitespace() || c == ':' || c == '：') {
+            cleaned.push(' ');
+            last_space = true;
+        }
+    }
+    let res = cleaned.trim().to_string();
+    if res.is_empty() {
+        (raw.trim().to_string(), year_hint)
+    } else {
+        (res, year_hint)
+    }
+}
+
 /// 给候选列表打分并排序。
 ///
 /// 返回按分数降序排列的候选，每个都带 `confidence`。
@@ -202,20 +267,24 @@ pub fn score_candidates(
     candidates: Vec<MetadataRecord>,
     thresholds: &MatchThresholds,
 ) -> Vec<ScoredCandidate> {
+    let (clean_q_title, clean_year) = clean_search_title(&query.title);
+    let q_year = query.year.or(clean_year);
+
     let mut scored: Vec<ScoredCandidate> = candidates
         .into_iter()
         .map(|r| {
-            // 标题：原名和译名都试一遍，取高的。
-            // 中文用户搜 `疯狂的麦克斯` 时 TMDB 返回的 title 是 `Mad Max`。
-            let by_title = similarity(&query.title, &r.title);
+            // 标题：原名和译名都试一遍，且结合原始标题与净化后标题取最高者。
+            // 例如原名为 "凡人修仙传2020"，净化为 "凡人修仙传"，与 TMDB "凡人修仙传" 即可完美匹配。
+            let by_title = similarity(&query.title, &r.title)
+                .max(similarity(&clean_q_title, &r.title));
             let by_original = r
                 .original_title
                 .as_deref()
-                .map(|o| similarity(&query.title, o))
+                .map(|o| similarity(&query.title, o).max(similarity(&clean_q_title, o)))
                 .unwrap_or(0.0);
             let title_score = by_title.max(by_original);
 
-            let ys = year_score(query.year, r.year);
+            let ys = year_score(q_year, r.year);
             let gb = genre_boost(query.kind, &r.genres);
 
             // 标题占 7 成、年份占 3 成，加上类型偏好修正。
@@ -243,6 +312,11 @@ pub fn score_candidates(
     let decided = if rank < thresholds.reject {
         Confidence::Reject
     } else if rank >= thresholds.auto_accept && (rank - runner_up) >= thresholds.margin {
+        Confidence::Auto
+    } else if scored.len() == 1 && scored[0].title_score >= 0.85 {
+        // 单一高置信候选：即便缺年份或没有第二名拉开分差，也自动采纳，避免界面变成无元数据
+        Confidence::Auto
+    } else if scored.first().map(|c| c.title_score >= 0.95 && (c.title_score - runner_up) >= thresholds.margin).unwrap_or(false) {
         Confidence::Auto
     } else {
         Confidence::Review
@@ -404,4 +478,25 @@ mod tests {
         assert_eq!(scored[0].record.year, Some(2020));
         assert_eq!(scored[0].confidence, Confidence::Auto);
     }
+
+    #[test]
+    fn test_clean_search_title() {
+        let (t1, y1) = clean_search_title("凡人修仙传2020");
+        assert_eq!(t1, "凡人修仙传");
+        assert_eq!(y1, Some(2020));
+
+        let (t2, y2) = clean_search_title("凡人修仙传重制版");
+        assert_eq!(t2, "凡人修仙传");
+        assert_eq!(y2, None);
+
+        let (t3, _) = clean_search_title("斗破苍穹 年番");
+        assert_eq!(t3, "斗破苍穹");
+
+        let (t4, _) = clean_search_title("数码宝贝 国语版");
+        assert_eq!(t4, "数码宝贝");
+
+        let (t5, _) = clean_search_title("经验派护士～数字化到底是什么啊！？～");
+        assert_eq!(t5, "经验派护士");
+    }
 }
+

@@ -12,8 +12,10 @@ import * as api from '../api/client'
 import DirectoryPickerModal from '../components/DirectoryPickerModal.vue'
 import SettingControl from '../components/SettingControl.vue'
 import { probeMpv, tauriAvailable, type MpvStatus } from '../player'
+import { useSessionStore } from '../stores/session'
 
 const route = useRoute()
+const session = useSessionStore()
 
 const health = ref<api.HealthReport | null>(null)
 const hardware = ref<api.HardwareProfileReport | null>(null)
@@ -328,6 +330,7 @@ onMounted(async () => {
   void loadScrapeStats()
   void loadLiveSources()
   void loadVodSources()
+  void loadUsers()
 
   // 自动恢复上次配置或保存的媒体库物理路径
   try {
@@ -399,6 +402,7 @@ if (route) {
 
 const tabs = [
   { id: 'all', label: '全部项目', icon: '✦' },
+  { id: 'users', label: '用户与权限', icon: '👥' },
   { id: 'server', label: '服务端', icon: '▣' },
   { id: 'hardware', label: '转码能力', icon: '⚡' },
   { id: 'storage', label: '存储与媒体库', icon: '💾' },
@@ -980,6 +984,138 @@ async function importVodSourcesFromText(): Promise<void> {
     vodImportResult.value = '导入失败：JSON 格式不合法或后端异常'
   }
 }
+
+// ── 用户与权限管理 (User & Role Management) ─────────────────
+const users = ref<api.UserAccount[]>([])
+const loadingUsers = ref(false)
+const usersError = ref<string | null>(null)
+const showUserModal = ref(false)
+const isEditingUser = ref(false)
+const editingUserId = ref<string | null>(null)
+const userForm = ref({
+  username: '',
+  display_name: '',
+  password: '',
+  role: 'user',
+  max_rating: 'PG-13',
+  disabled: false,
+})
+const savingUser = ref(false)
+const saveUserError = ref<string | null>(null)
+
+async function loadUsers(): Promise<void> {
+  loadingUsers.value = true
+  usersError.value = null
+  try {
+    const list = await api.listUsers()
+    users.value = Array.isArray(list) ? list : []
+  } catch (err) {
+    usersError.value = err instanceof api.ApiError ? err.detail.message : String(err)
+  } finally {
+    loadingUsers.value = false
+  }
+}
+
+function openCreateUser(): void {
+  isEditingUser.value = false
+  editingUserId.value = null
+  saveUserError.value = null
+  userForm.value = {
+    username: '',
+    display_name: '',
+    password: '',
+    role: 'user',
+    max_rating: 'PG-13',
+    disabled: false,
+  }
+  showUserModal.value = true
+}
+
+function openEditUser(u: api.UserAccount): void {
+  isEditingUser.value = true
+  editingUserId.value = u.id
+  saveUserError.value = null
+  userForm.value = {
+    username: u.username,
+    display_name: u.display_name || '',
+    password: '',
+    role: u.role || 'user',
+    max_rating: u.max_rating || 'PG-13',
+    disabled: u.disabled,
+  }
+  showUserModal.value = true
+}
+
+async function saveUser(): Promise<void> {
+  saveUserError.value = null
+  if (!isEditingUser.value && !userForm.value.username.trim()) {
+    saveUserError.value = '请输入登录用户名'
+    return
+  }
+  if (!isEditingUser.value && (!userForm.value.password || userForm.value.password.length < 8)) {
+    saveUserError.value = '口令至少需要 8 个字符'
+    return
+  }
+  if (isEditingUser.value && userForm.value.password && userForm.value.password.length < 8) {
+    saveUserError.value = '新口令至少需要 8 个字符'
+    return
+  }
+  savingUser.value = true
+  try {
+    if (isEditingUser.value && editingUserId.value) {
+      await api.updateUser(editingUserId.value, {
+        display_name: userForm.value.display_name.trim() || undefined,
+        password: userForm.value.password ? userForm.value.password : undefined,
+        role: userForm.value.role,
+        max_rating: userForm.value.role === 'child' ? userForm.value.max_rating : undefined,
+        disabled: userForm.value.disabled,
+      })
+    } else {
+      await api.createUser({
+        username: userForm.value.username.trim(),
+        password: userForm.value.password,
+        display_name: userForm.value.display_name.trim() || undefined,
+        role: userForm.value.role,
+        max_rating: userForm.value.role === 'child' ? userForm.value.max_rating : undefined,
+      })
+    }
+    showUserModal.value = false
+    await loadUsers()
+  } catch (err) {
+    saveUserError.value = err instanceof api.ApiError ? err.detail.message : String(err)
+  } finally {
+    savingUser.value = false
+  }
+}
+
+async function toggleUserDisabled(u: api.UserAccount): Promise<void> {
+  if (u.id === session.user?.id) {
+    alert('不能停用当前登录的管理员账户')
+    return
+  }
+  try {
+    await api.updateUser(u.id, { disabled: !u.disabled })
+    await loadUsers()
+  } catch (err) {
+    alert(err instanceof api.ApiError ? err.detail.message : String(err))
+  }
+}
+
+async function deleteUserAccount(u: api.UserAccount): Promise<void> {
+  if (u.id === session.user?.id) {
+    alert('不能删除当前登录的管理员账户')
+    return
+  }
+  if (!confirm(`确定要彻底删除用户「${u.display_name || u.username}」吗？该操作不可逆，将级联清除该用户的所有会话与记录。`)) {
+    return
+  }
+  try {
+    await api.deleteUser(u.id)
+    await loadUsers()
+  } catch (err) {
+    alert(err instanceof api.ApiError ? err.detail.message : String(err))
+  }
+}
 </script>
 
 <template>
@@ -1012,6 +1148,128 @@ async function importVodSourcesFromText(): Promise<void> {
 
       <!-- 右侧设置内容区 (ui.html .settings-content) -->
       <div class="settings-content">
+        <!-- 用户与权限管理 (Users & Permissions) -->
+        <section
+          v-if="activeTab === 'all' || activeTab === 'users'"
+          class="settings-section"
+          data-test="user-management-section"
+        >
+          <div class="section-title">用户与权限管理</div>
+          <p class="section-desc">
+            为家庭成员、客房设备或儿童分别配置专属账户。支持分配角色能力（系统管理员、普通成员、儿童空间），并在儿童账户中设定严格的视听分级门槛与设备审批闸门。
+          </p>
+
+          <p v-if="usersError" class="error-box">
+            加载用户列表失败：{{ usersError }}（请确保以管理员身份登录）
+          </p>
+
+          <!-- 成员控制台卡片 -->
+          <div class="user-management-card">
+            <div class="user-management-head">
+              <div class="user-stats-strip">
+                <span class="stat-pill">👥 全部账户 <strong>{{ users.length }}</strong></span>
+                <span class="stat-pill pill-admin">👑 管理员 <strong>{{ users.filter(u => u.role === 'admin').length }}</strong></span>
+                <span class="stat-pill pill-user">👤 普通成员 <strong>{{ users.filter(u => u.role === 'user').length }}</strong></span>
+                <span class="stat-pill pill-child">🧸 儿童空间 <strong>{{ users.filter(u => u.role === 'child').length }}</strong></span>
+              </div>
+              <div class="user-head-actions">
+                <button
+                  type="button"
+                  class="refresh-stats-btn"
+                  title="刷新用户列表"
+                  :disabled="loadingUsers"
+                  @click="loadUsers"
+                >
+                  🔄 刷新
+                </button>
+                <button
+                  type="button"
+                  class="btn-create-user"
+                  @click="openCreateUser"
+                >
+                  ➕ 添加新成员
+                </button>
+              </div>
+            </div>
+
+            <!-- 用户列表网格 -->
+            <div v-if="loadingUsers && !users.length" class="user-loading-shimmer">
+              加载成员列表中…
+            </div>
+            <div v-else-if="users.length === 0" class="empty-hint" style="text-align: center; padding: 24px;">
+              暂未检测到其他成员账户，点击右上角「添加新成员」即可为家人创建独立空间。
+            </div>
+            <div v-else class="user-cards-grid">
+              <div
+                v-for="u in users"
+                :key="u.id"
+                class="user-card"
+                :class="{ 'user-disabled': u.disabled }"
+              >
+                <div class="user-card-top">
+                  <div class="user-avatar" :class="`avatar-${u.role}`">
+                    {{ (u.display_name || u.username).slice(0, 2).toUpperCase() }}
+                  </div>
+                  <div class="user-names">
+                    <div class="user-name-row">
+                      <strong class="user-disp">{{ u.display_name || u.username }}</strong>
+                      <span v-if="u.id === session.user?.id" class="badge-self">当前登录</span>
+                      <span v-if="u.disabled" class="badge-disabled">已停用</span>
+                    </div>
+                    <span class="user-uname">@{{ u.username }}</span>
+                  </div>
+                  <div class="user-role-badge" :class="`role-${u.role}`">
+                    {{ u.role === 'admin' ? '系统管理员' : u.role === 'child' ? '儿童空间' : '普通成员' }}
+                  </div>
+                </div>
+
+                <div class="user-card-info">
+                  <div class="user-info-row">
+                    <span class="info-k">权限能力</span>
+                    <span class="info-v">
+                      {{ u.role === 'admin' ? '全权维护（扫描、设置与成员管理）' : u.role === 'child' ? '受控浏览与分级播放保护' : '影视浏览、播放与个人专属收藏' }}
+                    </span>
+                  </div>
+                  <div v-if="u.role === 'child'" class="user-info-row">
+                    <span class="info-k">分级上限</span>
+                    <span class="info-v highlight-rating">
+                      🔞 仅限 {{ u.max_rating || '全年龄 (G)' }} 及以下
+                    </span>
+                  </div>
+                </div>
+
+                <div class="user-card-actions">
+                  <button
+                    type="button"
+                    class="btn-user-action btn-edit"
+                    @click="openEditUser(u)"
+                  >
+                    ✏️ 编辑 / 改密
+                  </button>
+                  <button
+                    v-if="u.id !== session.user?.id"
+                    type="button"
+                    class="btn-user-action"
+                    :class="u.disabled ? 'btn-enable' : 'btn-disable'"
+                    @click="toggleUserDisabled(u)"
+                  >
+                    {{ u.disabled ? '✓ 恢复启用' : '🚫 停用' }}
+                  </button>
+                  <button
+                    v-if="u.id !== session.user?.id"
+                    type="button"
+                    class="btn-user-action btn-delete"
+                    title="彻底删除账户"
+                    @click="deleteUserAccount(u)"
+                  >
+                    🗑️ 删除
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+        </section>
+
         <!-- 1. 服务端健康状态 -->
         <section
           v-if="(activeTab === 'all' || activeTab === 'server') && health"
@@ -2314,6 +2572,116 @@ async function importVodSourcesFromText(): Promise<void> {
       :storage-accounts="storageAccounts"
       @select="onDirSelected"
     />
+
+    <!-- 用户添加/编辑模态窗 -->
+    <div v-if="showUserModal" class="user-modal-overlay" @click.self="showUserModal = false">
+      <div class="user-modal-box">
+        <div class="user-modal-head">
+          <h3>{{ isEditingUser ? '编辑成员账户与权限' : '添加新家庭成员' }}</h3>
+          <button type="button" class="modal-close-btn" @click="showUserModal = false">✕</button>
+        </div>
+
+        <form class="user-modal-form" @submit.prevent="saveUser">
+          <div v-if="saveUserError" class="modal-err-tip">
+            ⚠️ {{ saveUserError }}
+          </div>
+
+          <div class="modal-form-group">
+            <label class="modal-label">登录用户名 (Username)</label>
+            <input
+              v-model="userForm.username"
+              type="text"
+              class="modal-input"
+              :disabled="isEditingUser"
+              placeholder="例如：jackie / kid"
+              required
+            />
+            <small v-if="isEditingUser" class="modal-hint">用户名已创建，不可更改</small>
+          </div>
+
+          <div class="modal-form-group">
+            <label class="modal-label">显示昵称 (Display Name)</label>
+            <input
+              v-model="userForm.display_name"
+              type="text"
+              class="modal-input"
+              placeholder="例如：大宝 / 爸爸"
+            />
+          </div>
+
+          <div class="modal-form-group">
+            <label class="modal-label">
+              {{ isEditingUser ? '重置登录口令 (留空表示不修改)' : '登录口令 (Password)' }}
+            </label>
+            <input
+              v-model="userForm.password"
+              type="password"
+              class="modal-input"
+              :placeholder="isEditingUser ? '不修改则留空' : '至少 8 个字符'"
+              :required="!isEditingUser"
+              autocomplete="new-password"
+            />
+          </div>
+
+          <div class="modal-form-group">
+            <label class="modal-label">空间角色与权限定位</label>
+            <div class="role-radio-group">
+              <label class="role-radio-label" :class="{ selected: userForm.role === 'admin' }">
+                <input v-model="userForm.role" type="radio" value="admin" />
+                <div class="role-radio-text">
+                  <strong>系统管理员 (Admin)</strong>
+                  <span>拥有完整服务器维护、媒体库扫描与用户管理权限</span>
+                </div>
+              </label>
+
+              <label class="role-radio-label" :class="{ selected: userForm.role === 'user' }">
+                <input v-model="userForm.role" type="radio" value="user" />
+                <div class="role-radio-text">
+                  <strong>普通家庭成员 (User)</strong>
+                  <span>可自由浏览、播放全部媒体，拥有独立的个人收藏与历史</span>
+                </div>
+              </label>
+
+              <label class="role-radio-label" :class="{ selected: userForm.role === 'child' }">
+                <input v-model="userForm.role" type="radio" value="child" />
+                <div class="role-radio-text">
+                  <strong>儿童安全空间 (Child)</strong>
+                  <span>受内容分级门槛限制，新设备登录需家长批准</span>
+                </div>
+              </label>
+            </div>
+          </div>
+
+          <!-- 儿童分级上限选择 -->
+          <div v-if="userForm.role === 'child'" class="modal-form-group rating-limit-group">
+            <label class="modal-label">儿童观影最大分级限制 (Ceiling Rating)</label>
+            <select v-model="userForm.max_rating" class="modal-select">
+              <option value="G">全年龄适宜 (G / TV-G)</option>
+              <option value="PG">建议家长指导 (PG / TV-PG)</option>
+              <option value="PG-13">13 岁以上指导 (PG-13 / TV-14)</option>
+              <option value="R">17 岁以上指导 (R / TV-MA)</option>
+            </select>
+            <small class="modal-hint">超过该分级的影片将被系统自动拦截，无法在儿童空间播放</small>
+          </div>
+
+          <div v-if="isEditingUser && editingUserId !== session.user?.id" class="modal-form-group">
+            <label class="modal-check-label">
+              <input v-model="userForm.disabled" type="checkbox" />
+              <span>立即停用该账户（停用后将吊销所有登录设备，禁止登录）</span>
+            </label>
+          </div>
+
+          <div class="modal-footer-btns">
+            <button type="button" class="btn-modal-cancel" @click="showUserModal = false">
+              取消
+            </button>
+            <button type="submit" class="btn-modal-confirm" :disabled="savingUser">
+              {{ savingUser ? '正在保存…' : (isEditingUser ? '保存修改' : '确认创建') }}
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>
   </div>
 </template>
 
@@ -3948,6 +4316,477 @@ async function importVodSourcesFromText(): Promise<void> {
     width: 100%;
     justify-content: flex-end;
   }
+}
+
+/* ──────────────── 用户与权限管理 (User Management) ──────────────── */
+.user-management-card {
+  margin-top: 16px;
+  padding: 20px;
+  border-radius: 14px;
+  background: #141f34;
+  border: 1px solid var(--line);
+}
+
+.user-management-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 14px;
+  padding-bottom: 16px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+}
+
+.user-stats-strip {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.stat-pill {
+  font-size: 11px;
+  color: var(--muted);
+  background: rgba(255, 255, 255, 0.04);
+  padding: 4px 10px;
+  border-radius: 12px;
+  border: 1px solid rgba(255, 255, 255, 0.06);
+}
+.stat-pill strong {
+  color: var(--text);
+  margin-left: 2px;
+}
+.stat-pill.pill-admin strong {
+  color: #c084fc;
+}
+.stat-pill.pill-user strong {
+  color: #60a5fa;
+}
+.stat-pill.pill-child strong {
+  color: #34d399;
+}
+
+.user-head-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.btn-create-user {
+  background: linear-gradient(135deg, #795bff 0%, #6333ff 100%);
+  color: white;
+  border: 0;
+  padding: 7px 16px;
+  border-radius: 9px;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s;
+  box-shadow: 0 4px 12px rgba(99, 51, 255, 0.35);
+}
+.btn-create-user:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 6px 16px rgba(99, 51, 255, 0.5);
+}
+
+.user-loading-shimmer {
+  padding: 30px;
+  text-align: center;
+  font-size: 13px;
+  color: var(--muted);
+}
+
+.user-cards-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
+  gap: 14px;
+  margin-top: 16px;
+}
+
+.user-card {
+  background: rgba(15, 23, 42, 0.6);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 12px;
+  padding: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  transition: all 0.2s;
+}
+.user-card:hover {
+  border-color: rgba(168, 85, 247, 0.3);
+  background: rgba(15, 23, 42, 0.85);
+}
+.user-card.user-disabled {
+  opacity: 0.65;
+  border-style: dashed;
+}
+
+.user-card-top {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.user-avatar {
+  width: 42px;
+  height: 42px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-weight: 700;
+  font-size: 15px;
+  color: white;
+  flex-shrink: 0;
+}
+.avatar-admin {
+  background: linear-gradient(135deg, #a855f7, #6366f1);
+}
+.avatar-user {
+  background: linear-gradient(135deg, #3b82f6, #0ea5e9);
+}
+.avatar-child {
+  background: linear-gradient(135deg, #10b981, #14b8a6);
+}
+
+.user-names {
+  flex: 1;
+  min-width: 0;
+}
+.user-name-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+.user-disp {
+  font-size: 14px;
+  color: var(--text);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.badge-self {
+  font-size: 9px;
+  background: rgba(168, 85, 247, 0.2);
+  color: #c084fc;
+  padding: 1px 6px;
+  border-radius: 4px;
+  font-weight: 600;
+}
+.badge-disabled {
+  font-size: 9px;
+  background: rgba(239, 68, 68, 0.2);
+  color: #f87171;
+  padding: 1px 6px;
+  border-radius: 4px;
+  font-weight: 600;
+}
+.user-uname {
+  font-size: 11px;
+  color: var(--muted);
+  display: block;
+  font-family: var(--mono);
+}
+
+.user-role-badge {
+  font-size: 10px;
+  padding: 3px 8px;
+  border-radius: 6px;
+  font-weight: 600;
+  flex-shrink: 0;
+}
+.role-admin {
+  background: rgba(168, 85, 247, 0.15);
+  color: #c084fc;
+  border: 1px solid rgba(168, 85, 247, 0.3);
+}
+.role-user {
+  background: rgba(59, 130, 246, 0.15);
+  color: #60a5fa;
+  border: 1px solid rgba(59, 130, 246, 0.3);
+}
+.role-child {
+  background: rgba(16, 185, 129, 0.15);
+  color: #34d399;
+  border: 1px solid rgba(16, 185, 129, 0.3);
+}
+
+.user-card-info {
+  background: rgba(0, 0, 0, 0.25);
+  padding: 8px 10px;
+  border-radius: 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  font-size: 11px;
+}
+.user-info-row {
+  display: flex;
+  gap: 8px;
+}
+.info-k {
+  color: var(--muted);
+  flex-shrink: 0;
+}
+.info-v {
+  color: var(--muted2);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.highlight-rating {
+  color: #fbbf24;
+  font-weight: 600;
+}
+
+.user-card-actions {
+  display: flex;
+  gap: 8px;
+  margin-top: 4px;
+}
+.btn-user-action {
+  flex: 1;
+  padding: 6px 0;
+  border-radius: 6px;
+  font-size: 11px;
+  font-weight: 500;
+  cursor: pointer;
+  border: 1px solid transparent;
+  transition: all 0.15s;
+  text-align: center;
+}
+.btn-edit {
+  background: rgba(255, 255, 255, 0.06);
+  border-color: rgba(255, 255, 255, 0.12);
+  color: var(--text);
+}
+.btn-edit:hover {
+  background: rgba(255, 255, 255, 0.12);
+}
+.btn-disable {
+  background: rgba(245, 158, 11, 0.1);
+  border-color: rgba(245, 158, 11, 0.2);
+  color: #fbbf24;
+}
+.btn-disable:hover {
+  background: rgba(245, 158, 11, 0.2);
+}
+.btn-enable {
+  background: rgba(16, 185, 129, 0.1);
+  border-color: rgba(16, 185, 129, 0.2);
+  color: #34d399;
+}
+.btn-enable:hover {
+  background: rgba(16, 185, 129, 0.2);
+}
+.btn-delete {
+  background: rgba(239, 68, 68, 0.08);
+  border-color: rgba(239, 68, 68, 0.2);
+  color: #f87171;
+  flex: 0 0 60px;
+}
+.btn-delete:hover {
+  background: rgba(239, 68, 68, 0.2);
+}
+
+/* ──────────────── 模态窗 (Modal) ──────────────── */
+.user-modal-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.7);
+  backdrop-filter: blur(4px);
+  z-index: 1000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 16px;
+}
+
+.user-modal-box {
+  background: #141f34;
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  border-radius: 16px;
+  width: 100%;
+  max-width: 480px;
+  box-shadow: 0 20px 50px rgba(0, 0, 0, 0.6);
+  overflow: hidden;
+  animation: modalIn 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+@keyframes modalIn {
+  from { opacity: 0; transform: scale(0.96); }
+  to { opacity: 1; transform: scale(1); }
+}
+
+.user-modal-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 16px 20px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+}
+.user-modal-head h3 {
+  margin: 0;
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--text);
+}
+.modal-close-btn {
+  background: transparent;
+  border: 0;
+  color: var(--muted);
+  font-size: 16px;
+  cursor: pointer;
+  padding: 4px;
+}
+.modal-close-btn:hover {
+  color: white;
+}
+
+.user-modal-form {
+  padding: 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.modal-err-tip {
+  padding: 8px 12px;
+  background: rgba(239, 68, 68, 0.15);
+  border: 1px solid rgba(239, 68, 68, 0.3);
+  border-radius: 8px;
+  color: #fca5a5;
+  font-size: 12px;
+}
+
+.modal-form-group {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.modal-label {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text);
+}
+.modal-input {
+  background: rgba(0, 0, 0, 0.25);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 9px 12px;
+  color: var(--text);
+  font-size: 13px;
+  outline: none;
+  transition: border-color 0.2s;
+}
+.modal-input:focus {
+  border-color: var(--purple);
+}
+.modal-hint {
+  font-size: 11px;
+  color: var(--muted);
+}
+
+.role-radio-group {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.role-radio-label {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 10px 12px;
+  border-radius: 10px;
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  background: rgba(0, 0, 0, 0.18);
+  cursor: pointer;
+  transition: all 0.15s;
+}
+.role-radio-label:hover {
+  background: rgba(255, 255, 255, 0.04);
+}
+.role-radio-label.selected {
+  border-color: #a855f7;
+  background: rgba(168, 85, 247, 0.08);
+}
+.role-radio-text {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.role-radio-text strong {
+  font-size: 12px;
+  color: var(--text);
+}
+.role-radio-text span {
+  font-size: 11px;
+  color: var(--muted);
+  line-height: 1.4;
+}
+
+.rating-limit-group {
+  padding: 12px;
+  border-radius: 10px;
+  background: rgba(245, 158, 11, 0.06);
+  border: 1px solid rgba(245, 158, 11, 0.2);
+}
+.modal-select {
+  background: rgba(0, 0, 0, 0.3);
+  border: 1px solid rgba(245, 158, 11, 0.3);
+  border-radius: 8px;
+  padding: 8px 12px;
+  color: var(--text);
+  font-size: 13px;
+  outline: none;
+}
+
+.modal-check-label {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+  color: #f87171;
+  cursor: pointer;
+}
+
+.modal-footer-btns {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+  margin-top: 8px;
+}
+.btn-modal-cancel {
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid var(--line);
+  color: var(--muted);
+  padding: 8px 16px;
+  border-radius: 8px;
+  font-size: 13px;
+  cursor: pointer;
+}
+.btn-modal-cancel:hover {
+  background: rgba(255, 255, 255, 0.1);
+  color: var(--text);
+}
+.btn-modal-confirm {
+  background: linear-gradient(135deg, #795bff 0%, #6333ff 100%);
+  border: 0;
+  color: white;
+  padding: 8px 20px;
+  border-radius: 8px;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  box-shadow: 0 4px 12px rgba(99, 51, 255, 0.35);
+}
+.btn-modal-confirm:hover:not(:disabled) {
+  opacity: 0.95;
+}
+.btn-modal-confirm:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
 }
 </style>
 

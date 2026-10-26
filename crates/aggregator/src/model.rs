@@ -70,24 +70,34 @@ pub struct AggregatedVodItem {
     /// 规范化主标题
     pub title: String,
     /// 清洗后的纯净比对标题 (全小写、去修饰词)
+    #[serde(default)]
     pub clean_title: String,
     /// 原始标题或副标题
+    #[serde(default)]
     pub sub_title: Option<String>,
     /// 上映年份
+    #[serde(default)]
     pub year: Option<u32>,
     /// 封面海报 URL
+    #[serde(default)]
     pub poster: Option<String>,
     /// 分类名称 (电影 / 电视剧 / 动漫等)
+    #[serde(default)]
     pub type_name: Option<String>,
     /// 更新状态 (如 "更新至30集")
+    #[serde(default)]
     pub remark: Option<String>,
     /// 主演
+    #[serde(default)]
     pub actor: Option<String>,
     /// 导演
+    #[serde(default)]
     pub director: Option<String>,
     /// 简介
+    #[serde(default)]
     pub content: Option<String>,
     /// 聚合的多条播放线路
+    #[serde(default)]
     pub routes: Vec<VodRoute>,
 }
 

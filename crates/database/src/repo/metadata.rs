@@ -295,12 +295,12 @@ pub async fn enqueue_library(db: &Db, library_id: Id) -> Result<u64> {
     Ok(r.rows_affected())
 }
 
-/// 只重置失败的任务。用户点"重试失败项"时用它。
+/// 只重置失败和未匹配的任务。用户点"重试失败项"时用它。
 pub async fn requeue_failed(db: &Db, library_id: Id) -> Result<u64> {
     let now = Utc::now().to_rfc3339();
     let r = sqlx::query(
         "UPDATE metadata_job SET status = 'pending', attempts = 0, last_error = NULL, updated_at = ?
-         WHERE library_id = ? AND status = 'failed'",
+         WHERE library_id = ? AND status IN ('failed', 'skipped')",
     )
     .bind(&now)
     .bind(library_id.to_string())
@@ -308,6 +308,34 @@ pub async fn requeue_failed(db: &Db, library_id: Id) -> Result<u64> {
     .await?;
     Ok(r.rows_affected())
 }
+
+/// 重置单个条目的刮削任务为 pending，若不存在则创建。
+pub async fn requeue_item(db: &Db, item_id: Id) -> Result<()> {
+    let now = Utc::now().to_rfc3339();
+    let updated = sqlx::query(
+        "UPDATE metadata_job SET status = 'pending', attempts = 0, last_error = NULL, updated_at = ?
+         WHERE item_id = ?",
+    )
+    .bind(&now)
+    .bind(item_id.to_string())
+    .execute(db.pool())
+    .await?
+    .rows_affected();
+
+    if updated == 0 {
+        sqlx::query(
+            "INSERT INTO metadata_job (item_id, library_id, kind, status, attempts, updated_at)
+             SELECT id, library_id, kind, 'pending', 0, ?
+             FROM media_item WHERE id = ?",
+        )
+        .bind(&now)
+        .bind(item_id.to_string())
+        .execute(db.pool())
+        .await?;
+    }
+    Ok(())
+}
+
 
 /// 强制全量重新入队。无论先前状态是 done、failed、skipped 还是 pending，
 /// 全部重置为 pending 并补齐未入队的条目，用于凭据变更或重新刷新图片与演职员。

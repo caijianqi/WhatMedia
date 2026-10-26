@@ -215,6 +215,15 @@ pub async fn set_user_role(db: &Db, id: Id, role: &str) -> Result<()> {
     Ok(())
 }
 
+pub async fn set_user_display_name(db: &Db, id: Id, display_name: Option<&str>) -> Result<()> {
+    sqlx::query("UPDATE user SET display_name = ? WHERE id = ?")
+        .bind(display_name)
+        .bind(id.to_string())
+        .execute(db.pool())
+        .await?;
+    Ok(())
+}
+
 pub async fn set_user_limits(
     db: &Db,
     id: Id,

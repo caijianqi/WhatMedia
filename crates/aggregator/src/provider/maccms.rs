@@ -43,10 +43,17 @@ impl VodProvider for MacCmsProvider {
 
     async fn search(&self, keyword: &str, timeout_ms: u64) -> Result<Vec<RawVodItem>> {
         let url = self.config.api_url.trim_end_matches('/');
-        let endpoint = if url.contains('?') {
-            format!("{url}&ac=detail&wd={keyword}")
+        let kw = keyword.trim();
+        let endpoint = if kw.is_empty() {
+            if url.contains('?') {
+                format!("{url}&ac=detail&h=24")
+            } else {
+                format!("{url}?ac=detail&h=24")
+            }
+        } else if url.contains('?') {
+            format!("{url}&ac=detail&wd={kw}")
         } else {
-            format!("{url}?ac=detail&wd={keyword}")
+            format!("{url}?ac=detail&wd={kw}")
         };
 
         let resp = self

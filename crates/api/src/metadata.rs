@@ -66,6 +66,8 @@ impl ScrapeRegistry {
 pub struct ScrapeRequest {
     #[cfg_attr(feature = "openapi", schema(value_type = Option<uuid::Uuid>))]
     pub library_id: Option<Id>,
+    #[cfg_attr(feature = "openapi", schema(value_type = Option<uuid::Uuid>))]
+    pub item_id: Option<Id>,
     /// 只重跑失败项。
     #[serde(default)]
     pub retry_failed: bool,
@@ -163,6 +165,24 @@ pub async fn start_scrape(
             )
         }
     };
+
+    if let Some(item_id) = body.item_id {
+        if let Err(e) = scraper.requeue_item(item_id).await {
+            return internal(e);
+        }
+        let scraper_clone = scraper.clone();
+        tokio::spawn(async move {
+            let _ = scraper_clone.scrape_single(item_id).await;
+        });
+        return (
+            StatusCode::ACCEPTED,
+            Json(ScrapeAccepted {
+                run_id: Uuid::new_v4(),
+                queued: 1,
+            }),
+        )
+            .into_response();
+    }
 
     let library_id = body.library_id;
     let queued = if body.force {

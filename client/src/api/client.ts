@@ -200,6 +200,14 @@ function put<T>(path: string, body: unknown): Promise<T> {
   })
 }
 
+function patch<T>(path: string, body?: unknown): Promise<T> {
+  return request<T>(path, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: body === undefined ? undefined : JSON.stringify(body),
+  })
+}
+
 // ─────────────────────────────────────────────────────────────
 // 端点
 // ─────────────────────────────────────────────────────────────
@@ -842,6 +850,97 @@ export function toggleVodSource(id: string): Promise<VodSourceConfig> {
 /** 获取代理播放 URL */
 export function getVodStreamProxyUrl(rawUrl: string, sourceId?: string): string {
   return `${BASE}/proxy/vod_stream?url=${encodeURIComponent(rawUrl)}${sourceId ? `&source=${encodeURIComponent(sourceId)}` : ''}`
+}
+
+export interface ImportVodResponse {
+  item_id: string
+  library_id: string
+  title: string
+  is_new: boolean
+}
+
+/** 将云端聚合条目一键导入到本地媒体库 (虚拟流媒体入库)，支持指定线路与默认首选源 */
+export function importVodItem(
+  item: AggregatedVodItem,
+  libraryId?: string,
+  options?: { selectedSourceIds?: string[]; defaultSourceId?: string },
+): Promise<ImportVodResponse> {
+  return post<ImportVodResponse>('/aggregator/import', {
+    item,
+    library_id: libraryId,
+    selected_source_ids: options?.selectedSourceIds,
+    default_source_id: options?.defaultSourceId,
+  })
+}
+
+/** 删除媒体库中的单个条目（及其所有版本、文件、流信息与关联数据） */
+export function deleteItem(id: string): Promise<void> {
+  return del<void>(`/items/${id}`)
+}
+
+/** 删除指定的播放会话记录（如从“继续观看”列表中移除） */
+export function deletePlaybackSession(id: string): Promise<void> {
+  return del<void>(`/playback/sessions/${id}`)
+}
+
+/** 检查某部影片是否已导入媒体库 */
+export function checkVodImported(title: string): Promise<{ imported: boolean; item_id: string | null }> {
+  return request<{ imported: boolean; item_id: string | null }>(`/aggregator/check_imported?title=${encodeURIComponent(title)}`)
+}
+
+/** 获取全网热播 / 最新更新推荐列表 */
+export function getHotVodItems(): Promise<AggregatedVodItem[]> {
+  return request<AggregatedVodItem[]>('/aggregator/hot')
+}
+
+// ─────────────────────────────────────────────────────────────
+// 用户与权限管理 (User & Role Management)
+// ─────────────────────────────────────────────────────────────
+
+export interface UserAccount {
+  id: string
+  username: string
+  display_name: string | null
+  role: 'admin' | 'user' | 'child' | string
+  max_rating: string | null
+  disabled: boolean
+}
+
+export interface CreateUserInput {
+  username: string
+  password: string
+  display_name?: string
+  role?: string
+  max_rating?: string
+  parent_id?: string
+}
+
+export interface UpdateUserInput {
+  display_name?: string
+  password?: string
+  role?: string
+  max_rating?: string
+  disabled?: boolean
+}
+
+/** 获取全部用户列表 (仅管理员) */
+export function listUsers(): Promise<UserAccount[]> {
+  return request<UserAccount[]>('/auth/users')
+}
+
+/** 新建用户 (仅管理员) */
+export function createUser(input: CreateUserInput): Promise<{ id: string }> {
+  return post<{ id: string }>('/auth/users', input)
+}
+
+/** 修改用户/重置密码/角色/状态 (仅管理员) */
+export function updateUser(id: string, input: UpdateUserInput): Promise<{ status: string }> {
+  return patch<{ status: string }>(`/auth/users/${id}`, input)
+}
+
+/** 删除用户 (仅管理员) */
+export function deleteUser(id: string): Promise<{ status: string }> {
+  return del<{ status: string }>(`/auth/users/${id}`)
 }
 
 

@@ -28,6 +28,7 @@ use axum::{
     Json, Router,
 };
 use chrono::Utc;
+use crate::auth::Current;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
@@ -647,6 +648,42 @@ async fn get_item(State(state): State<AppState>, AxumPath(id): AxumPath<Id>) -> 
     }
 }
 
+/// 删除单个媒体条目及其下属资源。
+#[cfg_attr(
+    feature = "openapi",
+    utoipa::path(
+        delete,
+        path = "/api/v1/items/{id}",
+        params(
+            ("id" = String, Path, description = "条目 id"),
+        ),
+        responses(
+            (status = 200, description = "成功", body = AckView),
+            (status = 404, description = "条目不存在", body = ErrorBody),
+            (status = 503, description = "数据库未就绪", body = ErrorBody),
+        ),
+        tag = "media"
+    )
+)]
+async fn delete_item(
+    State(state): State<AppState>,
+    Current(principal): Current,
+    AxumPath(id): AxumPath<Id>,
+) -> Response {
+    if principal.is_child() {
+        return error_response(StatusCode::FORBIDDEN, "CHILD_RESTRICTED", "儿童模式禁止删除媒体");
+    }
+    let db = match state.db_or_503() {
+        Ok(d) => d,
+        Err(r) => return *r,
+    };
+    match whatmedia_database::repo::delete_item(&db, id).await {
+        Ok(true) => Json(serde_json::json!({ "ok": true })).into_response(),
+        Ok(false) => error_response(StatusCode::NOT_FOUND, "NOT_FOUND", "条目不存在"),
+        Err(e) => internal(e),
+    }
+}
+
 /// 各类型的条目数。首页的分类 tab 用它决定渲染哪几个 tab。
 #[cfg_attr(
     feature = "openapi",
@@ -1092,7 +1129,7 @@ fn guarded_routes(state: AppState) -> Router {
         .route("/api/v1/movies", get(list_movies))
         .route("/api/v1/series", get(list_series))
         .route("/api/v1/episodes", get(list_episodes))
-        .route("/api/v1/items/{id}", get(get_item))
+        .route("/api/v1/items/{id}", get(get_item).delete(delete_item))
         // 详情页的演职员与季列表（飞牛风详情页）。两个都是"附属数据"：
         // 主详情不带它们，是为了让海报墙那类列表页不至于为每一行都多查两张表。
         .route("/api/v1/items/{id}/credits", get(item_credits))
@@ -1124,6 +1161,10 @@ fn guarded_routes(state: AppState) -> Router {
         .route(
             "/api/v1/playback/sessions",
             post(playback::create_playback_session),
+        )
+        .route(
+            "/api/v1/playback/sessions/{id}",
+            delete(playback::session_delete),
         )
         .route(
             "/api/v1/playback/sessions/{id}/heartbeat",
@@ -1207,6 +1248,18 @@ fn guarded_routes(state: AppState) -> Router {
         .route(
             "/api/v1/settings/vod_sources/{id}/toggle",
             put(aggregator::toggle_vod_source),
+        )
+        .route(
+            "/api/v1/aggregator/import",
+            post(aggregator::import_vod_to_library),
+        )
+        .route(
+            "/api/v1/aggregator/check_imported",
+            get(aggregator::check_vod_imported),
+        )
+        .route(
+            "/api/v1/aggregator/hot",
+            get(aggregator::get_hot_vod_items),
         )
         // 鉴权中间件放在with_state之前 —— 它需要自己持有 State，
         // 于是这条 router 里此后新增的路由**默认被保护**。

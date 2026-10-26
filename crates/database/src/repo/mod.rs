@@ -33,7 +33,7 @@ pub use auth::{
     insert_device, insert_session, insert_user, list_pending_approvals, list_sessions,
     list_user_devices, list_users, pending_approval_for_user, prune_sessions, record_login_failure,
     record_login_success, revoke_session, revoke_user_sessions, set_device_approved,
-    set_user_disabled, set_user_limits, set_user_password, set_user_pin, set_user_role,
+    set_user_disabled, set_user_display_name, set_user_limits, set_user_password, set_user_pin, set_user_role,
     touch_device, touch_session, username_exists, ApprovalRow, DeviceRow, NewApproval, NewDevice,
     NewSession as NewAuthSession, NewUser, SessionRow, SessionWithUser, UserAuthRow, UserView,
 };
@@ -48,16 +48,16 @@ pub use live::{
     LiveSourceRow, ProgramRow,
 };
 pub use media::{
-    count_items, get_item, kind_counts, list_items, replace_streams, upsert_file, upsert_item,
-    upsert_version, FileWithStreams, ItemDetail, KindCount, VersionWithFiles,
+    count_items, delete_item, get_item, kind_counts, list_items, replace_streams, upsert_file,
+    upsert_item, upsert_version, FileWithStreams, ItemDetail, KindCount, VersionWithFiles,
 };
 pub use metadata::{job_stats, requeue_all, series_item_ids, CreditRow, JobStats, ScrapeTarget};
 pub use playback::{
-    create_session, delete_stream_session, file_target, files_for_item, force_position,
-    get_session, get_stream_session, get_transcode_job, heartbeat, insert_stream_session,
-    insert_transcode_job, list_idle_stream_sessions, resume_points, set_stream_state,
-    set_transcode_state, stop_session, touch_stream_session, FileTarget, NewSession,
-    NewStreamSession, NewTranscodeJob, ResumePoint, StreamSession,
+    create_session, delete_session, delete_stream_session, file_target, files_for_item,
+    force_position, get_session, get_stream_session, get_transcode_job, heartbeat,
+    insert_stream_session, insert_transcode_job, list_idle_stream_sessions, resume_points,
+    set_stream_state, set_transcode_state, stop_session, touch_stream_session, FileTarget,
+    NewSession, NewStreamSession, NewTranscodeJob, ResumePoint, StreamSession,
 };
 pub use scan::{file_index_for_library, mark_files_missing};
 pub use search::search_items;

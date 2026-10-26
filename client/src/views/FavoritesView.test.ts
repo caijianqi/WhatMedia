@@ -82,4 +82,20 @@ describe('FavoritesView', () => {
     await flushPromises()
     expect(w.text()).toContain('沙丘')
   })
+
+  it('渲染 PosterCard 海报卡片并支持就地取消收藏', async () => {
+    listMock.mockResolvedValue(favorites(['沙丘']) as never)
+    const w = await mountView()
+    expect(w.text()).toContain('已收藏 1 部')
+
+    const card = w.findComponent({ name: 'PosterCard' })
+    expect(card.exists()).toBe(true)
+
+    // 触发卡片取消收藏事件
+    card.vm.$emit('favorite-change', false)
+    await flushPromises()
+
+    // 列表就地清除该条目并展示空状态
+    expect(w.text()).toContain('还没有收藏任何东西')
+  })
 })

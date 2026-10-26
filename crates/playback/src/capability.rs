@@ -46,7 +46,23 @@ pub struct ClientCapability {
 
 impl ClientCapability {
     pub fn supports_container(&self, c: &Container) -> bool {
-        self.containers.contains(c)
+        match c {
+            Container::Other(s) => {
+                let s_lower = s.to_ascii_lowercase();
+                if matches!(
+                    s_lower.as_str(),
+                    "m3u8" | "hls" | "application/x-mpegurl" | "application/vnd.apple.mpegurl"
+                ) && self.supports_streaming
+                {
+                    return true;
+                }
+                self.containers.iter().any(|item| match item {
+                    Container::Other(o) => o.eq_ignore_ascii_case(&s_lower),
+                    _ => false,
+                })
+            }
+            _ => self.containers.contains(c),
+        }
     }
 
     pub fn supports_video(&self, c: &VideoCodec) -> bool {
@@ -482,4 +498,14 @@ mod tests {
         s.active_transcodes = 1;
         assert!(!s.has_budget());
     }
+
+    #[test]
+    fn web_and_streaming_clients_support_m3u8_container() {
+        let web = ClientCapability::preset_web();
+        assert!(web.supports_container(&Container::Other("m3u8".into())));
+        assert!(web.supports_container(&Container::Other("M3U8".into())));
+        assert!(web.supports_container(&Container::Other("hls".into())));
+        assert!(web.supports_container(&Container::Other("application/x-mpegURL".into())));
+    }
 }
+

@@ -142,6 +142,19 @@ async function loadResume(): Promise<void> {
   }
 }
 
+async function onRemoveResume(target: ResumePoint): Promise<void> {
+  resume.value = resume.value.filter(
+    (it) => it.session_id !== target.session_id && it.item_id !== target.item_id,
+  )
+  try {
+    if (target.session_id) {
+      await api.deletePlaybackSession(target.session_id)
+    }
+  } catch {
+    /* 忽略网络异常 */
+  }
+}
+
 async function loadRow(row: Row, sort: 'added_at' | 'rating'): Promise<void> {
   row.loading = true
   row.error = null
@@ -254,6 +267,7 @@ const genreCards = [
           v-for="r in resume.slice(0, 3)"
           :key="r.session_id || r.item_id"
           :resume="r"
+          @remove="onRemoveResume"
         />
       </div>
     </section>

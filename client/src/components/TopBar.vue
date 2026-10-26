@@ -7,11 +7,10 @@
  * - 历史记录按钮与微光通知按钮 .notify-dot
  * - 个人中心胶囊 .profile（双色渐变头像 + 角色信息 + 展开菜单）
  */
-import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
+import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import * as api from '../api/client'
 import { useSessionStore } from '../stores/session'
-import VodDetailModal from './VodDetailModal.vue'
 
 const props = withDefaults(defineProps<{ showSearch?: boolean }>(), { showSearch: true })
 
@@ -20,96 +19,15 @@ const session = useSessionStore()
 
 // ── 搜索 ──────────────────────────────────────────────────
 const query = ref('')
-const results = ref<api.ItemSummary[]>([])
-const remoteResults = ref<api.AggregatedVodItem[]>([])
-const searching = ref(false)
-const open = ref(false)
-const selectedVod = ref<api.AggregatedVodItem | null>(null)
-const vodModalOpen = ref(false)
-let debounce: number | undefined
-let inflight: AbortController | null = null
 const searchInput = ref<HTMLInputElement | null>(null)
 
-const MIN_QUERY = 1
-
-function schedule(): void {
-  if (debounce) window.clearTimeout(debounce)
-  debounce = window.setTimeout(run, 250)
-}
-
-async function run(): Promise<void> {
-  const q = query.value.trim()
-  if (q.length < MIN_QUERY) {
-    results.value = []
-    remoteResults.value = []
-    searching.value = false
-    return
-  }
-  if (inflight) inflight.abort()
-  inflight = new AbortController()
-  searching.value = true
-  try {
-    const res = await api.searchAggregate(q, { page_size: 6 })
-    if (!inflight.signal.aborted) {
-      results.value = res.local.data
-      remoteResults.value = res.remote
-      open.value = true
-    }
-  } catch {
-    // 降级回退到本地普通搜索
-    try {
-      const page = await api.search(q, { page_size: 6 })
-      if (!inflight.signal.aborted) {
-        results.value = page.data
-        remoteResults.value = []
-        open.value = true
-      }
-    } catch {
-      results.value = []
-      remoteResults.value = []
-    }
-  } finally {
-    searching.value = false
-  }
-}
-
-watch(query, schedule)
-
-function pick(item: api.ItemSummary): void {
-  open.value = false
-  query.value = ''
-  results.value = []
-  remoteResults.value = []
-  void router.push({ name: 'item', params: { id: item.id } })
-}
-
-function pickVod(vod: api.AggregatedVodItem): void {
-  open.value = false
-  selectedVod.value = vod
-  vodModalOpen.value = true
-}
-
-function playVodEpisode(payload: {
-  item: api.AggregatedVodItem
-  route: api.VodRoute
-  episode: api.VodEpisode
-}): void {
-  vodModalOpen.value = false
-  const proxyUrl = api.getVodStreamProxyUrl(payload.episode.play_url, payload.route.source_id)
-  void router.push({
-    name: 'play',
-    params: { id: 'vod' },
-    query: {
-      vod_url: proxyUrl,
-      vod_title: `${payload.item.title} - ${payload.episode.name}`,
-      vod_source: payload.route.source_name,
-    },
-  })
-}
-
 function submit(): void {
-  open.value = false
-  void router.push({ name: 'library' })
+  const q = query.value.trim()
+  if (q) {
+    void router.push({ name: 'library', query: { q } })
+  } else {
+    void router.push({ name: 'library' })
+  }
 }
 
 // ── 通知 ──────────────────────────────────────────────────
@@ -151,7 +69,6 @@ async function markAll(): Promise<void> {
 
 function onGlobalKeyDown(e: KeyboardEvent): void {
   if (e.key === 'Escape') {
-    open.value = false
     notesOpen.value = false
     profileOpen.value = false
   }
@@ -173,8 +90,6 @@ onMounted(() => {
 
 onBeforeUnmount(() => {
   if (timer) window.clearInterval(timer)
-  if (debounce) window.clearTimeout(debounce)
-  if (inflight) inflight.abort()
   window.removeEventListener('keydown', onGlobalKeyDown)
 })
 
@@ -226,61 +141,11 @@ function fmtTime(iso: string): string {
           placeholder="搜索电影、电视剧、演员…"
           autocomplete="off"
           aria-label="搜索"
-          @focus="open = results.length > 0"
           @keydown.enter="submit"
         />
         <span class="search-shortcut">/</span>
       </label>
-
-      <!-- 搜索结果下拉浮层 -->
-      <div v-if="open && query.trim().length >= MIN_QUERY" class="search-dropdown card">
-        <!-- 本地媒体库结果 -->
-        <div v-if="results.length > 0" class="search-section">
-          <div class="search-section-title">本地媒体库 (原画)</div>
-          <button
-            v-for="r in results"
-            :key="r.id"
-            type="button"
-            class="search-item"
-            @click="pick(r)"
-          >
-            <span class="chip-local">本地</span>
-            <span class="chip">{{ r.year ?? '—' }}</span>
-            <span class="search-title">{{ r.title }}</span>
-          </button>
-        </div>
-
-        <!-- 云端多源聚合结果 (MoonTV 即播) -->
-        <div v-if="remoteResults.length > 0" class="search-section">
-          <div class="search-section-title">云端聚合在线源 (MoonTV 秒播)</div>
-          <button
-            v-for="r in remoteResults"
-            :key="r.id"
-            type="button"
-            class="search-item search-item-remote"
-            @click="pickVod(r)"
-          >
-            <span class="chip-remote">全网</span>
-            <span class="chip-routes">{{ r.routes.length }} 线路</span>
-            <span class="search-title">{{ r.title }}</span>
-            <span v-if="r.remark" class="search-remark">{{ r.remark }}</span>
-          </button>
-        </div>
-
-        <p v-if="searching" class="search-tip">跨源检索中…</p>
-        <p v-else-if="results.length === 0 && remoteResults.length === 0" class="search-tip">
-          没有匹配「{{ query.trim() }}」的条目
-        </p>
-      </div>
     </div>
-
-    <!-- 聚合影视选集与详情弹窗 -->
-    <VodDetailModal
-      :open="vodModalOpen"
-      :item="selectedVod"
-      @close="vodModalOpen = false"
-      @play="playVodEpisode"
-    />
 
     <div class="top-spacer"></div>
 
@@ -599,6 +464,28 @@ function fmtTime(iso: string): string {
   border-radius: 4px;
   font-weight: 600;
   flex-shrink: 0;
+}
+.chip-jump {
+  background: rgba(14, 165, 233, 0.2);
+  color: #38bdf8;
+  font-size: 10px;
+  padding: 1px 6px;
+  border-radius: 4px;
+  font-weight: 600;
+  flex-shrink: 0;
+}
+.search-item-jump {
+  color: var(--accent);
+  background: rgba(14, 165, 233, 0.05);
+  cursor: pointer;
+}
+.search-item-jump:hover {
+  background: rgba(14, 165, 233, 0.12);
+}
+.jump-arrow {
+  margin-left: auto;
+  font-size: 12px;
+  color: var(--muted);
 }
 .chip-remote {
   background: rgba(245, 158, 11, 0.2);

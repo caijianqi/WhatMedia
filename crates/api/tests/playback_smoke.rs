@@ -427,7 +427,7 @@ async fn session_lifecycle_start_heartbeat_resume_stop() {
     assert_eq!(list[0]["item_id"], h.mp4_item.to_string());
     assert_eq!(list[0]["position_ms"], 600_000);
 
-    // 停止后不再出现在续播列表里（stopped_at 非空）。
+    // 停止后保存最新进度，依然在续播列表里（便于下次继续观看）。
     let r = send(
         &h.state,
         post_json(
@@ -435,6 +435,18 @@ async fn session_lifecycle_start_heartbeat_resume_stop() {
             &format!("/api/v1/playback/sessions/{session}/stop"),
             serde_json::json!({ "position_ms": 610_000 }),
         ),
+    )
+    .await;
+    assert_eq!(r.status, StatusCode::OK);
+    let r = send(&h.state, get(&h.tok, "/api/v1/playback/resume")).await;
+    let list = r.json().as_array().unwrap().clone();
+    assert_eq!(list.len(), 1);
+    assert_eq!(list[0]["position_ms"], 610_000);
+
+    // 用户在首页/媒体库显式移除后，彻底从续播列表删除。
+    let r = send(
+        &h.state,
+        common::delete(&h.tok, &format!("/api/v1/playback/sessions/{session}")),
     )
     .await;
     assert_eq!(r.status, StatusCode::OK);

@@ -12,13 +12,15 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { createPinia, setActivePinia } from 'pinia'
 import { flushPromises, mount } from '@vue/test-utils'
 
+const pushMock = vi.fn()
+
 // TopBar 依赖 useRouter / useRoute。这里测的是数据渲染与请求时机，
 // 不是路由，所以把 router 换成桩。
 vi.mock('vue-router', async (importOriginal) => {
   const actual = await importOriginal<typeof import('vue-router')>()
   return {
     ...actual,
-    useRouter: () => ({ push: vi.fn() }),
+    useRouter: () => ({ push: pushMock }),
     useRoute: () => ({ name: 'home', fullPath: '/', query: {} }),
   }
 })
@@ -99,44 +101,39 @@ beforeEach(() => {
 })
 
 describe('TopBar 搜索', () => {
-  it('输入后防抖 250ms 才发一次请求', async () => {
+  it('回车后直接跳转媒体库搜索', async () => {
     const w = await mountBar()
     const input = w.get('input')
 
-    // 模拟连打四个字。
-    await input.setValue('沙')
-    await input.setValue('沙丘')
     await input.setValue('沙丘 2')
-    await input.setValue('沙丘 2 ')
-    expect(searchMock).not.toHaveBeenCalled()
-
-    vi.advanceTimersByTime(250)
+    await input.trigger('keydown.enter')
     await flushPromises()
 
-    // 四次输入合并成一次请求，且用的是最后一次的值。
-    expect(searchMock).toHaveBeenCalledTimes(1)
-    expect(searchMock.mock.calls[0]?.[0]).toBe('沙丘 2')
+    expect(pushMock).toHaveBeenCalledWith({
+      name: 'library',
+      query: { q: '沙丘 2' },
+    })
   })
 
-  it('有结果时列出结果，点击可跳转条目', async () => {
-    searchMock.mockResolvedValue(page(['沙丘', '沙丘 2']) as never)
+  it('输入空字符回车跳转全部媒体库', async () => {
     const w = await mountBar()
-    await w.get('input').setValue('沙丘')
-    vi.advanceTimersByTime(250)
+    const input = w.get('input')
+
+    await input.setValue('   ')
+    await input.trigger('keydown.enter')
     await flushPromises()
 
-    expect(w.text()).toContain('沙丘')
-    expect(w.text()).toContain('沙丘 2')
+    expect(pushMock).toHaveBeenCalledWith({
+      name: 'library',
+    })
   })
 
-  it('没有结果时明确说"没有匹配"，而不是留白', async () => {
-    searchMock.mockResolvedValue(page([]) as never)
+  it('不展示下拉结果卡片，保持界面清爽', async () => {
     const w = await mountBar()
-    await w.get('input').setValue('不存在')
-    vi.advanceTimersByTime(250)
+    await w.get('input').setValue('流浪地球')
     await flushPromises()
 
-    expect(w.text()).toContain('没有匹配')
+    expect(w.find('.search-dropdown').exists()).toBe(false)
   })
 
   it('TV 形态下不渲染搜索框', async () => {

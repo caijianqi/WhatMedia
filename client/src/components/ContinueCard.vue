@@ -16,6 +16,10 @@ const props = defineProps<{
   subtitle?: string
 }>()
 
+const emit = defineEmits<{
+  (e: 'remove', resume: ResumePoint): void
+}>()
+
 const failed = ref(false)
 
 watch(
@@ -57,13 +61,11 @@ const captionText = computed(() => {
   const posMin = Math.round(pos / 60000)
   return `已观看 ${posMin} 分钟`
 })
-
-const startSec = computed(() => Math.floor(props.resume.position_ms / 1000))
 </script>
 
 <template>
   <RouterLink
-    :to="{ name: 'play', params: { id: resume.item_id }, query: { start: startSec } }"
+    :to="{ name: 'play', params: { id: resume.item_id }, query: { start: resume.position_ms } }"
     class="continue-card"
   >
     <!-- 左侧封面缩略图 -->
@@ -105,10 +107,61 @@ const startSec = computed(() => Math.floor(props.resume.position_ms / 1000))
         <em>继续播放 →</em>
       </div>
     </div>
+
+    <!-- 移除播放记录按钮 -->
+    <button
+      type="button"
+      class="remove-resume-btn"
+      title="从继续观看中移除"
+      aria-label="从继续观看中移除"
+      @click.prevent.stop="emit('remove', resume)"
+    >
+      <svg viewBox="0 0 24 24" width="12" height="12">
+        <path d="M18 6L6 18M6 6l12 12" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" />
+      </svg>
+    </button>
   </RouterLink>
 </template>
 
 <style scoped>
+.continue-card {
+  position: relative;
+}
+
+.remove-resume-btn {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  border: 0;
+  background: rgba(15, 23, 42, 0.7);
+  color: var(--muted);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  opacity: 0;
+  transition: opacity 0.2s, background-color 0.2s, color 0.2s;
+  z-index: 5;
+}
+
+.continue-card:hover .remove-resume-btn,
+.remove-resume-btn:focus {
+  opacity: 1;
+}
+
+@media (max-width: 768px) {
+  .remove-resume-btn {
+    opacity: 0.8;
+  }
+}
+
+.remove-resume-btn:hover {
+  background: rgba(239, 68, 68, 0.85);
+  color: #fff;
+}
 .thumb-fallback {
   width: 100%;
   height: 100%;

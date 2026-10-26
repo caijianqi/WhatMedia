@@ -8,12 +8,41 @@
 //! 超过 5 万条后评估切换 Tantivy（§75）。
 
 use anyhow::Result;
-use sqlx::QueryBuilder;
 use whatmedia_core::Page;
 
 use crate::db::Db;
 use crate::repo::{page_of, ItemQuery, ItemSummary};
-use crate::rows::ItemRow;
+
+#[derive(Debug, sqlx::FromRow)]
+struct SearchItemRow {
+    id: Option<String>,
+    kind: String,
+    title: String,
+    original_title: Option<String>,
+    year: Option<i32>,
+    rating: Option<f64>,
+    runtime_ms: Option<i64>,
+    added_at: String,
+    episode_count: Option<i64>,
+}
+
+impl SearchItemRow {
+    fn into_summary(self) -> Option<ItemSummary> {
+        let id = crate::rows::to_id(&self.id?)?;
+        let kind = crate::rows::to_kind(&self.kind);
+        Some(ItemSummary {
+            id,
+            kind,
+            title: self.title,
+            original_title: self.original_title,
+            year: self.year,
+            rating: self.rating,
+            runtime_ms: self.runtime_ms,
+            added_at: self.added_at,
+            episode_count: self.episode_count,
+        })
+    }
+}
 
 pub async fn search_items(db: &Db, term: &str, q: &ItemQuery) -> Result<Page<ItemSummary>> {
     let term = term.trim();
@@ -21,84 +50,117 @@ pub async fn search_items(db: &Db, term: &str, q: &ItemQuery) -> Result<Page<Ite
         return Ok(page_of(Vec::new(), 0, q));
     }
 
-    // 三字以下 trigram 无解，直接走 LIKE。
-    let page = if char_count(term) < 3 {
-        like_search(db, term, q).await?
-    } else {
-        match fts_search(db, term, q).await {
-            Ok(p) => p,
-            // FTS 语法错误 / 索引异常都不能让搜索接口 500，静默降级。
-            Err(e) => {
-                tracing::warn!("FTS 检索失败，降级到 LIKE：{e}");
-                like_search(db, term, q).await?
-            }
-        }
-    };
-    Ok(page)
-}
-
-async fn fts_search(db: &Db, term: &str, q: &ItemQuery) -> Result<Page<ItemSummary>> {
-    let pattern = fts_phrase(term);
-    let (_, size) = q.clamp();
-
-    let total: (i64,) = sqlx::query_as(
-        "SELECT COUNT(*) FROM media_item
-          WHERE rowid IN (SELECT rowid FROM media_item_fts WHERE media_item_fts MATCH ?)",
-    )
-    .bind(&pattern)
-    .fetch_one(db.pool())
-    .await?;
-
-    let rows = sqlx::query_as::<_, ItemRow>(
-        "SELECT * FROM media_item
-          WHERE rowid IN (SELECT rowid FROM media_item_fts WHERE media_item_fts MATCH ?)
-          ORDER BY title
-          LIMIT ? OFFSET ?",
-    )
-    .bind(&pattern)
-    .bind(size as i64)
-    .bind(q.offset())
-    .fetch_all(db.pool())
-    .await?;
-
-    Ok(page_of(items_from(rows), total.0, q))
-}
-
-async fn like_search(db: &Db, term: &str, q: &ItemQuery) -> Result<Page<ItemSummary>> {
     let like = format!("%{term}%");
     let (_, size) = q.clamp();
 
-    let mut count =
-        QueryBuilder::<sqlx::Sqlite>::new("SELECT COUNT(*) FROM media_item WHERE title LIKE ");
-    count.push_bind(&like).push(" OR original_title LIKE ");
-    count.push_bind(&like);
-    let total: (i64,) = count.build_query_as().fetch_one(db.pool()).await?;
+    // 联合查询：未归属剧集的散片（电影/单片） + 剧集（支持按剧集标题、别名及单集名匹配）
+    let count_sql = "SELECT COUNT(*) FROM (
+        SELECT m.id FROM media_item m
+        WHERE NOT EXISTS (SELECT 1 FROM episode e WHERE e.item_id = m.id)
+          AND (m.title LIKE ? OR m.original_title LIKE ?)
+        UNION ALL
+        SELECT (SELECT e.item_id FROM episode e JOIN season se ON se.id = e.season_id WHERE se.series_id = s.id ORDER BY se.season_number ASC, e.episode_number ASC LIMIT 1) AS id
+        FROM series s
+        WHERE (s.title LIKE ? OR s.original_title LIKE ?)
+           OR EXISTS (
+               SELECT 1 FROM season se
+               JOIN episode e ON e.season_id = se.id
+               JOIN media_item m ON m.id = e.item_id
+               WHERE se.series_id = s.id AND (m.title LIKE ? OR m.original_title LIKE ?)
+           )
+    ) WHERE id IS NOT NULL";
 
-    let mut b = QueryBuilder::<sqlx::Sqlite>::new("SELECT * FROM media_item WHERE title LIKE ");
-    b.push_bind(&like).push(" OR original_title LIKE ");
-    b.push_bind(&like).push(" ORDER BY title LIMIT ");
-    b.push_bind(size as i64).push(" OFFSET ");
-    b.push_bind(q.offset());
+    let total: (i64,) = sqlx::query_as(count_sql)
+        .bind(&like)
+        .bind(&like)
+        .bind(&like)
+        .bind(&like)
+        .bind(&like)
+        .bind(&like)
+        .fetch_one(db.pool())
+        .await?;
 
-    let rows = b.build_query_as::<ItemRow>().fetch_all(db.pool()).await?;
-    Ok(page_of(items_from(rows), total.0, q))
+    let data_sql = "SELECT id, kind, title, original_title, year, rating, runtime_ms, added_at, episode_count FROM (
+        SELECT 
+            m.id AS id,
+            m.kind AS kind,
+            m.title AS title,
+            m.original_title AS original_title,
+            m.year AS year,
+            m.rating AS rating,
+            m.runtime_ms AS runtime_ms,
+            m.added_at AS added_at,
+            NULL AS episode_count
+        FROM media_item m
+        WHERE NOT EXISTS (SELECT 1 FROM episode e WHERE e.item_id = m.id)
+          AND (m.title LIKE ? OR m.original_title LIKE ?)
+
+        UNION ALL
+
+        SELECT 
+            (SELECT e.item_id 
+             FROM episode e 
+             JOIN season se ON se.id = e.season_id 
+             JOIN media_item m ON m.id = e.item_id
+             WHERE se.series_id = s.id 
+             ORDER BY se.season_number ASC, e.episode_number ASC 
+             LIMIT 1) AS id,
+            COALESCE(
+                (SELECT m.kind FROM episode e 
+                 JOIN season se ON se.id = e.season_id 
+                 JOIN media_item m ON m.id = e.item_id 
+                 WHERE se.series_id = s.id AND m.kind IN ('anime', 'documentary', 'variety') 
+                 LIMIT 1),
+                'series'
+            ) AS kind,
+            s.title AS title,
+            s.original_title AS original_title,
+            s.year AS year,
+            NULL AS rating,
+            NULL AS runtime_ms,
+            COALESCE(
+                (SELECT m.added_at 
+                 FROM episode e 
+                 JOIN season se ON se.id = e.season_id 
+                 JOIN media_item m ON m.id = e.item_id
+                 WHERE se.series_id = s.id 
+                 ORDER BY m.added_at DESC 
+                 LIMIT 1),
+                '1970-01-01T00:00:00Z'
+            ) AS added_at,
+            (SELECT COUNT(*) 
+             FROM episode e 
+             JOIN season se ON se.id = e.season_id 
+             WHERE se.series_id = s.id) AS episode_count
+        FROM series s
+        WHERE (s.title LIKE ? OR s.original_title LIKE ?)
+           OR EXISTS (
+               SELECT 1 FROM season se
+               JOIN episode e ON e.season_id = se.id
+               JOIN media_item m ON m.id = e.item_id
+               WHERE se.series_id = s.id AND (m.title LIKE ? OR m.original_title LIKE ?)
+           )
+    ) WHERE id IS NOT NULL
+    ORDER BY title
+    LIMIT ? OFFSET ?";
+
+    let rows = sqlx::query_as::<_, SearchItemRow>(data_sql)
+        .bind(&like)
+        .bind(&like)
+        .bind(&like)
+        .bind(&like)
+        .bind(&like)
+        .bind(&like)
+        .bind(size as i64)
+        .bind(q.offset())
+        .fetch_all(db.pool())
+        .await?;
+
+    let items = rows.into_iter().filter_map(|r| r.into_summary()).collect();
+    Ok(page_of(items, total.0, q))
 }
 
-fn items_from(rows: Vec<ItemRow>) -> Vec<ItemSummary> {
-    rows.into_iter()
-        .filter_map(|r| r.into_domain())
-        .map(|i| ItemSummary::from_row(&i))
-        .collect()
-}
-
-/// 把用户输入包成 FTS5 短语字面量：`"` 需转义为 `""`。
-///
-/// 不做转义的话，用户输入里的 `-`、`*`、`OR` 会被当成 FTS 查询语法，
-/// 轻则结果不对，重则整个查询报错。
-fn fts_phrase(term: &str) -> String {
-    format!("\"{}\"", term.replace('"', "\"\""))
-}
-
+#[allow(dead_code)]
 fn char_count(s: &str) -> usize {
     s.chars().count()
 }
@@ -108,13 +170,8 @@ mod tests {
     use super::*;
 
     #[test]
-    fn phrase_escapes_quotes() {
-        assert_eq!(fts_phrase(r#"a"b"#), "\"a\"\"b\"");
-    }
-
-    #[test]
     fn short_terms_are_detected() {
-        assert_eq!(char_count("地球"), 2);
-        assert_eq!(char_count("流浪地球"), 4);
+        assert_eq!(char_count("凡人"), 2);
+        assert_eq!(char_count("凡人修仙传"), 5);
     }
 }

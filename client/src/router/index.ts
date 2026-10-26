@@ -27,6 +27,7 @@ const routes: RouteRecordRaw[] = [
   { path: '/settings', name: 'settings', component: () => import('../views/SettingsView.vue') },
   { path: '/assist', name: 'assist', component: () => import('../views/AssistView.vue') },
   { path: '/live', name: 'live', component: () => import('../views/LiveView.vue') },
+  { path: '/aggregator', name: 'aggregator', component: () => import('../views/AggregatorView.vue') },
   // 兜底：未知路径回首页，而不是白屏。
   { path: '/:pathMatch(.*)*', redirect: '/' },
 ]

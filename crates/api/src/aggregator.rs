@@ -13,7 +13,7 @@ use serde::{Deserialize, Serialize};
 use tokio::sync::RwLock;
 use tokio_stream::Stream;
 use whatmedia_aggregator::{
-    cluster_items, AggregatedVodItem, AggregatorEngine, ClusterInput, MacCmsProvider,
+    cluster_items, AggregatedVodItem, AggregatorEngine, ClusterInput, MacCmsProvider, VodRoute,
     VodSourceConfig,
 };
 use whatmedia_database::repo::{self, ItemQuery, ItemSummary};
@@ -256,6 +256,7 @@ fn build_aggregate_sse_stream(
 pub async fn proxy_vod_stream(
     Current(principal): Current,
     Query(query): Query<VodProxyQuery>,
+    client_headers: axum::http::HeaderMap,
 ) -> Response {
     if principal.is_child() {
         return error_response(
@@ -265,8 +266,15 @@ pub async fn proxy_vod_stream(
         );
     }
 
-    let raw_url = query.url.trim();
-    let Ok(target_url) = reqwest::Url::parse(raw_url) else {
+    let mut raw_url = query.url.trim().to_string();
+    if !raw_url.starts_with("http://") && !raw_url.starts_with("https://") {
+        let decoded = urldecode(&raw_url);
+        if decoded.starts_with("http://") || decoded.starts_with("https://") {
+            raw_url = decoded;
+        }
+    }
+
+    let Ok(target_url) = reqwest::Url::parse(&raw_url) else {
         return bad_request("非法代理目标 URL");
     };
 
@@ -275,15 +283,32 @@ pub async fn proxy_vod_stream(
         .build()
         .unwrap_or_default();
 
-    let resp = match client
+    // 伪装 Referer 与 Origin 防盗链检测
+    let origin = format!(
+        "{}://{}",
+        target_url.scheme(),
+        target_url.host_str().unwrap_or("")
+    );
+    let referer = format!("{}/", origin);
+
+    let mut req = client
         .get(target_url.as_str())
         .header(
             reqwest::header::USER_AGENT,
             "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
         )
-        .send()
-        .await
-    {
+        .header(reqwest::header::REFERER, referer)
+        .header("Origin", origin)
+        .header(reqwest::header::ACCEPT, "*/*");
+
+    // 透传客户端的 Range 请求头，支持分片 Seek 和 byte-range 请求
+    if let Some(range) = client_headers.get(axum::http::header::RANGE) {
+        if let Ok(val) = range.to_str() {
+            req = req.header(reqwest::header::RANGE, val);
+        }
+    }
+
+    let resp = match req.send().await {
         Ok(r) => r,
         Err(e) => {
             return error_response(
@@ -302,39 +327,50 @@ pub async fn proxy_vod_stream(
         .unwrap_or("")
         .to_string();
 
+    let content_range = resp
+        .headers()
+        .get(reqwest::header::CONTENT_RANGE)
+        .and_then(|v| v.to_str().ok())
+        .map(|s| s.to_string());
+
+    let bytes = match resp.bytes().await {
+        Ok(b) => b,
+        Err(e) => {
+            return error_response(
+                StatusCode::BAD_GATEWAY,
+                "UPSTREAM_READ_ERROR",
+                format!("读取上游数据失败: {e}"),
+            );
+        }
+    };
+
+    // 智能探查 M3U8：URL 包含 .m3u8、或 Content-Type 匹配、或内容前缀包含 #EXTM3U
     let is_m3u8 = raw_url.contains(".m3u8")
         || content_type.contains("mpegurl")
-        || content_type.contains("application/x-mpegurl");
+        || content_type.contains("application/x-mpegurl")
+        || bytes.starts_with(b"#EXTM3U");
 
     if is_m3u8 {
-        let text = match resp.text().await {
-            Ok(t) => t,
-            Err(e) => {
-                return error_response(
-                    StatusCode::BAD_GATEWAY,
-                    "UPSTREAM_READ_ERROR",
-                    format!("读取上游播放列表失败: {e}"),
-                );
-            }
-        };
-
-        let rewritten = rewrite_vod_m3u8(&text, &target_url);
-        return (
-            status,
-            [
-                (
-                    axum::http::header::CONTENT_TYPE,
-                    "application/vnd.apple.mpegurl",
-                ),
-                (axum::http::header::ACCESS_CONTROL_ALLOW_ORIGIN, "*"),
-                (
-                    axum::http::header::CACHE_CONTROL,
-                    "no-cache, no-store, must-revalidate",
-                ),
-            ],
-            rewritten,
-        )
-            .into_response();
+        if let Ok(text) = std::str::from_utf8(&bytes) {
+            let rewritten = rewrite_vod_m3u8(text, &target_url);
+            return (
+                status,
+                [
+                    (
+                        axum::http::header::CONTENT_TYPE,
+                        "application/vnd.apple.mpegurl",
+                    ),
+                    (axum::http::header::ACCESS_CONTROL_ALLOW_ORIGIN, "*"),
+                    (axum::http::header::ACCESS_CONTROL_ALLOW_HEADERS, "*"),
+                    (
+                        axum::http::header::CACHE_CONTROL,
+                        "no-cache, no-store, must-revalidate",
+                    ),
+                ],
+                rewritten,
+            )
+                .into_response();
+        }
     }
 
     let out_ct = if content_type.is_empty() {
@@ -343,27 +379,66 @@ pub async fn proxy_vod_stream(
         &content_type
     };
 
-    let bytes = match resp.bytes().await {
-        Ok(b) => b,
-        Err(e) => {
-            return error_response(
-                StatusCode::BAD_GATEWAY,
-                "UPSTREAM_READ_ERROR",
-                format!("读取上游分片数据失败: {e}"),
-            );
+    let mut response_headers = axum::http::HeaderMap::new();
+    response_headers.insert(
+        axum::http::header::CONTENT_TYPE,
+        axum::http::HeaderValue::from_str(out_ct)
+            .unwrap_or(axum::http::HeaderValue::from_static("application/octet-stream")),
+    );
+    response_headers.insert(
+        axum::http::header::ACCESS_CONTROL_ALLOW_ORIGIN,
+        axum::http::HeaderValue::from_static("*"),
+    );
+    response_headers.insert(
+        axum::http::header::ACCESS_CONTROL_ALLOW_HEADERS,
+        axum::http::HeaderValue::from_static("*"),
+    );
+    response_headers.insert(
+        axum::http::header::CACHE_CONTROL,
+        axum::http::HeaderValue::from_static("public, max-age=86400"),
+    );
+    if let Some(cr) = content_range {
+        if let Ok(v) = axum::http::HeaderValue::from_str(&cr) {
+            response_headers.insert(axum::http::header::CONTENT_RANGE, v);
         }
-    };
+    }
 
-    (
-        status,
-        [
-            (axum::http::header::CONTENT_TYPE, out_ct),
-            (axum::http::header::ACCESS_CONTROL_ALLOW_ORIGIN, "*"),
-            (axum::http::header::CACHE_CONTROL, "no-cache"),
-        ],
-        bytes,
-    )
-        .into_response()
+    (status, response_headers, bytes).into_response()
+}
+
+fn rewrite_tag_uri(line: &str, base_url: &reqwest::Url) -> String {
+    let uri_pattern = "URI=\"";
+    if let Some(start) = line.find(uri_pattern) {
+        let after = &line[start + uri_pattern.len()..];
+        if let Some(end) = after.find('"') {
+            let orig_uri = &after[..end];
+            if let Ok(abs_url) = base_url.join(orig_uri) {
+                let proxy_uri = encode_vod_proxy_url(abs_url.as_str());
+                return format!(
+                    "{}{}{}\"{}",
+                    &line[..start],
+                    uri_pattern,
+                    proxy_uri,
+                    &after[end + 1..]
+                );
+            }
+        }
+    } else if let Some(start) = line.find("URI='") {
+        let after = &line[start + 5..];
+        if let Some(end) = after.find('\'') {
+            let orig_uri = &after[..end];
+            if let Ok(abs_url) = base_url.join(orig_uri) {
+                let proxy_uri = encode_vod_proxy_url(abs_url.as_str());
+                return format!(
+                    "{}URI='{}'{}",
+                    &line[..start],
+                    proxy_uri,
+                    &after[end + 1..]
+                );
+            }
+        }
+    }
+    line.to_string()
 }
 
 fn rewrite_vod_m3u8(text: &str, base_url: &reqwest::Url) -> String {
@@ -375,25 +450,12 @@ fn rewrite_vod_m3u8(text: &str, base_url: &reqwest::Url) -> String {
             continue;
         }
         if trimmed.starts_with('#') {
-            if trimmed.starts_with("#EXT-X-MAP:") && trimmed.contains("URI=\"") {
-                if let Some(start) = trimmed.find("URI=\"") {
-                    let after = &trimmed[start + 5..];
-                    if let Some(end) = after.find('"') {
-                        let orig_uri = &after[..end];
-                        if let Ok(abs_url) = base_url.join(orig_uri) {
-                            let proxy_uri = encode_vod_proxy_url(abs_url.as_str());
-                            let new_line = format!(
-                                "{}URI=\"{}\"{}",
-                                &trimmed[..start],
-                                proxy_uri,
-                                &after[end + 1..]
-                            );
-                            out.push_str(&new_line);
-                            out.push('\n');
-                            continue;
-                        }
-                    }
-                }
+            // 拦截并代理重写所有带有 URI="..." 的标签（如 #EXT-X-KEY, #EXT-X-MAP, #EXT-X-MEDIA 等）
+            if trimmed.contains("URI=") {
+                let rewritten_tag = rewrite_tag_uri(line, base_url);
+                out.push_str(&rewritten_tag);
+                out.push('\n');
+                continue;
             }
             out.push_str(line);
             out.push('\n');
@@ -419,7 +481,7 @@ fn encode_vod_proxy_url(url: &str) -> String {
     format!("/api/v1/proxy/vod_stream?url={}", urlencoding(url))
 }
 
-fn urlencoding(input: &str) -> String {
+pub(crate) fn urlencoding(input: &str) -> String {
     let mut result = String::with_capacity(input.len() * 3);
     for b in input.bytes() {
         match b {
@@ -432,6 +494,39 @@ fn urlencoding(input: &str) -> String {
         }
     }
     result
+}
+
+pub(crate) fn urldecode(input: &str) -> String {
+    let mut bytes = Vec::with_capacity(input.len());
+    let mut chars = input.bytes();
+    while let Some(b) = chars.next() {
+        if b == b'%' {
+            let h1 = chars.next();
+            let h2 = chars.next();
+            if let (Some(h1), Some(h2)) = (h1, h2) {
+                let s = [h1, h2];
+                if let Ok(hex_str) = std::str::from_utf8(&s) {
+                    if let Ok(byte) = u8::from_str_radix(hex_str, 16) {
+                        bytes.push(byte);
+                        continue;
+                    }
+                }
+                bytes.push(b'%');
+                bytes.push(h1);
+                bytes.push(h2);
+            } else {
+                bytes.push(b'%');
+                if let Some(h1) = h1 {
+                    bytes.push(h1);
+                }
+            }
+        } else if b == b'+' {
+            bytes.push(b' ');
+        } else {
+            bytes.push(b);
+        }
+    }
+    String::from_utf8(bytes).unwrap_or_else(|_| input.to_string())
 }
 
 // ─────────────────────────────────────────────────────────────
@@ -647,3 +742,431 @@ fn parse_sources_payload(payload: serde_json::Value) -> Vec<VodSourceConfig> {
 
     results
 }
+
+/// 入库请求参数
+#[derive(Debug, Deserialize, Serialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
+pub struct ImportVodRequest {
+    pub library_id: Option<uuid::Uuid>,
+    pub item: AggregatedVodItem,
+    /// 指定入库的线路源 ID 列表；若为空，则入库全部可用线路
+    #[serde(default)]
+    pub selected_source_ids: Option<Vec<String>>,
+    /// 指定首选/默认线路源 ID
+    #[serde(default)]
+    pub default_source_id: Option<String>,
+}
+
+/// 入库响应结果
+#[derive(Debug, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
+pub struct ImportVodResponse {
+    pub item_id: uuid::Uuid,
+    pub library_id: uuid::Uuid,
+    pub title: String,
+    pub is_new: bool,
+}
+
+/// 查询是否已入库
+#[derive(Debug, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
+pub struct CheckImportedQuery {
+    pub title: String,
+}
+
+#[derive(Debug, Serialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
+pub struct CheckImportedResponse {
+    pub imported: bool,
+    pub item_id: Option<uuid::Uuid>,
+}
+
+pub async fn import_vod_to_library(
+    State(state): State<AppState>,
+    Current(principal): Current,
+    Json(payload): Json<ImportVodRequest>,
+) -> Response {
+    if principal.is_child() {
+        return error_response(
+            StatusCode::FORBIDDEN,
+            "CHILD_RESTRICTED",
+            "儿童模式禁止添加云端条目到媒体库",
+        );
+    }
+
+    let db = match state.db_or_503() {
+        Ok(d) => d,
+        Err(r) => return *r,
+    };
+
+    let item = &payload.item;
+    let title = item.title.trim();
+    if title.is_empty() {
+        return bad_request("片名不能为空");
+    }
+
+    // 1. 查找或创建媒体库
+    let libraries = match repo::list_libraries(&db).await {
+        Ok(l) => l,
+        Err(e) => return internal(e),
+    };
+
+    let library = if let Some(lid) = payload.library_id {
+        libraries.into_iter().find(|l| l.id == lid)
+    } else {
+        libraries.into_iter().next()
+    };
+
+    let library = match library {
+        Some(l) => l,
+        None => match repo::insert_library(
+            &db,
+            "云端聚合",
+            whatmedia_core::MediaKind::Mixed,
+            "cloud_vod",
+            "vod://cloud",
+            &["tmdb".to_string()],
+        )
+        .await
+        {
+            Ok(new_lib) => new_lib,
+            Err(e) => return internal(e),
+        },
+    };
+
+    // 2. 检查是否已经入库
+    let existing_check: Result<Option<(String,)>, sqlx::Error> = sqlx::query_as(
+        "SELECT id FROM media_item WHERE provider = 'vod_aggregate' AND title = ? LIMIT 1",
+    )
+    .bind(title)
+    .fetch_optional(db.pool())
+    .await;
+
+    if let Ok(Some((id_str,))) = existing_check {
+        if let Ok(uuid) = uuid::Uuid::parse_str(&id_str) {
+            return Json(ImportVodResponse {
+                item_id: uuid,
+                library_id: library.id,
+                title: title.to_string(),
+                is_new: false,
+            })
+            .into_response();
+        }
+    }
+
+    // 3. 构造 MediaItem 并写入
+    let item_id = uuid::Uuid::new_v4();
+    let type_name_lower = item.type_name.as_deref().unwrap_or("").to_lowercase();
+    let is_anime = type_name_lower.contains("动漫")
+        || type_name_lower.contains("动画")
+        || type_name_lower.contains("番剧")
+        || type_name_lower.contains("二次元");
+    let is_variety = type_name_lower.contains("综艺");
+    let is_doc = type_name_lower.contains("纪录") || type_name_lower.contains("记录");
+    let is_series = item.routes.iter().any(|r| r.episodes.len() > 1)
+        || type_name_lower.contains("剧")
+        || type_name_lower.contains("电视");
+
+    let kind = if is_anime {
+        whatmedia_core::MediaKind::Anime
+    } else if is_variety {
+        whatmedia_core::MediaKind::Variety
+    } else if is_doc {
+        whatmedia_core::MediaKind::Documentary
+    } else if is_series {
+        whatmedia_core::MediaKind::Series
+    } else {
+        whatmedia_core::MediaKind::Movie
+    };
+
+    let media_item = whatmedia_core::MediaItem {
+        id: item_id,
+        library_id: library.id,
+        kind,
+        title: title.to_string(),
+        original_title: None,
+        sort_title: Some(title.to_string()),
+        year: item.year.map(|y| y as i32),
+        overview: item.content.clone(),
+        runtime_ms: None,
+        rating: None,
+        locked_fields: vec![],
+        provider: Some("vod_aggregate".to_string()),
+        provider_id: Some(item.id.clone()),
+        added_at: chrono::Utc::now(),
+    };
+
+    if let Err(e) = repo::upsert_item(&db, &media_item).await {
+        return internal(e);
+    }
+
+    // 确定入库的线路列表与首选默认线路
+    let target_routes: Vec<&VodRoute> = if let Some(ref selected) = payload.selected_source_ids {
+        if !selected.is_empty() {
+            let filtered: Vec<&VodRoute> = item
+                .routes
+                .iter()
+                .filter(|r| selected.contains(&r.source_id))
+                .collect();
+            if filtered.is_empty() {
+                item.routes.iter().collect()
+            } else {
+                filtered
+            }
+        } else {
+            item.routes.iter().collect()
+        }
+    } else {
+        item.routes.iter().collect()
+    };
+
+    let default_source = payload
+        .default_source_id
+        .as_deref()
+        .filter(|s| target_routes.iter().any(|r| r.source_id == *s))
+        .unwrap_or_else(|| {
+            // 优先选择含有直链 m3u8 的可用线路，避免网页解析页成为默认线路
+            target_routes
+                .iter()
+                .find(|r| r.episodes.iter().any(|ep| ep.play_url.contains(".m3u8")))
+                .or_else(|| target_routes.first())
+                .map(|r| r.source_id.as_str())
+                .unwrap_or("")
+        });
+
+    let primary_route = target_routes
+        .iter()
+        .find(|r| r.source_id == default_source)
+        .or_else(|| {
+            target_routes
+                .iter()
+                .find(|r| r.episodes.iter().any(|ep| ep.play_url.contains(".m3u8")))
+        })
+        .or_else(|| target_routes.first())
+        .copied();
+
+    // 若为剧集/动漫/综艺，同步建立 series、season、episode 体系，使详情页能选集、搜索能搜到剧名
+    if is_anime || is_series || is_variety {
+        if let Ok(s) = repo::tv::upsert_series(&db, title, item.year.map(|y| y as i32)).await {
+            if let Ok(season) = repo::tv::upsert_season(&db, s.id, 1).await {
+                if let Some(route) = primary_route {
+                    for episode in &route.episodes {
+                        let _ = repo::tv::upsert_episode(
+                            &db,
+                            season.id,
+                            episode.index as i32,
+                            item_id,
+                            Some(&episode.name),
+                        )
+                        .await;
+                    }
+                }
+            }
+        }
+    }
+
+    // 4. 写入封面绑定
+    if let Some(poster_url) = &item.poster {
+        let _ = repo::image::bind(
+            &db,
+            &repo::image::ImageBind {
+                item_id,
+                kind: "poster",
+                url: Some(poster_url.as_str()),
+                cache_key: None,
+                provider: Some("vod_aggregate"),
+                width: None,
+                height: None,
+                cached_path: None,
+            },
+        )
+        .await;
+    }
+
+    // 5. 写入版本与虚拟文件
+    for (idx, route) in target_routes.iter().enumerate() {
+        let is_default = if !default_source.is_empty() {
+            route.source_id == default_source
+        } else {
+            idx == 0
+        };
+        let version_id = uuid::Uuid::new_v4();
+        let version = whatmedia_core::MediaVersion {
+            id: version_id,
+            item_id,
+            name: route.source_name.clone(),
+            source: Some(route.source_id.clone()),
+            resolution: Some("1080P".to_string()),
+            video_codec: Some(whatmedia_core::VideoCodec::H264),
+            hdr_type: whatmedia_core::HdrType::Sdr,
+            is_default,
+        };
+        if let Err(e) = repo::upsert_version(&db, &version).await {
+            tracing::warn!("写入 VOD 版本失败: {e}");
+            continue;
+        }
+
+        for episode in &route.episodes {
+            let file_id = uuid::Uuid::new_v4();
+            let file = whatmedia_core::MediaFile {
+                id: file_id,
+                version_id,
+                storage_provider: "cloud_vod".to_string(),
+                path: episode.play_url.clone(),
+                container: Some(whatmedia_core::Container::Other("m3u8".to_string())),
+                size_bytes: 0,
+                duration_ms: None,
+                bitrate: None,
+                file_fingerprint: format!("{}_{}_{}", route.source_id, item.id, episode.index),
+                probe_json: None,
+                is_available: true,
+            };
+            let _ = repo::upsert_file(&db, &file).await;
+
+            // 写入默认的视频流和音频流，防止播放决策报 NoVideoTrack (文件里没有视频轨)
+            let default_streams = vec![
+                whatmedia_core::MediaStream {
+                    id: uuid::Uuid::new_v4(),
+                    file_id,
+                    stream_type: whatmedia_core::StreamType::Video,
+                    index: 0,
+                    codec: Some("h264".to_string()),
+                    language: None,
+                    title: Some("1080P".to_string()),
+                    is_default: true,
+                    is_forced: false,
+                    width: Some(1920),
+                    height: Some(1080),
+                    bit_depth: Some(8),
+                    hdr_type: whatmedia_core::HdrType::Sdr,
+                    channels: None,
+                    bitrate: None,
+                },
+                whatmedia_core::MediaStream {
+                    id: uuid::Uuid::new_v4(),
+                    file_id,
+                    stream_type: whatmedia_core::StreamType::Audio,
+                    index: 1,
+                    codec: Some("aac".to_string()),
+                    language: None,
+                    title: Some("立体声".to_string()),
+                    is_default: true,
+                    is_forced: false,
+                    width: None,
+                    height: None,
+                    bit_depth: None,
+                    hdr_type: whatmedia_core::HdrType::Sdr,
+                    channels: Some(2),
+                    bitrate: None,
+                },
+            ];
+            let _ = repo::replace_streams(&db, file_id, &default_streams).await;
+        }
+    }
+
+    Json(ImportVodResponse {
+        item_id,
+        library_id: library.id,
+        title: title.to_string(),
+        is_new: true,
+    })
+    .into_response()
+}
+
+pub async fn check_vod_imported(
+    State(state): State<AppState>,
+    Query(query): Query<CheckImportedQuery>,
+) -> Response {
+    let db = match state.db_or_503() {
+        Ok(d) => d,
+        Err(r) => return *r,
+    };
+
+    let title = query.title.trim();
+    if title.is_empty() {
+        return Json(CheckImportedResponse {
+            imported: false,
+            item_id: None,
+        })
+        .into_response();
+    }
+
+    let existing: Result<Option<(String,)>, sqlx::Error> = sqlx::query_as(
+        "SELECT id FROM media_item WHERE provider = 'vod_aggregate' AND title = ? LIMIT 1",
+    )
+    .bind(title)
+    .fetch_optional(db.pool())
+    .await;
+
+    match existing {
+        Ok(Some((id_str,))) => {
+            let uuid = uuid::Uuid::parse_str(&id_str).ok();
+            Json(CheckImportedResponse {
+                imported: true,
+                item_id: uuid,
+            })
+            .into_response()
+        }
+        _ => Json(CheckImportedResponse {
+            imported: false,
+            item_id: None,
+        })
+        .into_response(),
+    }
+}
+
+pub async fn get_hot_vod_items(
+    State(state): State<AppState>,
+    Current(principal): Current,
+) -> Response {
+    if principal.is_child() {
+        return Json(Vec::<AggregatedVodItem>::new()).into_response();
+    }
+    let engine = state.aggregator.read().await;
+    let items = engine.search("").await;
+    Json(items).into_response()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_rewrite_vod_m3u8_with_encryption_and_tags() {
+        let base_url = reqwest::Url::parse("https://cdn.example.com/hls/index.m3u8").unwrap();
+        let m3u8_content = r#"#EXTM3U
+#EXT-X-VERSION:3
+#EXT-X-TARGETDURATION:10
+#EXT-X-MEDIA-SEQUENCE:0
+#EXT-X-KEY:METHOD=AES-128,URI="enc.key",IV=0x1234
+#EXT-X-MAP:URI="init.mp4"
+#EXTINF:10.0,
+seg-001.ts
+#EXTINF:10.0,
+https://cdn.example.com/hls/seg-002.ts
+#EXT-X-ENDLIST"#;
+
+        let rewritten = rewrite_vod_m3u8(m3u8_content, &base_url);
+        
+        // 验证 AES-128 KEY 是否被重写为代理地址
+        assert!(rewritten.contains("#EXT-X-KEY:METHOD=AES-128,URI=\"/api/v1/proxy/vod_stream?url=https%3A%2F%2Fcdn.example.com%2Fhls%2Fenc.key\",IV=0x1234"));
+        // 验证 EXT-X-MAP 是否被重写
+        assert!(rewritten.contains("#EXT-X-MAP:URI=\"/api/v1/proxy/vod_stream?url=https%3A%2F%2Fcdn.example.com%2Fhls%2Finit.mp4\""));
+        // 验证相对切片
+        assert!(rewritten.contains("/api/v1/proxy/vod_stream?url=https%3A%2F%2Fcdn.example.com%2Fhls%2Fseg-001.ts"));
+        // 验证绝对切片
+        assert!(rewritten.contains("/api/v1/proxy/vod_stream?url=https%3A%2F%2Fcdn.example.com%2Fhls%2Fseg-002.ts"));
+    }
+
+    #[test]
+    fn test_urldecode_and_double_encoding() {
+        let single = "https%3A%2F%2Fexample.com%2Fplay.m3u8";
+        assert_eq!(urldecode(single), "https://example.com/play.m3u8");
+
+        let double = "https%253A%252F%252Fexample.com%252Fplay.m3u8";
+        let step1 = urldecode(double);
+        assert_eq!(step1, "https%3A%2F%2Fexample.com%2Fplay.m3u8");
+        assert_eq!(urldecode(&step1), "https://example.com/play.m3u8");
+    }
+}
+

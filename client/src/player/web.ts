@@ -42,6 +42,7 @@ export interface HlsLike {
   currentLevel: number
   on(event: string, cb: (...args: unknown[]) => void): void
   off(event: string, cb: (...args: unknown[]) => void): void
+  recoverMediaError?(): void
 }
 
 export type HlsConstructor = new (config?: Record<string, unknown>) => HlsLike
@@ -76,6 +77,10 @@ export class WebPlayer implements MediaPlayer {
   private pendingStartAt = 0
   /** 卸载标志：异步回调回来时实例可能已经销毁了。 */
   private disposed = false
+
+  private currentHlsUrl = ''
+  private hasFallenBackToProxy = false
+  private mediaErrorRecoverCount = 0
 
   private onHlsError: ((...args: unknown[]) => void) | null = null
   private onHlsManifestParsed: ((...args: unknown[]) => void) | null = null
@@ -152,6 +157,7 @@ export class WebPlayer implements MediaPlayer {
   }
 
   private async loadHls(video: HTMLVideoElement, url: string): Promise<void> {
+    this.currentHlsUrl = url
     if (this.options.preferNativeHls && this.nativeHlsSupported(video)) {
       video.src = url
       return
@@ -168,7 +174,14 @@ export class WebPlayer implements MediaPlayer {
       return
     }
 
-    const hls = new HlsCtor({ enableWorker: true })
+    // 对齐 MoonTV 的高性能、低延迟缓冲配置
+    const hls = new HlsCtor({
+      enableWorker: true,
+      lowLatencyMode: true,
+      backBufferLength: 30,
+      maxBufferLength: 30,
+      maxMaxBufferLength: 60,
+    })
     this.hls = hls
 
     this.onHlsError = (_evt: unknown, data: unknown) => {
@@ -198,12 +211,37 @@ export class WebPlayer implements MediaPlayer {
   private handleHlsError(data: { fatal?: boolean; type?: string } | undefined): void {
     // 非致命错误 hls.js 自己会重试，报出来只会吓到用户。
     if (!data?.fatal) return
+
+    // 1. 媒体解码错误自动恢复（对齐 MoonTV）
+    if (
+      data.type === 'mediaError' &&
+      this.hls?.recoverMediaError &&
+      this.mediaErrorRecoverCount < 2
+    ) {
+      this.mediaErrorRecoverCount++
+      this.hls.recoverMediaError()
+      return
+    }
+
+    // 2. 直连网络受阻（CORS 或防盗链）时，透明降级回退到本地反代（对齐 MoonTV 直连优先 + 本地兜底）
+    if (
+      data.type === 'networkError' &&
+      !this.hasFallenBackToProxy &&
+      (this.currentHlsUrl.startsWith('http://') || this.currentHlsUrl.startsWith('https://')) &&
+      !this.currentHlsUrl.includes('/api/v1/proxy/vod_stream')
+    ) {
+      this.hasFallenBackToProxy = true
+      const fallbackUrl = `/api/v1/proxy/vod_stream?url=${encodeURIComponent(this.currentHlsUrl)}`
+      this.hls?.loadSource(fallbackUrl)
+      return
+    }
+
     const code: PlayerErrorCode =
       data.type === 'networkError' ? 'network' : data.type === 'mediaError' ? 'decode' : 'unknown'
     const message =
       code === 'network'
-        ? '视频流加载失败，网络中断或服务端已停止转码'
-        : '视频解码失败，可能是编码不被浏览器支持'
+        ? '视频流加载失败，网络中断或上游切片响应超时'
+        : '浏览器无法解码此视频格式（可能为 HEVC/H.265 编码或特殊音轨），推荐使用桌面客户端（内置 MPV）获得全格式流畅播放'
     this.core.fail(code, message)
   }
 
@@ -296,9 +334,9 @@ export class WebPlayer implements MediaPlayer {
     const mapped: PlayerErrorCode = code === 2 ? 'network' : code === 3 ? 'decode' : 'unknown'
     const message =
       mapped === 'network'
-        ? '视频加载中断，请检查网络'
+        ? '视频加载中断，请检查网络或切片源'
         : mapped === 'decode'
-          ? '浏览器无法解码这个视频（格式不支持或文件损坏）'
+          ? '浏览器无法解码此视频格式（可能为 HEVC/H.265 编码或特殊音轨），推荐使用桌面客户端（内置 MPV）全格式播放'
           : '播放失败'
     this.core.fail(mapped, message)
   }
@@ -423,6 +461,8 @@ export class WebPlayer implements MediaPlayer {
     this.onHlsError = null
     this.onHlsManifestParsed = null
     this.onHlsLevelSwitched = null
+    this.hasFallenBackToProxy = false
+    this.mediaErrorRecoverCount = 0
   }
 
   private requireVideo(): HTMLVideoElement {

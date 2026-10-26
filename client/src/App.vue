@@ -38,6 +38,7 @@ const isStandalone = computed(() => route.name === 'play' || route.name === 'log
 const showSidebar = computed(() => !isStandalone.value && !layout.isHandheld)
 const showBottomNav = computed(() => !isStandalone.value && layout.isHandheld)
 const showTopBar = computed(() => !isStandalone.value)
+const showTopBarSearch = computed(() => !layout.isTv && route?.name !== 'aggregator')
 
 const bottomNav = [
   { name: 'home', label: '首页', icon: 'M3 10.6 12 3.5l9 7.1M5.5 9.4V20h13V9.4' },
@@ -86,7 +87,7 @@ const rootStyle = computed(() => ({
     <AppSidebar v-if="showSidebar" />
 
     <main class="main" :style="contentStyle">
-      <TopBar v-if="showTopBar" :show-search="!layout.isTv" />
+      <TopBar v-if="showTopBar" :show-search="showTopBarSearch" />
       <RouterView />
     </main>
 

@@ -64,6 +64,11 @@ const effectiveQuality = computed(() => {
   return ''
 })
 
+const isCloudVod = computed(() => {
+  const anyItem = props.item as Record<string, unknown>
+  return anyItem.provider === 'vod_aggregate' || anyItem.storage_provider === 'cloud_vod'
+})
+
 const initial = computed(() => {
   const t = props.item.title.trim()
   return t ? [...t][0]!.toUpperCase() : '?'
@@ -138,8 +143,10 @@ async function toggleFavorite(e: Event) {
       <!-- 遮罩层内容：左上品标 + 右上心标 + 底部评分与大字 -->
       <div class="poster-shade">
         <div class="poster-top">
-          <span v-if="effectiveQuality" class="quality badge-quality">{{ effectiveQuality }}</span>
-          <span v-else />
+          <div class="poster-badges">
+            <span v-if="isCloudVod" class="quality badge-cloud">☁️ 云端</span>
+            <span v-if="effectiveQuality" class="quality badge-quality">{{ effectiveQuality }}</span>
+          </div>
 
           <button
             type="button"
@@ -231,5 +238,19 @@ async function toggleFavorite(e: Event) {
   border-radius: 0;
   background: rgba(0, 0, 0, 0.6);
   z-index: 2;
+}
+.poster-badges {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+.badge-cloud {
+  background: rgba(14, 165, 233, 0.85);
+  color: #fff;
+  font-size: 10px;
+  padding: 1px 5px;
+  border-radius: 3px;
+  font-weight: 700;
+  border: 1px solid rgba(56, 189, 248, 0.4);
 }
 </style>

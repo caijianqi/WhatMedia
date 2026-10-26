@@ -47,6 +47,30 @@ pub fn parse_routes(source_id: &str, source_name: &str, raw: &RawVodItem) -> Vec
         }
     }
 
+    // 稳定排序：优先直链 M3U8/MP4 线路，将非直链网页解析/分享页往后排
+    routes.sort_by_key(|r| {
+        let is_m3u8_name = r.play_from.to_lowercase().contains("m3u8");
+        let has_m3u8_url = r.episodes.iter().any(|ep| ep.play_url.contains(".m3u8"));
+        let has_direct_stream = r
+            .episodes
+            .iter()
+            .any(|ep| ep.play_url.ends_with(".mp4") || ep.play_url.contains(".mp4?"));
+        let is_share_or_html = r
+            .episodes
+            .iter()
+            .any(|ep| ep.play_url.contains("/share/") || ep.play_url.contains(".html"));
+
+        if has_m3u8_url || (is_m3u8_name && !is_share_or_html) {
+            0
+        } else if has_direct_stream {
+            1
+        } else if is_share_or_html {
+            3
+        } else {
+            2
+        }
+    });
+
     routes
 }
 

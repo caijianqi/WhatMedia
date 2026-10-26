@@ -172,6 +172,14 @@ pub async fn stop_session(db: &Db, id: Id, position_ms: Option<i64>) -> Result<(
     Ok(())
 }
 
+pub async fn delete_session(db: &Db, id: Id) -> Result<()> {
+    sqlx::query("DELETE FROM playback_session WHERE id = ?")
+        .bind(id.to_string())
+        .execute(db.pool())
+        .await?;
+    Ok(())
+}
+
 /// 续播点视图。"继续观看"页面只需要这些字段。
 #[derive(Debug, Clone, Serialize)]
 #[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
@@ -192,7 +200,8 @@ pub struct ResumePoint {
     pub updated_at: String,
 }
 
-/// 最近观看。同一部片只取最新一条，已看完（进度 > 95%）的不进列表。
+
+/// 最近观看。同一部片只取最新一条，已看完（进度 > 92%）的不进列表。
 pub async fn resume_points(db: &Db, user_id: Option<Id>, limit: u32) -> Result<Vec<ResumePoint>> {
     let rows = sqlx::query_as::<
         _,
@@ -212,10 +221,9 @@ pub async fn resume_points(db: &Db, user_id: Option<Id>, limit: u32) -> Result<V
                 s.strategy, s.updated_at
            FROM playback_session s
            JOIN media_item i ON i.id = s.item_id
-          WHERE s.stopped_at IS NULL
-            AND (? IS NULL OR s.user_id = ?)
-            AND s.position_ms > 30000
-            AND (s.duration_ms IS NULL OR s.position_ms < s.duration_ms * 95 / 100)
+          WHERE (? IS NULL OR s.user_id = ?)
+            AND s.position_ms > 5000
+            AND (s.duration_ms IS NULL OR s.position_ms < s.duration_ms * 92 / 100)
           ORDER BY s.updated_at DESC
           LIMIT ?",
     )

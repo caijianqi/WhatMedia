@@ -412,7 +412,17 @@ pub async fn create_playback_session(
     }
 
     let url = if d.strategy == PlaybackStrategy::DirectPlay {
-        Some(format!("/api/v1/stream/{}", target.file.id))
+        if target.file.storage_provider == "cloud_vod"
+            || target.file.path.starts_with("http://")
+            || target.file.path.starts_with("https://")
+        {
+            Some(format!(
+                "/api/v1/proxy/vod_stream?url={}",
+                crate::aggregator::urlencoding(&target.file.path)
+            ))
+        } else {
+            Some(format!("/api/v1/stream/{}", target.file.id))
+        }
     } else {
         None
     };
@@ -514,6 +524,35 @@ pub async fn session_stop(
     }
 }
 
+#[cfg_attr(
+    feature = "openapi",
+    utoipa::path(
+        delete,
+        path = "/api/v1/playback/sessions/{id}",
+        params(
+            ("id" = String, Path, description = "会话 id"),
+        ),
+        responses(
+            (status = 200, description = "成功", body = AckView),
+            (status = 503, description = "数据库未就绪", body = crate::ErrorBody),
+        ),
+        tag = "playback"
+    )
+)]
+pub async fn session_delete(
+    State(state): State<AppState>,
+    AxumPath(id): AxumPath<Id>,
+) -> Response {
+    let sessions = match state.sessions.clone() {
+        Some(s) => s,
+        None => return unavailable("播放会话未初始化"),
+    };
+    match sessions.delete(id).await {
+        Ok(_) => Json(serde_json::json!({ "ok": true })).into_response(),
+        Err(e) => internal(e),
+    }
+}
+
 #[derive(Debug, Deserialize)]
 #[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 pub struct ResumeParams {
@@ -587,6 +626,17 @@ pub async fn stream_direct(
         Ok(None) => return error_response(StatusCode::NOT_FOUND, "NOT_FOUND", "文件不存在"),
         Err(e) => return internal(e),
     };
+
+    if target.file.storage_provider == "cloud_vod"
+        || target.file.path.starts_with("http://")
+        || target.file.path.starts_with("https://")
+    {
+        let proxy_url = format!(
+            "/api/v1/proxy/vod_stream?url={}",
+            crate::aggregator::urlencoding(&target.file.path)
+        );
+        return axum::response::Redirect::temporary(&proxy_url).into_response();
+    }
 
     let storage = match state.storage_for(&target.library_root) {
         Ok(s) => s,
@@ -1164,12 +1214,54 @@ async fn build_media(
     db: &whatmedia_database::Db,
     target: &FileTarget,
 ) -> anyhow::Result<MediaCapability> {
-    let streams: Vec<MediaStream> = whatmedia_database::repo::files_for_item(db, target.item_id)
+    let mut streams: Vec<MediaStream> = whatmedia_database::repo::files_for_item(db, target.item_id)
         .await?
         .into_iter()
         .find(|(f, _)| f.id == target.file.id)
         .map(|(_, s)| s)
         .unwrap_or_default();
+
+    // 保底：若为全网聚合添加的云端条目且数据库尚未生成轨信息，自动补全默认 H264/AAC 流，防止报 NoVideoTrack
+    if streams.is_empty()
+        && (target.file.storage_provider == "cloud_vod"
+            || target.file.path.starts_with("http://")
+            || target.file.path.starts_with("https://"))
+    {
+        streams.push(whatmedia_core::MediaStream {
+            id: uuid::Uuid::new_v4(),
+            file_id: target.file.id,
+            stream_type: whatmedia_core::StreamType::Video,
+            index: 0,
+            codec: Some("h264".to_string()),
+            language: None,
+            title: Some("1080P".to_string()),
+            is_default: true,
+            is_forced: false,
+            width: Some(1920),
+            height: Some(1080),
+            bit_depth: Some(8),
+            hdr_type: whatmedia_core::HdrType::Sdr,
+            channels: None,
+            bitrate: None,
+        });
+        streams.push(whatmedia_core::MediaStream {
+            id: uuid::Uuid::new_v4(),
+            file_id: target.file.id,
+            stream_type: whatmedia_core::StreamType::Audio,
+            index: 1,
+            codec: Some("aac".to_string()),
+            language: None,
+            title: Some("立体声".to_string()),
+            is_default: true,
+            is_forced: false,
+            width: None,
+            height: None,
+            bit_depth: None,
+            hdr_type: whatmedia_core::HdrType::Sdr,
+            channels: Some(2),
+            bitrate: None,
+        });
+    }
 
     Ok(MediaCapability::from_parts(
         target.file.container.clone(),

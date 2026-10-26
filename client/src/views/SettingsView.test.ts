@@ -902,6 +902,55 @@ describe('SettingsView', () => {
     expect(w.text()).toContain('已成功持久化保存')
     expect(w.text()).toContain('百度网盘')
   })
+
+  it('用户与权限管理：展示用户列表并支持打开添加成员模态窗', async () => {
+    const mockUsers = [
+      {
+        id: 'u-1',
+        username: 'admin',
+        display_name: '系统管理员',
+        role: 'admin',
+        max_rating: null,
+        disabled: false,
+      },
+      {
+        id: 'u-2',
+        username: 'kiddo',
+        display_name: '小明',
+        role: 'child',
+        max_rating: 'PG-13',
+        disabled: false,
+      },
+    ]
+
+    stubFetch([
+      ['/health', () => mockHealth],
+      ['/hardware/profile', () => mockHardware],
+      ['/settings', () => mockSettings],
+      ['/storage', () => mockStorage],
+      ['/auth/users', () => mockUsers],
+    ])
+
+    const w = mountSettings({ tab: 'users' })
+    await flushPromises()
+
+    // 验证用户与权限板块正常渲染
+    expect(w.text()).toContain('用户与权限管理')
+    expect(w.text()).toContain('系统管理员')
+    expect(w.text()).toContain('@admin')
+    expect(w.text()).toContain('小明')
+    expect(w.text()).toContain('@kiddo')
+    expect(w.text()).toContain('仅限 PG-13 及以下')
+
+    // 点击添加新成员按钮打开弹窗
+    const addBtn = w.find('.btn-create-user')
+    expect(addBtn.exists()).toBe(true)
+    await addBtn.trigger('click')
+    await flushPromises()
+
+    expect(w.find('.user-modal-box').exists()).toBe(true)
+    expect(w.text()).toContain('添加新家庭成员')
+  })
 })
 
 

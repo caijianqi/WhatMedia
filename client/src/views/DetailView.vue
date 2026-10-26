@@ -8,7 +8,7 @@
  * 真正的会话在播放器页创建。
  */
 import { computed, onMounted, ref, watch } from 'vue'
-import { useRoute } from 'vue-router'
+import { useRoute, useRouter } from 'vue-router'
 import EpisodeList from '../components/EpisodeList.vue'
 import IdentifyModal from '../components/IdentifyModal.vue'
 import { toast } from '../stores/toast'
@@ -17,6 +17,7 @@ import type { CreditsView, DecideView, ItemDetail, SeriesRef } from '../api/clie
 import { hdrLabel, isHdr } from '../lib/hdr'
 
 const route = useRoute()
+const router = useRouter()
 const id = computed(() => String(route.params.id))
 
 const detail = ref<ItemDetail | null>(null)
@@ -111,7 +112,7 @@ async function rescrapeCurrent(): Promise<void> {
     const provider = typeof raw.provider === 'string' ? raw.provider : null
     const providerId = typeof raw.provider_id === 'string' ? raw.provider_id : null
     const libId = typeof raw.library_id === 'string' ? raw.library_id : undefined
-    if (provider && providerId) {
+    if (provider && providerId && provider !== 'vod_aggregate') {
       await api.identify(id.value, {
         provider,
         provider_id: providerId,
@@ -120,9 +121,12 @@ async function rescrapeCurrent(): Promise<void> {
     } else {
       await api.startScrape({
         library_id: libId,
+        item_id: id.value,
         force: true,
       } as any)
-      toast('已提交强制重新刮削任务，后台拉取中...', { type: 'info' })
+      toast('已提交重新刮削任务，后台处理中...', { type: 'info' })
+      // 稍微等待 1.5 秒后刷新详情
+      await new Promise(r => setTimeout(r, 1500))
     }
     posterError.value = false
     await load()
@@ -130,6 +134,26 @@ async function rescrapeCurrent(): Promise<void> {
     toast(`重新刮削失败：${err instanceof Error ? err.message : String(err)}`, { type: 'error' })
   } finally {
     rescraping.value = false
+  }
+}
+
+const deleting = ref(false)
+
+async function confirmDeleteItem(): Promise<void> {
+  if (!detail.value) return
+  const itemTitle = detail.value.title || '此影片'
+  if (!window.confirm(`确定要从媒体库彻底删除《${itemTitle}》吗？删除后将无法恢复。`)) {
+    return
+  }
+  deleting.value = true
+  try {
+    await api.deleteItem(id.value)
+    toast(`已成功从媒体库删除《${itemTitle}》`, { type: 'info' })
+    await router.replace({ name: 'library' })
+  } catch (err) {
+    toast(`删除失败：${err instanceof Error ? err.message : String(err)}`, { type: 'error' })
+  } finally {
+    deleting.value = false
   }
 }
 
@@ -157,6 +181,40 @@ const displayTitle = computed(() => {
     return series.value.title
   }
   return detail.value?.title ?? ''
+})
+
+const playTargetQuery = computed(() => {
+  const q: Record<string, string | number> = { start: resumeMs.value ?? 0 }
+  if ((detail.value as any)?.provider === 'vod_aggregate') {
+    const firstFile = detail.value?.versions?.[0]?.files?.[0]
+    if (firstFile?.path) {
+      q.vod_url = firstFile.path
+      q.vod_title = displayTitle.value
+    }
+  }
+  return q
+})
+
+const restartTargetQuery = computed(() => {
+  const q: Record<string, string | number> = { start: 0 }
+  if ((detail.value as any)?.provider === 'vod_aggregate') {
+    const firstFile = detail.value?.versions?.[0]?.files?.[0]
+    if (firstFile?.path) {
+      q.vod_url = firstFile.path
+      q.vod_title = displayTitle.value
+    }
+  }
+  return q
+})
+
+const hasPlayableSource = computed(() => {
+  if (!detail.value) return false
+  if ((detail.value as any)?.provider === 'vod_aggregate') {
+    const firstFile = detail.value?.versions?.[0]?.files?.[0]
+    return !!firstFile?.path
+  }
+  const versions = detail.value.versions || []
+  return versions.some((v) => v.files && v.files.length > 0)
 })
 
 const displaySubtitle = computed(() => {
@@ -198,6 +256,9 @@ const metaItems = computed(() => {
   }
   if (mainQuality.value) {
     items.push({ text: mainQuality.value, isQuality: true })
+  }
+  if ((detail.value as any).provider === 'vod_aggregate') {
+    items.push({ text: '☁️ 全网秒播 (云端)', isQuality: true })
   }
   return items
 })
@@ -312,23 +373,40 @@ const mainQuality = computed(() => {
 
             <!-- 动作交互按钮 -->
             <div class="actions">
-              <RouterLink
-                :to="{ name: 'play', params: { id: detail.id }, query: { start: resumeMs ?? 0 } }"
-                class="btn btn-primary"
+              <!-- 若无有效播放连接，禁用并提示 -->
+              <button
+                v-if="!hasPlayableSource"
+                type="button"
+                class="btn btn-disabled"
+                disabled
+                title="当前条目暂无可用播放源或文件"
               >
                 <svg viewBox="0 0 24 24" aria-hidden="true">
-                  <path d="m8 5 12 7-12 7z" />
+                  <circle cx="12" cy="12" r="9" />
+                  <path d="m4.93 4.93 14.14 14.14" />
                 </svg>
-                {{ resumeMs ? '继续播放' : '立即播放' }}
-              </RouterLink>
+                <span>暂无播放源</span>
+              </button>
 
-              <RouterLink
-                v-if="resumeMs"
-                :to="{ name: 'play', params: { id: detail.id }, query: { start: 0 } }"
-                class="btn btn-secondary"
-              >
-                从头播放
-              </RouterLink>
+              <template v-else>
+                <RouterLink
+                  :to="{ name: 'play', params: { id: detail.id }, query: playTargetQuery }"
+                  class="btn btn-primary"
+                >
+                  <svg viewBox="0 0 24 24" aria-hidden="true">
+                    <path d="m8 5 12 7-12 7z" />
+                  </svg>
+                  {{ resumeMs ? '继续播放' : '立即播放' }}
+                </RouterLink>
+
+                <RouterLink
+                  v-if="resumeMs"
+                  :to="{ name: 'play', params: { id: detail.id }, query: restartTargetQuery }"
+                  class="btn btn-secondary"
+                >
+                  从头播放
+                </RouterLink>
+              </template>
 
               <!-- 收藏按钮 -->
               <button
@@ -388,6 +466,25 @@ const mainQuality = computed(() => {
                 </svg>
                 <span>识别 / 换匹配</span>
               </button>
+
+              <!-- 从媒体库删除按钮 -->
+              <button
+                type="button"
+                class="btn btn-secondary btn-delete"
+                title="从媒体库彻底移除该影片及其关联版本"
+                :disabled="deleting"
+                style="color: #f87171; border-color: rgba(239, 68, 68, 0.35);"
+                @click="confirmDeleteItem"
+              >
+                <svg
+                  viewBox="0 0 24 24"
+                  aria-hidden="true"
+                  style="width: 15px; height: 15px; fill: none; stroke: currentColor; stroke-width: 2;"
+                >
+                  <path d="M3 6h18m-2 0v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" stroke-linecap="round" stroke-linejoin="round"/>
+                </svg>
+                <span>{{ deleting ? '删除中...' : '删除资源' }}</span>
+              </button>
             </div>
           </div>
         </div>
@@ -396,8 +493,8 @@ const mainQuality = computed(() => {
       <!-- 详情下半部分内容区 -->
       <div class="detail-body">
         <!-- 仅当不可播放时极简警示，日常直接播放绝不冗余打扰 -->
-        <div v-if="decision?.strategy === 'unsupported'" class="unsupported-alert">
-          <svg viewBox="0 0 24 24" aria-hidden="true">
+        <div v-if="decision?.strategy === 'unsupported' && (detail as any)?.provider !== 'vod_aggregate' && (detail as any)?.item?.provider !== 'vod_aggregate'" class="unsupported-alert">
+          <svg viewBox="0 0 24 24" aria-hidden="true" style="width: 20px; height: 20px; min-width: 20px; min-height: 20px; flex-shrink: 0;">
             <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm1 15h-2v-2h2v2zm0-4h-2V7h2v6z" />
           </svg>
           <span>此片源格式在当前浏览器上暂不支持，推荐使用桌面客户端播放。</span>
@@ -701,6 +798,27 @@ const mainQuality = computed(() => {
   gap: 12px;
   margin-top: 14px;
 }
+.actions .btn-disabled {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 22px;
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  color: var(--muted);
+  font-size: 14px;
+  font-weight: 600;
+  cursor: not-allowed;
+  opacity: 0.65;
+}
+.actions .btn-disabled svg {
+  width: 16px;
+  height: 16px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 2;
+}
 .actions .btn-primary {
   display: inline-flex;
   align-items: center;
@@ -772,6 +890,16 @@ const mainQuality = computed(() => {
   color: #fca5a5;
   font-size: 13px;
   margin-bottom: 24px;
+}
+.unsupported-alert svg {
+  width: 20px;
+  height: 20px;
+  min-width: 20px;
+  min-height: 20px;
+  max-width: 20px;
+  max-height: 20px;
+  flex-shrink: 0;
+  fill: currentColor;
 }
 
 /* 4 宫格科技事实参数矩阵 */
