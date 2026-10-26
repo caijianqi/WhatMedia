@@ -1,7 +1,13 @@
-# 手写，不是生成的。见 Cargo.toml 与 ADR-0005 的说明。
-# 增删命令时必须同步改 permissions/default.toml 与本目录。
+# Automatically generated - DO NOT EDIT!
+
+"$schema" = "../../schemas/schema.json"
 
 [[permission]]
-identifier = "allow-media3-clamp_seek"
-description = "允许调用 media3_clamp_seek 命令，无预置作用域。"
+identifier = "allow-media3-clamp-seek"
+description = "Enables the media3_clamp_seek command without any pre-configured scope."
 commands.allow = ["media3_clamp_seek"]
+
+[[permission]]
+identifier = "deny-media3-clamp-seek"
+description = "Denies the media3_clamp_seek command without any pre-configured scope."
+commands.deny = ["media3_clamp_seek"]

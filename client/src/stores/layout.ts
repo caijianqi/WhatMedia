@@ -37,12 +37,13 @@ export const useLayoutStore = defineStore('layout', () => {
   /** 是否已完成一次初始化。避免首帧用默认值闪一下桌面布局。 */
   const ready = ref(false)
 
-  const metrics = computed<LayoutMetrics>(
-    () => layoutFor(form.value, { width: width.value, height: height.value, dpr: dpr.value }, safe.value),
-  )
+  const metrics = computed<LayoutMetrics>(() => {
+    const effectiveForm = form.value === 'web' && width.value < 768 ? 'handheld' : form.value
+    return layoutFor(effectiveForm, { width: width.value, height: height.value, dpr: dpr.value }, safe.value)
+  })
 
   const isTv = computed(() => form.value === 'tv')
-  const isHandheld = computed(() => form.value === 'handheld')
+  const isHandheld = computed(() => form.value === 'handheld' || (form.value === 'web' && width.value < 768))
   /** TV 与手机都没有指针 —— 悬停样式在这两种形态上是死代码。 */
   const hasPointer = computed(() => !isTv.value && !isHandheld.value)
 

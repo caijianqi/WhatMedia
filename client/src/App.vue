@@ -15,13 +15,14 @@
  * 安全区必须吃到布局里。不处理的后果是 iPhone 上底栏被手势条盖住一半，
  * 而开发者拿不带刘海的测试机完全看不出来。
  */
-import { computed, onBeforeUnmount, onMounted } from 'vue'
+import { computed, onBeforeUnmount, onMounted, watch } from 'vue'
 import { useRoute } from 'vue-router'
 import AppSidebar from './components/AppSidebar.vue'
 import TopBar from './components/TopBar.vue'
 import GlobalToast from './components/GlobalToast.vue'
 import { useLayoutStore } from './stores/layout'
 import { useSessionStore } from './stores/session'
+import { useTvFocus } from './composables/useTvFocus'
 
 const route = useRoute()
 const layout = useLayoutStore()
@@ -30,6 +31,17 @@ const layout = useLayoutStore()
 useSessionStore()
 
 const isStandalone = computed(() => route.name === 'play' || route.name === 'login')
+const tvFocusEnabled = computed(() => !isStandalone.value)
+const { resetFocus } = useTvFocus({ enabled: tvFocusEnabled })
+
+watch(
+  () => route.fullPath,
+  () => {
+    if (tvFocusEnabled.value && layout.isTv) {
+      resetFocus()
+    }
+  },
+)
 
 /**
  * 手机上没有侧栏，导航退回底栏。
@@ -52,7 +64,12 @@ const bottomNav = [
   { name: 'settings', label: '设置', icon: 'M4 7h10M18 7h2M4 12h4M12 12h8M4 17h12M20 17h0M15 7v0' },
 ]
 
-onMounted(() => void layout.init())
+onMounted(async () => {
+  await layout.init()
+  if (layout.isTv) {
+    resetFocus()
+  }
+})
 onBeforeUnmount(() => layout.dispose())
 
 /** 主内容区的内边距：仅在真实异形屏安全区生效，不覆盖 .main 原生 padding (0 34px 40px) */

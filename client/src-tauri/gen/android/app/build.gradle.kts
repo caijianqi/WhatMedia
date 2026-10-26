@@ -1,12 +1,19 @@
 import java.util.Properties
 import java.io.FileInputStream
 
-// ── 版本矩阵 ──────────────────────────────────────────────
-// 读 tauri.properties，避免版本号在两处漂移。
+// ── 签名与版本矩阵 ──────────────────────────────────────────────
+// 读 tauri.properties 与 keystore.properties，避免版本号与密钥在多处漂移。
 val tauriProperties = Properties().apply {
     val propFile = rootProject.file("tauri.properties")
     if (propFile.exists()) {
         load(FileInputStream(propFile))
+    }
+}
+
+val keystorePropertiesFile = rootProject.file("keystore.properties")
+val keystoreProperties = Properties().apply {
+    if (keystorePropertiesFile.exists()) {
+        load(FileInputStream(keystorePropertiesFile))
     }
 }
 
@@ -21,6 +28,7 @@ plugins {
 android {
     // Media3 1.4+ 要求 compileSdk 34。低于它会拿到一堆莫名其妙的编译错误。
     compileSdk = 34
+    ndkVersion = "28.2.13676358"
     namespace = "media.whatmedia.client"
 
     defaultConfig {
@@ -40,6 +48,30 @@ android {
         // `androidx.media3.session` 的 MediaStyle，无需额外配置。
     }
 
+    signingConfigs {
+        create("release") {
+            val storeFileName = keystoreProperties.getProperty("storeFile")
+            val keystoreFile = if (storeFileName != null) rootProject.file(storeFileName) else null
+            if (keystoreFile != null && keystoreFile.exists()) {
+                storeFile = keystoreFile
+                storePassword = keystoreProperties.getProperty("storePassword")
+                keyAlias = keystoreProperties.getProperty("keyAlias")
+                keyPassword = keystoreProperties.getProperty("keyPassword")
+            } else {
+                initWith(getByName("debug"))
+            }
+        }
+    }
+
+    splits {
+        abi {
+            isEnable = true
+            reset()
+            include("armeabi-v7a", "arm64-v8a", "x86", "x86_64")
+            isUniversalApk = true
+        }
+    }
+
     buildTypes {
         getByName("debug") {
             // 调试包不打 minify，否则 Rust panic 栈全被混淆掉。
@@ -54,10 +86,11 @@ android {
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro",
             )
-            // Rust release 产物已经 strip 过；这里再给 Kotlin 签名用的 v2 签名。
-            signingConfig = signingConfigs.getByName("debug").takeIf { false }
+            signingConfig = signingConfigs.getByName("release")
         }
     }
+
+
 
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_17
@@ -75,7 +108,7 @@ android {
     sourceSets {
         getByName("main").java.srcDirs(
             "src/main/java",
-            "../../../../plugins/tauri-plugin-media3/android/src/main/java",
+            rootProject.file("../../../../plugins/tauri-plugin-media3/android/src/main/java"),
         )
     }
 
@@ -107,9 +140,11 @@ repositories {
 
 dependencies {
     // Tauri Android 运行时
+    implementation(project(":tauri-android"))
     implementation("androidx.appcompat:appcompat:1.7.0")
     implementation("androidx.activity:activity-ktx:1.9.2")
     implementation("androidx.core:core-ktx:1.13.1")
+    implementation("androidx.webkit:webkit:1.12.0")
     implementation("androidx.constraintlayout:constraintlayout:2.2.0")
     implementation("com.google.android.material:material:1.12.0")
 
@@ -128,13 +163,24 @@ dependencies {
     // 解码器选择：让 ExoPlayer 优先选硬件解码器
     implementation("androidx.media3:media3-datasource-okhttp:$media3Version")
 
-    implementation("org.jetbrains.kotlinx:kotlinx-serialization-json:1.7.1")
+    implementation("org.jetbrains.kotlinx:kotlinx-serialization-core:1.6.3")
+    implementation("org.jetbrains.kotlinx:kotlinx-serialization-json:1.6.3")
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.8.1")
 
     // MediaSession 的后台播放服务需要 lifecycle / media 兼容库。
     implementation("androidx.lifecycle:lifecycle-process:2.8.6")
     implementation("androidx.mediarouter:mediarouter:1.7.0")
 }
+
+configurations.all {
+    resolutionStrategy.eachDependency {
+        if (requested.group == "org.jetbrains.kotlinx" && requested.name.startsWith("kotlinx-serialization")) {
+            useVersion("1.6.3")
+            because("Kotlin 1.9.24 compatibility")
+        }
+    }
+}
+
 
 // ── Tauri 的 Rust 构建钩子 ────────────────────────────────
 //
@@ -145,8 +191,61 @@ dependencies {
 // 注意：如果 `tauri android init` 补生成了这些任务的声明，
 // 本段应当删掉，以生成物为准 —— 重复注册同名任务是硬错误。
 afterEvaluate {
-    tasks.matching { it.name.startsWith("merge") && it.name.contains("JniLib") }
-        .configureEach {
-            dependsOn(":app:tauriBuildRust")
-        }
+    tasks.findByName("tauriBuildRust")?.let { rustTask ->
+        tasks.matching { it.name.startsWith("merge") && it.name.contains("JniLib") }
+            .configureEach {
+                dependsOn(rustTask)
+            }
+    }
 }
+
+apply(from = "tauri.build.gradle.kts")
+
+tasks.register("assembleUniversalRelease") {
+    dependsOn("assembleRelease")
+    doLast {
+        val srcDir = layout.buildDirectory.dir("outputs/apk/release").get().asFile
+        val dstDir = layout.buildDirectory.dir("outputs/apk/universal/release").get().asFile
+        if (srcDir.exists()) {
+            dstDir.mkdirs()
+            srcDir.listFiles { file -> file.extension == "apk" }?.forEach { apk ->
+                val targetFile = File(dstDir, apk.name.replace("-release", "-universal-release"))
+                apk.copyTo(targetFile, overwrite = true)
+                apk.copyTo(File(dstDir, apk.name), overwrite = true)
+                println("Universal APK mirrored to: ${targetFile.absolutePath}")
+            }
+        }
+    }
+}
+
+tasks.register("assembleUniversalDebug") {
+    dependsOn("assembleDebug")
+}
+
+tasks.register("bundleUniversalRelease") {
+    dependsOn("bundleRelease")
+    doLast {
+        val srcDir = layout.buildDirectory.dir("outputs/bundle/release").get().asFile
+        val dstDir = layout.buildDirectory.dir("outputs/bundle/universal/release").get().asFile
+        if (srcDir.exists()) {
+            dstDir.mkdirs()
+            srcDir.listFiles { file -> file.extension == "aab" }?.forEach { aab ->
+                val targetFile = File(dstDir, aab.name.replace("-release", "-universal-release"))
+                aab.copyTo(targetFile, overwrite = true)
+                aab.copyTo(File(dstDir, aab.name), overwrite = true)
+                println("Universal AAB mirrored to: ${targetFile.absolutePath}")
+            }
+        }
+    }
+}
+
+tasks.register("bundleUniversalDebug") {
+    dependsOn("bundleDebug")
+}
+
+
+
+
+
+
+

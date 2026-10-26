@@ -182,6 +182,13 @@ a {
   box-shadow: inset 3px 0 #8c75ff;
   color: white;
 }
+.nav button.tv-focused, .nav a.tv-focused, .nav button:focus-visible, .nav a:focus-visible {
+  background: linear-gradient(100deg, rgba(121, 91, 255, 0.45), rgba(87, 200, 245, 0.25));
+  box-shadow: inset 3px 0 #57c8f5, 0 0 16px rgba(87, 200, 245, 0.4);
+  color: #ffffff;
+  outline: none;
+  transform: translateX(4px);
+}
 
 .nav .ico {
   width: 19px;
@@ -670,6 +677,10 @@ a {
   cursor: pointer;
   position: relative;
   text-align: left;
+  outline: none;
+}
+.poster-card.tv-focused, .poster-card:focus-visible {
+  z-index: 10;
 }
 .poster-image {
   aspect-ratio: 2 / 2.72;
@@ -686,6 +697,11 @@ a {
   border-color: rgba(159, 139, 255, 0.55);
   box-shadow: 0 15px 30px rgba(0, 0, 0, 0.28);
 }
+.poster-card.tv-focused .poster-image, .poster-card:focus-visible .poster-image {
+  transform: scale(1.06) translateY(-4px);
+  border-color: #57c8f5;
+  box-shadow: 0 0 0 3px #57c8f5, 0 18px 40px rgba(0, 0, 0, 0.6), 0 0 28px rgba(87, 200, 245, 0.45);
+}
 .poster-image img {
   width: 100%;
   height: 100%;
@@ -695,6 +711,16 @@ a {
 }
 .poster-card:hover .poster-image img {
   transform: scale(1.045);
+}
+.poster-card.tv-focused .poster-image img, .poster-card:focus-visible .poster-image img {
+  transform: scale(1.08);
+}
+.poster-card.tv-focused .fav-btn, .poster-card:focus-visible .fav-btn {
+  opacity: 1;
+}
+.poster-card.tv-focused .poster-name, .poster-card:focus-visible .poster-name {
+  color: #57c8f5;
+  font-weight: 700;
 }
 .poster-image:after {
   content: "";
@@ -2104,5 +2130,65 @@ a {
     animation: none !important;
   }
 }
+
+/* ===== TV 10-Foot 遥控器空间导航与焦点高亮系统 ===== */
+.tv-focused {
+  outline: none !important;
+}
+
+/* 按钮、标签、选集按钮的 TV 聚焦态 */
+.btn.tv-focused,
+.btn:focus-visible,
+.filter-chip.tv-focused,
+.filter-chip:focus-visible,
+.episode-btn.tv-focused,
+.episode-btn:focus-visible,
+.vod-episode-btn.tv-focused,
+.vod-episode-btn:focus-visible,
+.route-chip.tv-focused,
+.route-chip:focus-visible,
+.header-action-btn.tv-focused,
+.header-action-btn:focus-visible,
+.icon-btn.tv-focused,
+.icon-btn:focus-visible {
+  outline: none !important;
+  border-color: #57c8f5 !important;
+  box-shadow: 0 0 0 2.5px #57c8f5, 0 0 20px rgba(87, 200, 245, 0.45) !important;
+  transform: scale(1.05);
+  z-index: 5;
+  transition: transform 0.15s ease, box-shadow 0.15s ease, border-color 0.15s ease;
+}
+
+/* 播放器控制界面的 TV 聚焦态 */
+.player-shell .ctl-btn.tv-focused,
+.player-shell .ctl-btn:focus-visible,
+.player-shell .player-back-btn.tv-focused,
+.player-shell .player-back-btn:focus-visible,
+.player-shell .speed-btn.tv-focused,
+.player-shell .speed-btn:focus-visible,
+.player-shell .ctl-select.tv-focused,
+.player-shell .ctl-select:focus-visible {
+  outline: none !important;
+  border-color: #57c8f5 !important;
+  background: rgba(87, 200, 245, 0.3) !important;
+  box-shadow: 0 0 0 2.5px #57c8f5, 0 0 22px rgba(87, 200, 245, 0.6) !important;
+  transform: scale(1.15);
+  z-index: 10;
+}
+
+.player-shell .timeline-slider.tv-focused,
+.player-shell .timeline-slider:focus-visible {
+  outline: none !important;
+  box-shadow: 0 0 0 3px #57c8f5, 0 0 24px rgba(87, 200, 245, 0.7) !important;
+  transform: scaleY(1.3);
+}
+
+.player-shell .big-play.tv-focused,
+.player-shell .big-play:focus-visible {
+  outline: none !important;
+  box-shadow: 0 0 0 4px #57c8f5, 0 0 36px rgba(87, 200, 245, 0.8) !important;
+  transform: scale(1.15);
+}
+
 
 

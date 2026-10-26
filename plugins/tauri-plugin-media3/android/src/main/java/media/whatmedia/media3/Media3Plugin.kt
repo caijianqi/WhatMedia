@@ -4,7 +4,6 @@ import android.app.Activity
 import android.content.Context
 import android.content.Intent
 import android.os.Build
-import app.tauri.App
 import app.tauri.annotation.Command
 import app.tauri.annotation.TauriPlugin
 import app.tauri.plugin.Channel
@@ -15,42 +14,30 @@ import androidx.media3.common.C
 import androidx.media3.session.MediaSession
 import kotlinx.serialization.json.Json as KJson
 
+internal class EventChannelArgs {
+    var onEvent: Channel? = null
+}
+
 /**
  * Media3 播放器插件（Tauri 2）。
- *
- * ## 命令命名
- *
- * 一律 `media3_*`，与 Rust 侧 `plugins/tauri-plugin-media3/src/lib.rs` 注册的
- * `#[tauri::command]` 名一一对应。Rust 侧只是转发，所以**真正实现在这里** ——
- * 改名必须两边同时改，漏了的表现是前端 `invoke` 报 "command not found"。
- *
- * ## ⚠️ Tauri API 面需要装好 SDK 后校对
- *
- * 本文件的 `app.tauri.*` 调用是按 Tauri 2 的插件约定写的，
- * 但开发环境没有 Android SDK，**一行都没编译过**。
- * 装好 SDK 后请优先校对这些点：
- *   1. `@TauriPlugin` 需要 KSP 插件，KSP 版本要与 Kotlin 版本匹配；
- *   2. `invoke.parseArgs<T>()` 的泛型签名（有的版本是 `parseArgs(Class<T>)`）；
- *   3. `Channel` 的获取方式（有的版本从 `invoke.message` 里取）；
- *   4. `Plugin.app` 的类型是 `App`，`app.activity` 在某些版本上叫 `activity`。
- * 校对清单同步记录在 `docs/adr/0005`。
  */
 @TauriPlugin
-internal class Media3Plugin(private val app: App) : Plugin(app) {
+internal class Media3Plugin(private val myActivity: Activity) : Plugin(myActivity) {
 
     private val json = KJson { ignoreUnknownKeys = true }
 
     override fun load(webview: android.webkit.WebView) {
         super.load(webview)
-        Media3Bridge.attach(app.activity, this)
-        Media3Bridge.startNetwork(app.activity.applicationContext) { online, kind ->
+        Media3Bridge.attach(myActivity, this)
+        Media3Bridge.startNetwork(myActivity.applicationContext) { online, kind ->
             emit(Json.networkChanged(online, kind))
         }
+
         // 遥控器按键：注册进静态登记点，MainActivity 会来问。
         PlayerKeyBridge.register(
-            handler = { key -> Media3Bridge.onRemoteKey(key) },
-            playingQuery = { Media3Bridge.isPlaying() },
-            pipListener = { active -> emit(Json.pipChanged(active)) },
+            { key -> Media3Bridge.onRemoteKey(key) },
+            { Media3Bridge.isPlaying() },
+            { active -> emit(Json.pipChanged(active)) },
         )
     }
 
@@ -58,9 +45,9 @@ internal class Media3Plugin(private val app: App) : Plugin(app) {
 
     @Command
     fun media3_event_channel(invoke: Invoke) {
-        // 前端订阅事件用的通道。Rust 侧用 `Channel` 接收后转 emit 到 TS。
-        // 参数名 `onEvent` 与前端 `media3.ts` 里的调用一致。
-        val channel: Channel? = runCatching { invoke.getChannel("onEvent") }.getOrNull()
+        val channel = runCatching {
+            invoke.parseArgs(EventChannelArgs::class.java).onEvent
+        }.getOrNull()
         Media3Bridge.setChannel(channel)
         invoke.resolve(JSObject().apply { put("ok", true) })
     }
@@ -71,6 +58,7 @@ internal class Media3Plugin(private val app: App) : Plugin(app) {
         Media3Bridge.load(args)
         invoke.resolve()
     }
+
 
     @Command
     fun media3_play(invoke: Invoke) = Media3Bridge.play().let { invoke.resolve() }
@@ -139,25 +127,22 @@ internal class Media3Plugin(private val app: App) : Plugin(app) {
 
     @Command
     fun media3_set_pip(invoke: Invoke) {
-        if (invoke.getBoolean("enabled") == true) Media3Bridge.enterPip(app.activity)
+        if (invoke.getBoolean("enabled") == true) Media3Bridge.enterPip(myActivity)
         invoke.resolve()
     }
 
     /**
      * 设备形态。前端拿到它决定用哪套 UI。
-     *
-     * **不能让前端自己猜**：UA / 屏幕尺寸都区分不了 TV 与手机
-     * （TV 也是"小屏 + 无鼠标"）。猜错的后果是 TV 用户拿到触摸 UI，
-     * 而遥控器不产生触摸事件 → 完全无法操作，且没有任何报错。
      */
     @Command
     fun media3_device_form(invoke: Invoke) {
-        val fm = app.activity?.packageManager
+        val fm = myActivity.packageManager
         val isTv = fm?.hasSystemFeature(android.content.pm.PackageManager.FEATURE_LEANBACK) == true ||
             fm?.hasSystemFeature("android.hardware.type.television") == true
         val isTouch = fm?.hasSystemFeature(android.content.pm.PackageManager.FEATURE_TOUCHSCREEN) == true
         val form = when {
             isTv -> "tv"
+
             isTouch -> "handheld"
             else -> "unknown"
         }
@@ -166,13 +151,6 @@ internal class Media3Plugin(private val app: App) : Plugin(app) {
 
     /**
      * 取播放器的原始状态。
-     *
-     * **只给原值，不给成品快照**。轨道的 label 与 id 由 Rust 侧生成
-     * （`crates/media3` 的 `to_tracks` / `to_qualities`），
-     * 所以前端拿到这里的结果后还要再过一道 `plugin:media3|media3_snapshot`。
-     *
-     * 看着绕了一趟，但把"标签怎么取"留在一个能被测试覆盖的地方，
-     * 比在 Kotlin 里顺手拼一个字符串划算得多。
      */
     @Command
     fun media3_status(invoke: Invoke) {
@@ -191,19 +169,28 @@ internal class Media3Plugin(private val app: App) : Plugin(app) {
         reject("media3: 参数缺失或类型不对")
     }
 
+    private fun Invoke.getDouble(key: String): Double? =
+        runCatching { if (getArgs().has(key)) getArgs().getDouble(key) else null }.getOrNull()
+
+    private fun Invoke.getBoolean(key: String): Boolean? =
+        runCatching { if (getArgs().has(key)) getArgs().getBoolean(key) else null }.getOrNull()
+
+    private fun Invoke.getString(key: String): String? =
+        runCatching { if (getArgs().has(key) && !getArgs().isNull(key)) getArgs().getString(key) else null }.getOrNull()
+
     private inline fun <reified T> Invoke.parseArgsOrNull(): T? =
         runCatching {
-            val raw = this.message.getString("") ?: return null
+            val raw = this.getRawArgs()
+            if (raw.isBlank()) return null
             json.decodeFromString<T>(raw)
         }.getOrNull()
 
     companion object {
-        // 速率上下限。ExoPlayer 对超出范围的速率会抛异常，
-        // 而前端拖动条很容易给出 0 或 4。
         const val MIN_RATE = 0.25f
         const val MAX_RATE = 4.0f
     }
 }
+
 
 /**
  * 插件与 Service / Activity 之间的共享状态。
@@ -337,8 +324,9 @@ internal object Media3Bridge {
                 video = it.rawVideoTracks(),
             )
         }
-        return KJson.encodeToString(raw ?: RawTracksPayload())
+        return KJson.encodeToString(RawTracksPayload.serializer(), raw ?: RawTracksPayload())
     }
+
 
     /** 当前播放器状态的名字。线格式与 Rust `PlayerState` 一致（小写）。 */
     fun stateName(): String {

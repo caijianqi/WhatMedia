@@ -114,7 +114,7 @@ async function playEpisodeTest(ep: VodEpisode): Promise<void> {
       if (data.fatal) {
         if (!hasFallenBack && (streamUrl.startsWith('http://') || streamUrl.startsWith('https://'))) {
           hasFallenBack = true
-          streamUrl = api.getVodStreamProxyUrl(ep.play_url, activeRoute.value.source_id)
+          streamUrl = api.getVodStreamProxyUrl(ep.play_url, activeRoute.value?.source_id || '')
           hls.loadSource(streamUrl)
           return
         }
@@ -802,5 +802,56 @@ function close(): void {
   background: rgba(34, 197, 94, 0.2);
   color: #4ade80;
   border: 1px solid rgba(34, 197, 94, 0.4);
+}
+
+/* 手机移动端响应式优化 */
+@media (max-width: 640px) {
+  .vod-modal-backdrop {
+    padding: 8px;
+    align-items: flex-end;
+  }
+  .vod-modal {
+    max-height: 94vh;
+    border-radius: 16px 16px 8px 8px;
+  }
+  .vod-modal-header {
+    padding: 12px 14px;
+  }
+  .vod-modal-body {
+    flex-direction: column;
+    gap: 12px;
+    padding: 12px 14px;
+    max-height: 280px;
+  }
+  .vod-media-pane {
+    width: 100%;
+    height: 170px;
+  }
+  .vod-routes-section {
+    padding: 10px 14px;
+  }
+  .vod-episodes-section {
+    padding: 10px 14px 16px;
+    max-height: 200px;
+  }
+  .episodes-grid {
+    grid-template-columns: repeat(auto-fill, minmax(64px, 1fr));
+    gap: 6px;
+  }
+  .episode-btn {
+    padding: 8px 4px;
+    font-size: 11px;
+    min-height: 38px;
+  }
+  .vod-actions {
+    flex-direction: column;
+    width: 100%;
+    margin-top: 8px;
+  }
+  .btn-import {
+    width: 100%;
+    justify-content: center;
+    min-height: 40px;
+  }
 }
 </style>

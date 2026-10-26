@@ -154,15 +154,13 @@ internal class PlayerHolder(
         // 只在拿到新的 artwork 时才让 MediaSession 重新加载图片，
         // 否则每次 timeupdate 都会触发一次网络请求。
         val art = m.artworkUrl?.let { runCatching { android.net.Uri.parse(it) }.getOrNull() }
-        session.setMediaMetadata(
-            androidx.media3.common.MediaMetadata.Builder()
-                .setTitle(m.title)
-                .setSubtitle(m.subtitle)
-                .setArtworkUri(art)
-                .setDurationMs(m.durationMs.takeIf { it > 0 })
-                .build()
-        )
+        player.playlistMetadata = androidx.media3.common.MediaMetadata.Builder()
+            .setTitle(m.title)
+            .setSubtitle(m.subtitle)
+            .setArtworkUri(art)
+            .build()
     }
+
 
     // ── 载入 ────────────────────────────────────────────────
 

@@ -182,6 +182,18 @@ function onFullscreenPlayEpisode(payload: {
   episode: VodEpisode
 }): void {
   detailModalOpen.value = false
+  try {
+    sessionStorage.setItem(
+      'current_vod_episodes',
+      JSON.stringify({
+        item_title: payload.item.title,
+        source_name: payload.route.source_name,
+        episodes: payload.route.episodes,
+        current_url: payload.episode.play_url,
+      }),
+    )
+  } catch {}
+
   void router.push({
     name: 'play',
     params: { id: 'vod' },
@@ -999,14 +1011,44 @@ watch(
 
 @media (max-width: 768px) {
   .aggregator-page {
-    padding: 16px 16px 48px;
+    padding: 16px 16px 56px;
   }
   .vod-grid {
-    grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
+    grid-template-columns: repeat(auto-fill, minmax(130px, 1fr));
     gap: 12px;
   }
   .page-title {
     font-size: 22px;
+  }
+}
+
+@media (max-width: 640px) {
+  .aggregator-page {
+    padding: 12px 12px 64px;
+  }
+  .aggregator-header {
+    padding: 16px 14px 18px;
+    margin-bottom: 16px;
+  }
+  .page-title {
+    font-size: 20px;
+  }
+  .page-subtitle {
+    font-size: 12px;
+    margin-bottom: 14px;
+  }
+  .aggregator-searchbox {
+    padding: 6px 10px;
+  }
+  .vod-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 10px;
+  }
+  .vod-title-row {
+    font-size: 13px;
+  }
+  .vod-card {
+    border-radius: 10px;
   }
 }
 </style>

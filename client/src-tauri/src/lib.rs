@@ -11,10 +11,13 @@
 mod mpv;
 
 use mpv::{mpv_send, mpv_start, mpv_status, mpv_stop, MpvState};
+#[cfg(desktop)]
 use tauri::menu::{MenuBuilder, MenuItem};
+#[cfg(desktop)]
 use tauri::tray::TrayIconBuilder;
 // `get_webview_window` / `state` 都来自 Manager，没导入会报"方法不存在"，
 // 而错误信息不会提示是 trait 没进作用域。
+#[cfg(desktop)]
 use tauri::Manager;
 
 #[tauri::command]
@@ -24,8 +27,12 @@ fn ping() -> &'static str {
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
-    tauri::Builder::default()
-        .plugin(tauri_plugin_single_instance::init(|app, _argv, _cwd| {
+    #[allow(unused_mut)]
+    let mut builder = tauri::Builder::default();
+
+    #[cfg(desktop)]
+    {
+        builder = builder.plugin(tauri_plugin_single_instance::init(|app, _argv, _cwd| {
             // 第二次启动时把已有窗口拉到前台，而不是再开一个 ——
             // 两个实例会抢同一个 mpv 会话，表现为"控制条点了没反应"。
             if let Some(w) = app.get_webview_window("main") {
@@ -33,7 +40,10 @@ pub fn run() {
                 let _ = w.show();
                 let _ = w.set_focus();
             }
-        }))
+        }));
+    }
+
+    builder
         // Media3 播放器插件。Android 上真正干活的是它的 Kotlin 一半，
         // Rust 一半只负责把原始值翻译成前端契约；桌面端注册了也没人调。
         .plugin(tauri_plugin_media3::init())
@@ -45,12 +55,14 @@ pub fn run() {
             mpv_send,
             mpv_stop
         ])
-        .setup(|app| {
-            build_tray(app)?;
+        .setup(|_app| {
+            #[cfg(desktop)]
+            build_tray(_app)?;
             Ok(())
         })
         // 关窗不退出：客户端关了窗口还要在托盘里活着。
-        .on_window_event(|window, event| {
+        .on_window_event(|#[allow(unused_variables)] window, #[allow(unused_variables)] event| {
+            #[cfg(desktop)]
             if let tauri::WindowEvent::CloseRequested { api, .. } = event {
                 if window.label() == "main" {
                     api.prevent_close();
@@ -62,6 +74,7 @@ pub fn run() {
         .expect("启动 Tauri 应用失败");
 }
 
+#[cfg(desktop)]
 fn build_tray(app: &mut tauri::App) -> tauri::Result<()> {
     let show = MenuItem::with_id(app, "show", "打开 WhatMedia", true, None::<&str>)?;
     let quit = MenuItem::with_id(app, "quit", "退出", true, None::<&str>)?;
@@ -88,3 +101,4 @@ fn build_tray(app: &mut tauri::App) -> tauri::Result<()> {
         .build(app)?;
     Ok(())
 }
+

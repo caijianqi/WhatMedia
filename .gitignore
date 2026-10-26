@@ -5,13 +5,25 @@
 **/target
 *.rs.bk
 
-# 只忽略 Tauri 自动生成的 schema 目录。
-# `gen/android/` 必须入库（手写 Android 工程，环境无 Android SDK），
-# 构建产物由 gen/android/.gitignore 负责挡掉。
+# 只忽略 Tauri 自动生成的 schema 目录与机器特定/密钥文件。
 /client/src-tauri/gen/schemas
+plugins/**/permissions/schemas
+
+# Android 构建产物与机器特定配置/密钥
+*.apk
+*.aab
+*.jks
+*.keystore
+keystore.properties
 client/src-tauri/gen/android/.gradle/
 client/src-tauri/gen/android/build/
+client/src-tauri/gen/android/app/build/
+client/src-tauri/gen/android/buildSrc/build/
+client/src-tauri/gen/android/buildSrc/.gradle/
 client/src-tauri/gen/android/local.properties
+client/src-tauri/gen/android/tauri.settings.gradle
+client/src-tauri/gen/android/tauri.properties
+
 
 # ==============================================================================
 # 2. 前端产物与依赖 (Node / Vite / TS)

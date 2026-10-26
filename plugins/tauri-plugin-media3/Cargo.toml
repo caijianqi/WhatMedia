@@ -1,11 +1,15 @@
 [package]
 name = "tauri-plugin-media3"
+links = "tauri-plugin-media3"
 description = "Media3/ExoPlayer 播放器插件（Android / Android TV，111 §55）"
 version = "0.1.0"
 edition = "2021"
 rust-version = "1.98"
 license = "MIT OR Apache-2.0"
 repository = "https://github.com/whatmedia/whatmedia"
+
+[build-dependencies]
+tauri-plugin = { version = "2", features = ["build"] }
 
 [dependencies]
 # 语义层（错误码分类、轨道标签、seek 收敛…）在主 workspace 的 crates/media3 里，

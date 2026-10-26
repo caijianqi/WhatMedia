@@ -8,7 +8,7 @@
  *   2. **页面卸载前必须补发进度**。`pagehide` 时普通 fetch 大概率发不出去，
  *      所以走 `sendBeacon`。漏了这一步，用户关掉标签页后进度就停在十秒前。
  */
-import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
+import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { usePlayerStore } from '../stores/player'
 import { useLayoutStore } from '../stores/layout'
@@ -16,9 +16,13 @@ import { toast } from '../stores/toast'
 import * as api from '../api/client'
 import {
   TV_CONTROLS_TIMEOUT_MS,
-  remoteKeyToAction,
+  FocusMemory,
+  moveFocus,
   type RemoteKeyName,
+  type Direction,
+  type Focusable,
 } from '../lib/tv'
+import { isElementVisible } from '../composables/useTvFocus'
 import { seekSecondsForDrag, volumeDeltaForDrag } from '../lib/platform'
 
 const route = useRoute()
@@ -59,6 +63,23 @@ const dragValue = ref(0)
 const isFullscreen = ref(false)
 function onFullscreenChange() {
   isFullscreen.value = !!document.fullscreenElement
+  if (isFullscreen.value) {
+    if (layout.isHandheld && window.screen?.orientation && 'lock' in window.screen.orientation) {
+      try {
+        void (window.screen.orientation as any).lock('landscape').catch(() => {})
+      } catch {
+        // 部分浏览器不支持 orientation.lock，静默放行
+      }
+    }
+  } else {
+    if (window.screen?.orientation && 'unlock' in window.screen.orientation) {
+      try {
+        window.screen.orientation.unlock()
+      } catch {
+        // 静默放行
+      }
+    }
+  }
 }
 
 const position = computed(() => (seeking.value ? dragValue.value : store.snapshot.position))
@@ -91,6 +112,169 @@ const isPlaying = computed(() => store.snapshot.state === 'playing')
 const mediaTitle = ref('')
 const isCloudVodItem = ref(false)
 
+// ── 选集与自动连播系统 ──────────────────────────────────────
+export interface PlayableEpisode {
+  id: string
+  name: string
+  url?: string
+}
+
+const episodeList = ref<PlayableEpisode[]>([])
+const currentEpisodeId = ref<string>('')
+const showEpisodeDrawer = ref(false)
+const autoPlayCountdown = ref<number | null>(null)
+let countdownTimer: number | undefined
+const vodBaseTitle = ref('')
+
+const currentEpisodeIndex = computed(() =>
+  episodeList.value.findIndex(
+    (e) => e.id === currentEpisodeId.value || (e.url && e.url === currentEpisodeId.value),
+  ),
+)
+
+const nextEpisode = computed<PlayableEpisode | null>(() => {
+  const idx = currentEpisodeIndex.value
+  if (idx >= 0 && idx + 1 < episodeList.value.length) {
+    return episodeList.value[idx + 1] ?? null
+  }
+  return null
+})
+
+const prevEpisode = computed<PlayableEpisode | null>(() => {
+  const idx = currentEpisodeIndex.value
+  if (idx > 0) {
+    return episodeList.value[idx - 1] ?? null
+  }
+  return null
+})
+
+function isCurrentEpisode(ep: PlayableEpisode): boolean {
+  return ep.id === currentEpisodeId.value || (!!ep.url && ep.url === currentEpisodeId.value)
+}
+
+function toggleEpisodeDrawer() {
+  showEpisodeDrawer.value = !showEpisodeDrawer.value
+  armHideTimer()
+}
+
+function cancelAutoPlay() {
+  if (countdownTimer) {
+    clearInterval(countdownTimer)
+    countdownTimer = undefined
+  }
+  autoPlayCountdown.value = null
+}
+
+function startAutoPlayCountdown() {
+  cancelAutoPlay()
+  if (!nextEpisode.value) return
+  autoPlayCountdown.value = 5
+  countdownTimer = window.setInterval(() => {
+    if (autoPlayCountdown.value === null) return
+    if (autoPlayCountdown.value <= 1) {
+      cancelAutoPlay()
+      if (nextEpisode.value) {
+        void switchEpisode(nextEpisode.value)
+      }
+    } else {
+      autoPlayCountdown.value -= 1
+    }
+  }, 1000)
+}
+
+async function switchEpisode(ep: PlayableEpisode) {
+  cancelAutoPlay()
+  showEpisodeDrawer.value = false
+  currentEpisodeId.value = ep.url || ep.id
+  if (!stage.value) return
+
+  if (isVod.value && ep.url) {
+    mediaTitle.value = vodBaseTitle.value ? `${vodBaseTitle.value} - ${ep.name}` : ep.name
+    await store.openVodUrl(
+      { container: stage.value, fullscreenTarget: shell.value ?? undefined },
+      ep.url,
+      {
+        startMs: 0,
+        autoplay: true,
+      },
+    )
+  } else {
+    mediaTitle.value = ep.name
+    await store.open(
+      { container: stage.value, fullscreenTarget: shell.value ?? undefined },
+      ep.id,
+      {
+        startMs: 0,
+        autoplay: true,
+      },
+    )
+  }
+  armHideTimer()
+}
+
+async function loadEpisodes(): Promise<void> {
+  if (isVod.value) {
+    const rawVodUrl = (route.query.vod_url as string) || ''
+    currentEpisodeId.value = rawVodUrl
+    try {
+      const cached = sessionStorage.getItem('current_vod_episodes')
+      if (cached) {
+        const parsed = JSON.parse(cached)
+        vodBaseTitle.value = parsed.item_title || ''
+        if (Array.isArray(parsed.episodes) && parsed.episodes.length > 0) {
+          episodeList.value = parsed.episodes.map((e: any, idx: number) => ({
+            id: e.play_url || String(idx),
+            name: e.name || `第 ${idx + 1} 集`,
+            url: e.play_url,
+          }))
+        }
+      }
+    } catch {}
+  } else {
+    currentEpisodeId.value = itemId.value
+    try {
+      const item = await api.getItem(itemId.value).catch(() => null)
+      if (item) {
+        // 如果是剧集或单集，反查剧集列表
+        const seriesRef = await api.itemSeries(itemId.value).catch(() => null)
+        const seriesId = seriesRef?.id || (item.kind === 'series' ? item.id : null)
+        if (seriesId) {
+          const epPage = await api.listEpisodes({ series_id: seriesId, page_size: 500 }).catch(() => null)
+          if (epPage && epPage.data.length > 0) {
+            episodeList.value = epPage.data.map((e) => ({
+              id: e.item_id,
+              name: e.title || `第 ${e.episode_number} 集`,
+            }))
+            return
+          }
+        }
+
+        // 尝试从文件版本分集匹配
+        const defaultVer = item.versions?.find((v) => v.is_default) ?? item.versions?.[0]
+        if (defaultVer && defaultVer.files.length > 1) {
+          episodeList.value = defaultVer.files.map((f, idx) => ({
+            id: f.id,
+            name: `第 ${idx + 1} 集`,
+            url: f.path,
+          }))
+        }
+      }
+    } catch {}
+  }
+}
+
+// 监听播放结束事件，若有下一集自动开启倒计时连播
+watch(
+  () => store.snapshot.state,
+  (state: string) => {
+    if (state === 'ended' && nextEpisode.value) {
+      startAutoPlayCountdown()
+    } else if (state !== 'ended') {
+      cancelAutoPlay()
+    }
+  },
+)
+
 // ── 生命周期 ────────────────────────────────────────────────
 
 onMounted(async () => {
@@ -118,7 +302,7 @@ onMounted(async () => {
 
       // 智能匹配分集文件（优先根据 fingerprint 结尾的 _集数，其次按索引定位）
       const matchedFile = targetEpisodeNum
-        ? files.find((f) => f.file_fingerprint?.endsWith(`_${targetEpisodeNum}`)) ??
+        ? files.find((f) => (f as any).file_fingerprint?.endsWith(`_${targetEpisodeNum}`)) ??
           files[targetEpisodeNum - 1]
         : files[0]
 
@@ -172,6 +356,7 @@ onMounted(async () => {
       )
     }
   }
+  void loadEpisodes()
   window.addEventListener('keydown', onKeyDown)
   window.addEventListener('pagehide', onPageHide)
   document.addEventListener('fullscreenchange', onFullscreenChange)
@@ -182,12 +367,18 @@ onMounted(async () => {
 })
 
 onBeforeUnmount(() => {
+  cancelAutoPlay()
   window.removeEventListener('keydown', onKeyDown)
   window.removeEventListener('pagehide', onPageHide)
   document.removeEventListener('fullscreenchange', onFullscreenChange)
   window.removeEventListener('online', onOnline)
   window.removeEventListener('offline', onOffline)
   if (hideTimer) window.clearTimeout(hideTimer)
+  if (window.screen?.orientation && 'unlock' in window.screen.orientation) {
+    try {
+      window.screen.orientation.unlock()
+    } catch {}
+  }
   void store.close()
 })
 
@@ -203,17 +394,111 @@ function onPageHide() {
   store.flushBeforeUnload()
 }
 
-// ── 控制条显隐 ──────────────────────────────────────────────
+// ── 控制条显隐与焦点管理 ────────────────────────────────────
+
+const tvPlayerMemory = new FocusMemory()
+const currentFocusIdx = ref(-1)
+
+function collectPlayerFocusables(): { elements: HTMLElement[]; items: Focusable[] } {
+  if (!shell.value) return { elements: [], items: [] }
+
+  // 选集抽屉打开时，TV 焦点完全限制在抽屉内
+  if (showEpisodeDrawer.value) {
+    const selector = '.drawer-close, .drawer-ep-btn'
+    const all = Array.from(shell.value.querySelectorAll<HTMLElement>(selector))
+    const elements: HTMLElement[] = []
+    const items: Focusable[] = []
+    for (let i = 0; i < all.length; i++) {
+      const el = all[i]
+      if (!el || !isElementVisible(el)) continue
+      const rect = el.getBoundingClientRect()
+      elements.push(el)
+      items.push({
+        id: el.id || `p-drawer-${items.length}`,
+        rect: { x: rect.left, y: rect.top, w: rect.width, h: rect.height },
+        disabled: el.hasAttribute('disabled'),
+      })
+    }
+    return { elements, items }
+  }
+
+  if (!controlsVisible.value) return { elements: [], items: [] }
+  const selector =
+    '.player-back-btn, .big-play, .timeline-slider, .ctl-btn, .ctl-select, .speed-btn'
+  const all = Array.from(shell.value.querySelectorAll<HTMLElement>(selector))
+  const elements: HTMLElement[] = []
+  const items: Focusable[] = []
+  for (let i = 0; i < all.length; i++) {
+    const el = all[i]
+    if (!el || !isElementVisible(el)) continue
+    const rect = el.getBoundingClientRect()
+    elements.push(el)
+    items.push({
+      id: el.id || `p-focus-${items.length}`,
+      rect: { x: rect.left, y: rect.top, w: rect.width, h: rect.height },
+      disabled: el.hasAttribute('disabled'),
+    })
+  }
+  return { elements, items }
+}
+
+function applyPlayerFocus(el: HTMLElement) {
+  shell.value?.querySelectorAll('.tv-focused').forEach((node) => {
+    if (node !== el) node.classList.remove('tv-focused')
+  })
+  el.classList.add('tv-focused')
+  el.focus({ preventScroll: true })
+}
+
+function clearPlayerFocus() {
+  shell.value?.querySelectorAll('.tv-focused').forEach((node) => node.classList.remove('tv-focused'))
+  if (document.activeElement && shell.value?.contains(document.activeElement)) {
+    (document.activeElement as HTMLElement).blur()
+  }
+  currentFocusIdx.value = -1
+}
+
+function movePlayerFocus(dir: Direction): boolean {
+  const { elements, items } = collectPlayerFocusables()
+  if (items.length === 0) return false
+
+  let curIdx = currentFocusIdx.value
+  const active = document.activeElement as HTMLElement | null
+  if (active && shell.value?.contains(active)) {
+    const found = elements.indexOf(active)
+    if (found >= 0) curIdx = found
+  }
+
+  let nextIdx: number
+  if (curIdx < 0 || curIdx >= elements.length) {
+    // 默认聚焦到底部播放按钮或第一个控制按钮
+    const playBtnIdx = elements.findIndex((el) => {
+      const label = el.getAttribute('aria-label') || ''
+      return label.includes('播放') || label.includes('暂停')
+    })
+    nextIdx = playBtnIdx >= 0 ? playBtnIdx : 0
+  } else {
+    nextIdx = moveFocus(items, curIdx, dir, { memory: tvPlayerMemory })
+  }
+
+  if (nextIdx >= 0 && nextIdx < elements.length) {
+    currentFocusIdx.value = nextIdx
+    tvPlayerMemory.remember(nextIdx, items)
+    applyPlayerFocus(elements[nextIdx]!)
+    return true
+  }
+  return false
+}
 
 function armHideTimer() {
   if (hideTimer) window.clearTimeout(hideTimer)
   controlsVisible.value = true
-  // TV 上没有指针，"鼠标不动"这个触发条件永远不成立，
-  // 所以隐藏延迟要长得多 —— 否则遥控器用户刚按完键控制条就没了。
   const delay = isTv.value ? TV_CONTROLS_TIMEOUT_MS : 2500
   hideTimer = window.setTimeout(() => {
-    // 播放中才隐藏；暂停时用户多半在操作，藏起来反而烦。
-    if (isPlaying.value) controlsVisible.value = false
+    if (isPlaying.value) {
+      controlsVisible.value = false
+      clearPlayerFocus()
+    }
   }, delay)
 }
 
@@ -222,14 +507,6 @@ function onPointerMove() {
 }
 
 // ── 遥控器（TV）────────────────────────────────────────────
-//
-// Android 侧 `MainActivity.dispatchKeyEvent` 已经把 D-Pad 拦下了，
-// 但**只有播放/暂停/快进快退这类媒体键**会走 MediaSession，
-// 方向键与返回键是交给前端的（TV 上方向键属于焦点系统，不属于播放器）。
-// 所以这里监听的是 WebView 里剩下的那些键 ——
-// 大部分 Android WebView 会把 D-Pad 转成 ArrowUp/Down/Left/Right 的 keydown。
-
-/** TV keydown → 遥控器语义名。认不出来返回 null，交给普通键盘处理。 */
 function tvKeyName(e: KeyboardEvent): RemoteKeyName | null {
   switch (e.key) {
     case 'ArrowUp':
@@ -248,36 +525,147 @@ function tvKeyName(e: KeyboardEvent): RemoteKeyName | null {
     case 'MediaPlayPause':
       return 'toggle'
     case 'MediaTrackNext':
-      return 'seek-forward'
+    case 'PageDown':
+      return 'next'
     case 'MediaTrackPrevious':
-      return 'seek-backward'
+    case 'PageUp':
+      return 'previous'
     default:
       return null
   }
 }
 
 function onRemoteKey(name: RemoteKeyName): void {
-  const action = remoteKeyToAction(name, { playing: true, overlay: false })
-  switch (action.kind) {
-    case 'toggle-play':
-      togglePlay()
-      break
-    case 'seek':
-      void store.seek(Math.max(0, store.snapshot.position + action.seconds))
-      break
-    case 'back':
+  // 1. 返回键：优先关闭选集抽屉或连播倒计时，其次收起控制条，最后才退出播放
+  if (name === 'back') {
+    if (showEpisodeDrawer.value) {
+      showEpisodeDrawer.value = false
+      return
+    }
+    if (autoPlayCountdown.value !== null) {
+      cancelAutoPlay()
+      return
+    }
+    if (controlsVisible.value) {
+      controlsVisible.value = false
+      clearPlayerFocus()
+      return
+    }
+    if (isFullscreen.value) {
+      void store.setFullscreen(false)
+    } else {
       void router.back()
-      break
-    case 'move':
-    case 'activate':
-    case 'menu':
-      // 播放器页里方向键没有焦点可移动，一律当作"唤醒控制条"
-      armHideTimer()
-      break
-    default:
-      armHideTimer()
-      break
+    }
+    return
   }
+
+  // 2. 媒体键与切集
+  if (name === 'next') {
+    if (nextEpisode.value) {
+      void switchEpisode(nextEpisode.value)
+    } else {
+      skip(10)
+    }
+    armHideTimer()
+    return
+  }
+  if (name === 'previous') {
+    if (prevEpisode.value) {
+      void switchEpisode(prevEpisode.value)
+    } else {
+      skip(-10)
+    }
+    armHideTimer()
+    return
+  }
+  if (name === 'toggle') {
+    togglePlay()
+    armHideTimer()
+    return
+  }
+  if (name === 'seek-forward') {
+    skip(10)
+    armHideTimer()
+    return
+  }
+  if (name === 'seek-backward') {
+    skip(-10)
+    armHideTimer()
+    return
+  }
+
+  // 3. 菜单键
+  if (name === 'menu') {
+    if (!controlsVisible.value) {
+      armHideTimer()
+      movePlayerFocus('down')
+    } else {
+      controlsVisible.value = false
+      clearPlayerFocus()
+    }
+    return
+  }
+
+  // 4. 选择/确认键（OK）
+  if (name === 'select') {
+    if (!controlsVisible.value) {
+      togglePlay()
+      armHideTimer()
+      return
+    }
+
+    const active = document.activeElement as HTMLElement | null
+    if (active && shell.value?.contains(active) && active !== document.body) {
+      active.click()
+    } else {
+      togglePlay()
+    }
+    armHideTimer()
+    return
+  }
+
+  // 5. 方向键（Up / Down / Left / Right）
+  if (name === 'left' || name === 'right') {
+    if (!controlsVisible.value) {
+      // 控制条未显示时直接快退/快进 10 秒并唤醒控制条查看进度
+      skip(name === 'left' ? -10 : 10)
+      armHideTimer()
+      return
+    }
+
+    const active = document.activeElement as HTMLElement | null
+    if (active && active.classList.contains('timeline-slider')) {
+      skip(name === 'left' ? -5 : 5)
+      armHideTimer()
+      return
+    }
+
+    const moved = movePlayerFocus(name)
+    if (!moved) {
+      skip(name === 'left' ? -10 : 10)
+    }
+    armHideTimer()
+    return
+  }
+
+  if (name === 'up' || name === 'down') {
+    if (!controlsVisible.value) {
+      const delta = name === 'up' ? 0.05 : -0.05
+      const newVol = Math.min(1, Math.max(0, store.snapshot.volume + delta))
+      void store.setVolume(newVol)
+      gestureHint.value = `音量 ${Math.round(newVol * 100)}%`
+      setTimeout(() => {
+        gestureHint.value = null
+      }, 1500)
+      armHideTimer()
+      return
+    }
+
+    movePlayerFocus(name)
+    armHideTimer()
+    return
+  }
+
   armHideTimer()
 }
 
@@ -692,6 +1080,21 @@ const bufferedPct = computed(() => {
           </option>
         </select>
 
+        <!-- 选集按钮（多集时可见） -->
+        <button
+          v-if="episodeList.length > 1"
+          type="button"
+          class="ctl-btn episode-toggle-btn"
+          title="切换选集"
+          aria-label="切换选集"
+          @click="toggleEpisodeDrawer"
+        >
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <path d="M4 6h16M4 12h16M4 18h16" />
+          </svg>
+          <span class="ep-btn-label">选集</span>
+        </button>
+
         <!-- 播放倍速 -->
         <button
           type="button"
@@ -724,6 +1127,71 @@ const bufferedPct = computed(() => {
           </svg>
         </button>
       </div>
+    </div>
+
+    <!-- 自动连播下一集倒计时浮层 -->
+    <div
+      v-if="autoPlayCountdown !== null && nextEpisode"
+      class="player-countdown-overlay card"
+    >
+      <div class="countdown-badge">✦ 即将连播下一集</div>
+      <div class="countdown-title">{{ nextEpisode.name }}</div>
+      <div class="countdown-btn-group">
+        <button
+          type="button"
+          class="btn btn-primary btn-sm"
+          @click="switchEpisode(nextEpisode)"
+        >
+          立即播放 ({{ autoPlayCountdown }}s)
+        </button>
+        <button
+          type="button"
+          class="btn btn-secondary btn-sm"
+          @click="cancelAutoPlay"
+        >
+          取消
+        </button>
+      </div>
+    </div>
+
+    <!-- 侧滑选集抽屉 -->
+    <div
+      v-if="showEpisodeDrawer"
+      class="player-drawer-backdrop"
+      @click.self="showEpisodeDrawer = false"
+    >
+      <aside class="player-drawer card">
+        <div class="drawer-header">
+          <div>
+            <h3 class="drawer-title">选集列表</h3>
+            <span class="drawer-count">共 {{ episodeList.length }} 集</span>
+          </div>
+          <button
+            type="button"
+            class="icon-btn drawer-close"
+            title="关闭选集列表"
+            aria-label="关闭选集列表"
+            @click="showEpisodeDrawer = false"
+          >
+            ✕
+          </button>
+        </div>
+        <div class="drawer-grid">
+          <button
+            v-for="ep in episodeList"
+            :key="ep.id"
+            type="button"
+            class="drawer-ep-btn"
+            :class="{ 'is-active': isCurrentEpisode(ep) }"
+            :title="`播放 ${ep.name}`"
+            :aria-label="`播放 ${ep.name}`"
+            @click="switchEpisode(ep)"
+          >
+            <span>{{ ep.name }}</span>
+            <span v-if="isCurrentEpisode(ep)" class="playing-indicator">▶ 正在播放</span>
+          </button>
+        </div>
+      </aside>
     </div>
   </div>
 </template>
@@ -1100,5 +1568,177 @@ const bufferedPct = computed(() => {
 .ctl-select option {
   background-color: #111a2c;
   color: var(--text);
+}
+
+/* 选集按钮 */
+.episode-toggle-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 0 12px;
+  border-radius: 9999px;
+  font-size: 12px;
+  font-weight: 600;
+  color: #e2e8f0;
+}
+.ep-btn-label {
+  font-size: 12px;
+}
+
+/* 自动连播倒计时浮层 */
+.player-countdown-overlay {
+  position: absolute;
+  bottom: 96px;
+  right: 28px;
+  background: rgba(13, 20, 36, 0.92);
+  border: 1px solid rgba(87, 200, 245, 0.35);
+  border-radius: 12px;
+  padding: 16px 20px;
+  z-index: 55;
+  box-shadow: 0 16px 40px rgba(0, 0, 0, 0.65);
+  backdrop-filter: blur(14px);
+  animation: fadeIn 0.25s ease;
+  min-width: 220px;
+}
+.countdown-badge {
+  font-size: 11px;
+  color: #57c8f5;
+  font-weight: 700;
+  margin-bottom: 4px;
+}
+.countdown-title {
+  font-size: 14px;
+  font-weight: 600;
+  color: #fff;
+  margin-bottom: 12px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.countdown-btn-group {
+  display: flex;
+  gap: 8px;
+}
+.btn-sm {
+  padding: 6px 12px;
+  font-size: 12px;
+  border-radius: 6px;
+}
+
+/* 侧滑选集抽屉 */
+.player-drawer-backdrop {
+  position: absolute;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.6);
+  z-index: 60;
+  display: flex;
+  justify-content: flex-end;
+  backdrop-filter: blur(4px);
+  animation: fadeIn 0.2s ease;
+}
+.player-drawer {
+  width: 320px;
+  max-width: 82%;
+  height: 100%;
+  background: rgba(10, 16, 31, 0.96);
+  border-left: 1px solid rgba(255, 255, 255, 0.1);
+  padding: 20px;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  box-shadow: -10px 0 30px rgba(0, 0, 0, 0.5);
+  animation: slideInRight 0.25s ease;
+}
+.drawer-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding-bottom: 14px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+}
+.drawer-title {
+  margin: 0;
+  font-size: 16px;
+  font-weight: 700;
+  color: #fff;
+}
+.drawer-count {
+  font-size: 11px;
+  color: var(--muted);
+}
+.drawer-close {
+  background: rgba(255, 255, 255, 0.08);
+  border: none;
+  color: #fff;
+  width: 28px;
+  height: 28px;
+  border-radius: 6px;
+  cursor: pointer;
+  display: grid;
+  place-items: center;
+  font-size: 14px;
+}
+.drawer-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(72px, 1fr));
+  gap: 8px;
+  overflow-y: auto;
+  flex: 1;
+  padding: 14px 2px 24px;
+}
+.drawer-ep-btn {
+  min-height: 44px;
+  padding: 8px 6px;
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  color: #e2e8f0;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  transition: all 0.15s ease;
+}
+.drawer-ep-btn:hover {
+  background: rgba(87, 200, 245, 0.15);
+  border-color: rgba(87, 200, 245, 0.4);
+  color: #fff;
+  transform: translateY(-1px);
+}
+.drawer-ep-btn.is-active {
+  background: linear-gradient(135deg, rgba(121, 91, 255, 0.4), rgba(87, 200, 245, 0.3));
+  border-color: #57c8f5;
+  color: #57c8f5;
+  box-shadow: 0 0 12px rgba(87, 200, 245, 0.35);
+}
+.playing-indicator {
+  font-size: 9px;
+  color: #57c8f5;
+  margin-top: 2px;
+}
+
+@keyframes slideInRight {
+  from { transform: translateX(100%); }
+  to { transform: translateX(0); }
+}
+
+@keyframes fadeIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+@media (max-width: 640px) {
+  .player-countdown-overlay {
+    bottom: 80px;
+    right: 14px;
+    left: 14px;
+  }
+  .player-drawer {
+    width: 280px;
+  }
 }
 </style>

@@ -17,7 +17,7 @@ pluginManagement {
 }
 
 dependencyResolutionManagement {
-    repositoriesMode.set(RepositoriesMode.FAIL_ON_PROJECT_REPOS)
+    repositoriesMode.set(RepositoriesMode.PREFER_PROJECT)
     repositories {
         google()
         mavenCentral()
@@ -37,3 +37,4 @@ rootProject.name = "whatmedia"
 // 由 app 模块把它作为**额外源码根目录**吃进来（见 app/build.gradle.kts 的 sourceSets）。
 // 这样既守住了目录约定，又不引入跨模块依赖。
 include(":app")
+apply from: 'tauri.settings.gradle'

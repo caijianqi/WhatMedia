@@ -26,7 +26,17 @@ export function inShell(): boolean {
  *     两个错误的代价差了一个数量级。
  */
 export async function probeDeviceForm(): Promise<DeviceForm> {
-  if (!inShell()) return 'web'
+  if (!inShell()) {
+    if (typeof window !== 'undefined' && typeof navigator !== 'undefined') {
+      const ua = navigator.userAgent || ''
+      const isMobileUA = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini|Mobile/i.test(ua)
+      const isIPadOS = navigator.platform === 'MacIntel' && (navigator.maxTouchPoints || 0) > 1
+      const isTvUA = /Android TV|SmartTV|GoogleTV|LargeScreen/i.test(ua)
+      if (isTvUA) return 'tv'
+      if (isMobileUA || isIPadOS) return 'handheld'
+    }
+    return 'web'
+  }
   try {
     const { invoke } = await import('@tauri-apps/api/core')
     const raw = await invoke<{ form?: string }>('plugin:media3|media3_device_form')

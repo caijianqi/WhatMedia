@@ -6,17 +6,18 @@ import android.os.Build
 import android.os.Bundle
 import android.util.Log
 import android.view.KeyEvent
-import androidx.activity.ComponentActivity
+import androidx.appcompat.app.AppCompatActivity
 import androidx.core.view.WindowCompat
 import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.WindowInsetsControllerCompat
+import media.whatmedia.media3.Contract
+import media.whatmedia.media3.PipParams
+import media.whatmedia.media3.PlayerKeyBridge
 
 /**
  * 入口 Activity。
  *
- * Tauri 2 要求是 `AppCompatActivity` 的子类（模板默认继承它）。
- * 这里继承 `ComponentActivity` 而不是 AppCompatActivity —— 我们不用 ActionBar，
- * 少一层依赖就少一个与 Material 主题打架的地方。
+ * 继承 `AppCompatActivity`，与 Tauri 2 规范及 Material/AppCompat 主题对齐。
  *
  * 三件事在这里做，其余全在插件里：
  *   1. 边到边（edge-to-edge）+ 安全区 → 交给前端的 `useSafeArea`
@@ -24,7 +25,7 @@ import androidx.core.view.WindowInsetsControllerCompat
  *   3. 遥控器按键 → 转成事件转发给前端（TV 的 D-Pad 在 WebView 里有聚焦怪癖，
  *      完全交给 DOM focus 会丢键，所以关键几个键在这里拦下）
  */
-class MainActivity : ComponentActivity() {
+class MainActivity : AppCompatActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         // 旋转时不重建 Activity。配合 manifest 里的 configChanges，
@@ -82,22 +83,22 @@ class MainActivity : ComponentActivity() {
         return super.dispatchKeyEvent(event)
     }
 
-    private fun mapKey(code: Int): String? = when (code) {
-        KeyEvent.KEYCODE_DPAD_UP -> "up"
-        KeyEvent.KEYCODE_DPAD_DOWN -> "down"
-        KeyEvent.KEYCODE_DPAD_LEFT -> "left"
-        KeyEvent.KEYCODE_DPAD_RIGHT -> "right"
-        KeyEvent.KEYCODE_DPAD_CENTER, KeyEvent.KEYCODE_ENTER -> "select"
-        KeyEvent.KEYCODE_BACK -> "back"
-        KeyEvent.KEYCODE_MENU -> "menu"
-        KeyEvent.KEYCODE_MEDIA_PLAY_PAUSE -> "toggle"
-        KeyEvent.KEYCODE_MEDIA_PLAY -> "play"
-        KeyEvent.KEYCODE_MEDIA_PAUSE -> "pause"
-        KeyEvent.KEYCODE_MEDIA_FAST_FORWARD -> "seek-forward"
-        KeyEvent.KEYCODE_MEDIA_REWIND -> "seek-backward"
-        KeyEvent.KEYCODE_MEDIA_NEXT -> "next"
-        KeyEvent.KEYCODE_MEDIA_PREVIOUS -> "previous"
-        KeyEvent.KEYCODE_MEDIA_STOP -> "stop"
+    private fun mapKey(code: Int): Contract.RemoteKey? = when (code) {
+        KeyEvent.KEYCODE_DPAD_UP -> Contract.RemoteKey.UP
+        KeyEvent.KEYCODE_DPAD_DOWN -> Contract.RemoteKey.DOWN
+        KeyEvent.KEYCODE_DPAD_LEFT -> Contract.RemoteKey.LEFT
+        KeyEvent.KEYCODE_DPAD_RIGHT -> Contract.RemoteKey.RIGHT
+        KeyEvent.KEYCODE_DPAD_CENTER, KeyEvent.KEYCODE_ENTER -> Contract.RemoteKey.SELECT
+        KeyEvent.KEYCODE_BACK -> Contract.RemoteKey.BACK
+        KeyEvent.KEYCODE_MENU -> Contract.RemoteKey.MENU
+        KeyEvent.KEYCODE_MEDIA_PLAY_PAUSE -> Contract.RemoteKey.TOGGLE
+        KeyEvent.KEYCODE_MEDIA_PLAY -> Contract.RemoteKey.PLAY
+        KeyEvent.KEYCODE_MEDIA_PAUSE -> Contract.RemoteKey.PAUSE
+        KeyEvent.KEYCODE_MEDIA_FAST_FORWARD -> Contract.RemoteKey.SEEK_FORWARD
+        KeyEvent.KEYCODE_MEDIA_REWIND -> Contract.RemoteKey.SEEK_BACKWARD
+        KeyEvent.KEYCODE_MEDIA_NEXT -> Contract.RemoteKey.NEXT
+        KeyEvent.KEYCODE_MEDIA_PREVIOUS -> Contract.RemoteKey.PREVIOUS
+        KeyEvent.KEYCODE_MEDIA_STOP -> Contract.RemoteKey.STOP
         else -> null
     }
 
@@ -110,7 +111,7 @@ class MainActivity : ComponentActivity() {
     override fun onUserLeaveHint() {
         super.onUserLeaveHint()
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O && PlayerKeyBridge.isPlaying()) {
-            enterPictureInPictureMode(PictureInPictureParamsHolder.params())
+            enterPictureInPictureMode(PipParams.params())
         }
     }
 
