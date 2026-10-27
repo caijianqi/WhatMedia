@@ -214,6 +214,12 @@ tasks.register("assembleUniversalRelease") {
                 apk.copyTo(File(dstDir, apk.name), overwrite = true)
                 println("Universal APK mirrored to: ${targetFile.absolutePath}")
             }
+            val universalApk = File(dstDir, "app-universal-release.apk")
+            if (universalApk.exists()) {
+                val brandedApk = File(dstDir, "WhatMedia-v${android.defaultConfig.versionName}-release.apk")
+                universalApk.copyTo(brandedApk, overwrite = true)
+                println("Branded Release APK available at: ${brandedApk.absolutePath}")
+            }
         }
     }
 }
@@ -235,6 +241,12 @@ tasks.register("bundleUniversalRelease") {
                 aab.copyTo(File(dstDir, aab.name), overwrite = true)
                 println("Universal AAB mirrored to: ${targetFile.absolutePath}")
             }
+            val universalAab = File(dstDir, "app-universal-release.aab")
+            if (universalAab.exists()) {
+                val brandedAab = File(dstDir, "WhatMedia-v${android.defaultConfig.versionName}-release.aab")
+                universalAab.copyTo(brandedAab, overwrite = true)
+                println("Branded Release AAB available at: ${brandedAab.absolutePath}")
+            }
         }
     }
 }
@@ -242,6 +254,7 @@ tasks.register("bundleUniversalRelease") {
 tasks.register("bundleUniversalDebug") {
     dependsOn("bundleDebug")
 }
+
 
 
 

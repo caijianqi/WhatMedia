@@ -6,8 +6,9 @@
     android:viewportHeight="180">
     <!-- 背景深黑偏蓝渐变底 -->
     <path
-        android:fillColor="#0D1117"
+        android:fillColor="#0B0F19"
         android:pathData="M0,0h320v180h-320z" />
+
     <!-- 装饰发光青蓝斜切块 -->
     <path
         android:fillColor="#162B3D"
