@@ -237,7 +237,8 @@ export const usePlayerStore = defineStore('player', () => {
   async function pickSource(view: api.SessionView): Promise<PlaybackSource | null> {
     const raw = view.url ?? view.hls_url ?? view.stream_url
     if (!raw) return null
-    const url = await signed(raw)
+    const signedRaw = await signed(raw)
+    const url = api.resolveMediaUrl(signedRaw)
     if (view.hls_url || raw.includes('.m3u8') || raw.includes('/vod_stream')) return { kind: 'hls', url }
     return { kind: 'progressive', url }
   }
@@ -332,7 +333,7 @@ export const usePlayerStore = defineStore('player', () => {
     const pos = Math.round(snapshot.value.position * 1000)
     if (pos <= 0) return
     const body = JSON.stringify({ position_ms: pos })
-    navigator.sendBeacon?.(`/api/v1/playback/sessions/${id}/stop`, body)
+    navigator.sendBeacon?.(api.resolveMediaUrl(`/playback/sessions/${id}/stop`), body)
   }
 
   async function openVodUrl(

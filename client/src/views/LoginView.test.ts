@@ -11,12 +11,16 @@ vi.mock('vue-router', () => ({
   useRoute: () => ({ name: 'login', fullPath: '/login', query: {} }),
 }))
 
-vi.mock('../api/client', () => ({
-  login: vi.fn(),
-  setup: vi.fn(),
-  whoami: vi.fn(),
-  health: vi.fn().mockResolvedValue({ status: 'ok', version: '0.1.0' }),
-}))
+vi.mock('../api/client', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../api/client')>()
+  return {
+    ...actual,
+    login: vi.fn(),
+    setup: vi.fn(),
+    whoami: vi.fn(),
+    health: vi.fn().mockResolvedValue({ status: 'ok', version: '0.1.0' }),
+  }
+})
 
 describe('LoginView.vue 密码长度限制与表单校验', () => {
   beforeEach(() => {

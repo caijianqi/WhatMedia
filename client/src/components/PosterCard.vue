@@ -50,9 +50,9 @@ watch(
 const posterUrl = computed(() => {
   const anyItem = props.item as Record<string, unknown>
   if (typeof anyItem.poster_url === 'string' && anyItem.poster_url) {
-    return anyItem.poster_url
+    return api.resolveMediaUrl(anyItem.poster_url)
   }
-  return `/api/v1/items/${props.item.id}/images/poster`
+  return api.resolveMediaUrl(`/items/${props.item.id}/images/poster`)
 })
 
 const effectiveQuality = computed(() => {

@@ -6,14 +6,18 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { createPinia, setActivePinia } from 'pinia'
 import { flushPromises, mount } from '@vue/test-utils'
 
-vi.mock('../api/client', () => ({
-  listVodSources: vi.fn(),
-  getHotVodItems: vi.fn(),
-  searchAggregate: vi.fn(),
-  checkVodImported: vi.fn(),
-  importVodItem: vi.fn(),
-  getVodStreamProxyUrl: vi.fn((url: string) => `/proxy?url=${url}`),
-}))
+vi.mock('../api/client', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../api/client')>()
+  return {
+    ...actual,
+    listVodSources: vi.fn(),
+    getHotVodItems: vi.fn(),
+    searchAggregate: vi.fn(),
+    checkVodImported: vi.fn(),
+    importVodItem: vi.fn(),
+    getVodStreamProxyUrl: vi.fn((url: string) => `/proxy?url=${url}`),
+  }
+})
 
 vi.mock('vue-router', async (importOriginal) => {
   const actual = await importOriginal<typeof import('vue-router')>()

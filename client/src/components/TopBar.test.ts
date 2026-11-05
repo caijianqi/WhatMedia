@@ -25,24 +25,17 @@ vi.mock('vue-router', async (importOriginal) => {
   }
 })
 
-vi.mock('../api/client', () => ({
-  ApiError: class ApiError extends Error {
-    constructor(
-      public detail: { code: string; message: string },
-      public status: number,
-    ) {
-      super(detail.message)
-    }
-    get isNetwork(): boolean {
-      return this.status === 0
-    }
-  },
-  search: vi.fn(),
-  listNotifications: vi.fn(),
-  readNotification: vi.fn(),
-  readAllNotifications: vi.fn(),
-  health: vi.fn(),
-}))
+vi.mock('../api/client', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../api/client')>()
+  return {
+    ...actual,
+    search: vi.fn(),
+    listNotifications: vi.fn(),
+    readNotification: vi.fn(),
+    readAllNotifications: vi.fn(),
+    health: vi.fn(),
+  }
+})
 
 import TopBar from './TopBar.vue'
 import * as api from '../api/client'

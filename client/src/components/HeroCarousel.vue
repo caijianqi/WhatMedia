@@ -10,6 +10,7 @@
  * - 左右优雅切换翻页控件（支持 aria-label="上一张"/"下一张"）与右下角 WHATMEDIA 水印
  */
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
+import { resolveMediaUrl } from '../api/client'
 
 export interface HeroSlide {
   id: string
@@ -37,9 +38,9 @@ const backdrop = computed(() => {
   if (!current.value) return ''
   const anySlide = current.value as unknown as Record<string, unknown>
   if (typeof anySlide.backdrop_url === 'string' && anySlide.backdrop_url) {
-    return anySlide.backdrop_url
+    return resolveMediaUrl(anySlide.backdrop_url)
   }
-  return `/api/v1/items/${current.value.id}/images/backdrop`
+  return resolveMediaUrl(`/items/${current.value.id}/images/backdrop`)
 })
 const backdropFailed = computed(() =>
   current.value ? failed.value[current.value.id] === true : false,

@@ -104,7 +104,80 @@ export class ApiError extends Error {
   }
 }
 
-const BASE = import.meta.env.VITE_WHATMEDIA_API ?? '/api/v1'
+const SERVER_URL_KEY = 'whatmedia.server_url'
+
+let serverUrl: string | null = ((): string | null => {
+  try {
+    return localStorage.getItem(SERVER_URL_KEY)
+  } catch {
+    return null
+  }
+})()
+
+export function getServerUrl(): string | null {
+  return serverUrl
+}
+
+export function setServerUrl(url: string | null): void {
+  serverUrl = url ? url.trim().replace(/\/+$/, '') : null
+  try {
+    if (serverUrl) localStorage.setItem(SERVER_URL_KEY, serverUrl)
+    else localStorage.removeItem(SERVER_URL_KEY)
+  } catch {}
+}
+
+export function getBaseUrl(): string {
+  if (serverUrl) {
+    return `${serverUrl}/api/v1`
+  }
+  return import.meta.env.VITE_WHATMEDIA_API ?? '/api/v1'
+}
+
+/**
+ * 将相对路径或媒体路径解析为完整可访问地址。
+ * 特别针对 Android / TV 真机壳中必须带上完整主机地址的场景。
+ */
+export function resolveMediaUrl(path?: string | null): string {
+  if (!path) return ''
+  if (/^https?:\/\//i.test(path) || path.startsWith('data:') || path.startsWith('blob:')) {
+    return path
+  }
+  const base = getBaseUrl()
+  const cleanPath = path.startsWith('/api/v1')
+    ? path.slice(7)
+    : path.startsWith('/')
+      ? path
+      : `/${path}`
+  return `${base}${cleanPath}`
+}
+
+/**
+ * 测试目标服务器连通性。
+ */
+export async function testServerConnection(targetUrl?: string): Promise<{ ok: boolean; version?: string; error?: string }> {
+  const urlToTest = (targetUrl ? targetUrl.trim().replace(/\/+$/, '') : serverUrl) || ''
+  const testEndpoint = urlToTest ? `${urlToTest}/api/v1/health` : `${getBaseUrl()}/health`
+  try {
+    const controller = new AbortController()
+    const timer = setTimeout(() => controller.abort(), 6000)
+    const res = await fetch(testEndpoint, {
+      signal: controller.signal,
+      headers: { Accept: 'application/json' },
+    })
+    clearTimeout(timer)
+    if (!res.ok) {
+      return { ok: false, error: `服务器返回状态码 HTTP ${res.status}` }
+    }
+    const data = await res.json()
+    return { ok: true, version: data?.version ?? '已连接' }
+  } catch (err: unknown) {
+    const msg = err instanceof Error ? err.message : String(err)
+    if (msg.includes('abort')) {
+      return { ok: false, error: '连接超时（6秒），请检查 IP 与端口是否可达' }
+    }
+    return { ok: false, error: '无法连接到服务器，请检查网络或地址' }
+  }
+}
 
 /**
  * 会话票据。
@@ -150,7 +223,7 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
   try {
     const headers: Record<string, string> = { Accept: 'application/json' }
     if (sessionToken) headers.Authorization = `Bearer ${sessionToken}`
-    res = await fetch(`${BASE}${path}`, { headers, ...init })
+    res = await fetch(`${getBaseUrl()}${path}`, { headers, ...init })
   } catch {
     // fetch 只在网络层失败时抛（服务端没起来、断网）。
     // 不包一层的话，UI 上只会看到一句看不懂的 TypeError。
@@ -318,7 +391,7 @@ export function hardwareProfile(): Promise<HardwareProfileReport> {
  * 走 fetch 反而会被提前取消。
  */
 export function stopHlsUrl(jobId: string): string {
-  return `${BASE}/hls/${jobId}/stop`
+  return `${getBaseUrl()}/hls/${jobId}/stop`
 }
 
 // ── AI 助手（P7）────────────────────────────────────────────
@@ -662,7 +735,7 @@ export interface CandidateView {
 export function imageProxyUrl(url?: string | null): string {
   if (!url) return ''
   if (url.startsWith('http://') || url.startsWith('https://')) {
-    return `/api/v1/metadata/image_proxy?url=${encodeURIComponent(url)}`
+    return resolveMediaUrl(`/metadata/image_proxy?url=${encodeURIComponent(url)}`)
   }
   return url
 }
@@ -849,7 +922,7 @@ export function toggleVodSource(id: string): Promise<VodSourceConfig> {
 
 /** 获取代理播放 URL */
 export function getVodStreamProxyUrl(rawUrl: string, sourceId?: string): string {
-  return `${BASE}/proxy/vod_stream?url=${encodeURIComponent(rawUrl)}${sourceId ? `&source=${encodeURIComponent(sourceId)}` : ''}`
+  return `${getBaseUrl()}/proxy/vod_stream?url=${encodeURIComponent(rawUrl)}${sourceId ? `&source=${encodeURIComponent(sourceId)}` : ''}`
 }
 
 export interface ImportVodResponse {

@@ -21,16 +21,19 @@ vi.mock('vue-router', async (importOriginal) => {
   }
 })
 
-vi.mock('../api/client', () => ({
-  ApiError: class ApiError extends Error {},
-  listLiveChannels: vi.fn(),
-  listLiveSources: vi.fn(),
-  playLiveChannel: vi.fn(),
-  stopLiveChannel: vi.fn(),
-  createLiveSource: vi.fn(),
-  syncLiveSource: vi.fn(),
-  deleteLiveSource: vi.fn(),
-}))
+vi.mock('../api/client', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../api/client')>()
+  return {
+    ...actual,
+    listLiveChannels: vi.fn(),
+    listLiveSources: vi.fn(),
+    playLiveChannel: vi.fn(),
+    stopLiveChannel: vi.fn(),
+    createLiveSource: vi.fn(),
+    syncLiveSource: vi.fn(),
+    deleteLiveSource: vi.fn(),
+  }
+})
 
 vi.mock('hls.js', () => {
   return {

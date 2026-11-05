@@ -7,9 +7,11 @@
  * - 兼顾初次建库设置（isSetup）与日常多端登录
  * - 完整支持儿童账号审批拦截（403 APPROVAL_REQUIRED）高保真反馈
  */
-import { computed, ref } from 'vue'
+import { computed, onMounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { useSessionStore } from '../stores/session'
+import { getServerUrl, setServerUrl, testServerConnection } from '../api/client'
+import { inShell } from '../lib/host'
 
 const session = useSessionStore()
 const router = useRouter()
@@ -22,6 +24,57 @@ const isSetup = computed(() => session.needsSetup)
 const canSubmit = computed(
   () => !busy.value && username.value.trim().length > 0 && password.value.length >= 6,
 )
+
+// ── 服务端地址配置 ──────────────────────────────────────────
+const isAppShell = inShell()
+const showServerConfig = ref(false)
+const inputServerUrl = ref(getServerUrl() || '')
+const testingServer = ref(false)
+const serverTestResult = ref<{ ok: boolean; message: string } | null>(null)
+
+onMounted(() => {
+  // 如果在壳内且尚未配置服务地址，或者连不上服务器，默认展开服务配置引导
+  if (isAppShell && !getServerUrl()) {
+    showServerConfig.value = true
+  }
+})
+
+async function testConnection(): Promise<void> {
+  testingServer.value = true
+  serverTestResult.value = null
+  try {
+    const res = await testServerConnection(inputServerUrl.value)
+    if (res.ok) {
+      serverTestResult.value = {
+        ok: true,
+        message: `✓ 成功连接到服务端 (${res.version})`,
+      }
+    } else {
+      serverTestResult.value = {
+        ok: false,
+        message: res.error || '无法连接到该服务地址',
+      }
+    }
+  } finally {
+    testingServer.value = false
+  }
+}
+
+async function applyServerConfig(): Promise<void> {
+  const target = inputServerUrl.value.trim()
+  setServerUrl(target ? target : null)
+  serverTestResult.value = null
+  // 重新触发 session bootstrap 检测
+  await session.bootstrap()
+  showServerConfig.value = false
+}
+
+function clearServerConfig(): void {
+  inputServerUrl.value = ''
+  setServerUrl(null)
+  serverTestResult.value = null
+  void session.bootstrap()
+}
 
 async function submit(): Promise<void> {
   busy.value = true
@@ -97,6 +150,73 @@ async function submit(): Promise<void> {
           <span>{{ busy ? '正在验证…' : isSetup ? '创建并进入影院' : '登 录' }}</span>
         </button>
       </form>
+
+      <!-- 服务端连接设置面板 -->
+      <div class="server-config-section">
+        <button
+          type="button"
+          class="btn-toggle-server"
+          @click="showServerConfig = !showServerConfig"
+        >
+          <span class="server-status-icon">🌐</span>
+          <span class="server-current-label">
+            服务地址：{{ inputServerUrl || '默认本地地址' }}
+          </span>
+          <span class="toggle-arrow">{{ showServerConfig ? '▲ 收起' : '⚙️ 配置' }}</span>
+        </button>
+
+        <div v-if="showServerConfig" class="server-config-panel">
+          <label class="form-group">
+            <span class="form-label">服务器地址 (URL)</span>
+            <input
+              v-model="inputServerUrl"
+              class="form-input"
+              type="url"
+              placeholder="例如 http://192.168.1.100:8080"
+              @keydown.enter.prevent="applyServerConfig"
+            />
+            <span class="form-hint">
+              手机或 TV 端请填写家庭 NAS 或主机的内网 IP 与端口（如 http://192.168.x.x:8080）。
+            </span>
+          </label>
+
+          <div
+            v-if="serverTestResult"
+            class="server-test-banner"
+            :class="{ 'is-ok': serverTestResult.ok }"
+          >
+            {{ serverTestResult.message }}
+          </div>
+
+          <div class="server-actions">
+            <button
+              type="button"
+              class="btn btn-secondary btn-sm"
+              :disabled="testingServer"
+              @click="testConnection"
+            >
+              {{ testingServer ? '正在检测…' : '测试连接' }}
+            </button>
+            <div class="actions-right">
+              <button
+                v-if="inputServerUrl"
+                type="button"
+                class="btn btn-ghost btn-sm"
+                @click="clearServerConfig"
+              >
+                恢复默认
+              </button>
+              <button
+                type="button"
+                class="btn btn-primary btn-sm"
+                @click="applyServerConfig"
+              >
+                保存并连接
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
 
       <!-- 错误或审批等待反馈卡条 -->
       <div v-if="session.error" class="alert-box">
@@ -332,5 +452,88 @@ async function submit(): Promise<void> {
   font-size: 11px;
   line-height: 1.65;
   color: var(--muted2);
+}
+
+/* 服务端配置面板 */
+.server-config-section {
+  margin-top: 16px;
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid var(--line);
+  overflow: hidden;
+  transition: all 0.2s ease;
+}
+.btn-toggle-server {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 14px;
+  background: transparent;
+  border: none;
+  color: var(--muted);
+  font-size: 12px;
+  cursor: pointer;
+  text-align: left;
+  transition: background 0.15s ease;
+}
+.btn-toggle-server:hover {
+  background: rgba(255, 255, 255, 0.05);
+  color: var(--fg);
+}
+.server-current-label {
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.toggle-arrow {
+  font-size: 11px;
+  opacity: 0.7;
+}
+.server-config-panel {
+  padding: 14px;
+  border-top: 1px solid rgba(255, 255, 255, 0.06);
+  background: rgba(0, 0, 0, 0.2);
+}
+.server-test-banner {
+  margin-top: 10px;
+  padding: 8px 12px;
+  border-radius: 8px;
+  font-size: 12px;
+  line-height: 1.4;
+  background: rgba(239, 68, 68, 0.15);
+  border: 1px solid rgba(239, 68, 68, 0.3);
+  color: #fca5a5;
+}
+.server-test-banner.is-ok {
+  background: rgba(16, 185, 129, 0.15);
+  border: 1px solid rgba(16, 185, 129, 0.3);
+  color: #6ee7b7;
+}
+.server-actions {
+  margin-top: 12px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+.actions-right {
+  display: flex;
+  gap: 8px;
+}
+.btn-sm {
+  padding: 6px 12px;
+  font-size: 12px;
+  height: auto;
+}
+.btn-ghost {
+  background: transparent;
+  border: 1px solid var(--line);
+  color: var(--muted);
+}
+.btn-ghost:hover {
+  background: rgba(255, 255, 255, 0.06);
+  color: var(--fg);
 }
 </style>

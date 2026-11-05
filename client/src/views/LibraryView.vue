@@ -17,7 +17,7 @@ import ContinueCard from '../components/ContinueCard.vue'
 import EmptyState from '../components/EmptyState.vue'
 import { toast } from '../stores/toast'
 import * as api from '../api/client'
-import type { ItemSort, KindCount, MediaKind, ResumePoint } from '../api/client'
+import { resolveMediaUrl, type ItemSort, type KindCount, type MediaKind, type ResumePoint } from '../api/client'
 
 const route = useRoute()
 const router = useRouter()
@@ -424,7 +424,7 @@ watch(
           >
             <div class="poster-image">
               <img
-                :src="`/api/v1/items/${it.id}/images/poster`"
+                :src="resolveMediaUrl(`/items/${it.id}/images/poster`)"
                 :alt="it.title"
                 loading="lazy"
               />

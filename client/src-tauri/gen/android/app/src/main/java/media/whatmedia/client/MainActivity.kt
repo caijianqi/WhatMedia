@@ -25,14 +25,11 @@ import media.whatmedia.media3.PlayerKeyBridge
  *   3. 遥控器按键 → 转成事件转发给前端（TV 的 D-Pad 在 WebView 里有聚焦怪癖，
  *      完全交给 DOM focus 会丢键，所以关键几个键在这里拦下）
  */
-class MainActivity : AppCompatActivity() {
+class MainActivity : WryActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
-        // 旋转时不重建 Activity。配合 manifest 里的 configChanges，
-        // 这是"横屏继续播"的另一半 —— 少了它前面那段配置等于没写。
-        super.onCreate(null)
+        super.onCreate(savedInstanceState)
         WindowCompat.setDecorFitsSystemWindows(window, false)
-        enableImmersiveWhenPlaying()
         Log.i(TAG, "device form=${deviceForm()}")
     }
 

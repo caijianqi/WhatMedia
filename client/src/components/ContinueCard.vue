@@ -8,7 +8,7 @@
  * - 底部 "已观看 XX%" + "继续播放 →" 微指引
  */
 import { computed, ref, watch } from 'vue'
-import type { ResumePoint } from '../api/client'
+import { resolveMediaUrl, type ResumePoint } from '../api/client'
 
 const props = defineProps<{
   resume: ResumePoint
@@ -39,9 +39,9 @@ const initial = computed(() => {
 const thumbUrl = computed(() => {
   const anyResume = props.resume as Record<string, unknown>
   if (typeof anyResume.thumb_url === 'string' && anyResume.thumb_url) {
-    return anyResume.thumb_url
+    return resolveMediaUrl(anyResume.thumb_url)
   }
-  return `/api/v1/items/${props.resume.item_id}/images/backdrop`
+  return resolveMediaUrl(`/items/${props.resume.item_id}/images/backdrop`)
 })
 
 const pct = computed(() => {

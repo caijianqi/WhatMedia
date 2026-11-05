@@ -414,6 +414,59 @@ const tabs = [
   { id: 'about', label: '关于系统', icon: 'ⓘ' },
 ]
 
+// ── 客户端服务连接地址配置 ──────────────────────────────────────
+const currentServerUrl = ref(api.getServerUrl() || '')
+const editServerUrl = ref(api.getServerUrl() || '')
+const testingServerConn = ref(false)
+const serverConnMsg = ref<{ ok: boolean; message: string } | null>(null)
+
+async function testCurrentServerConn(): Promise<void> {
+  testingServerConn.value = true
+  serverConnMsg.value = null
+  try {
+    const res = await api.testServerConnection(editServerUrl.value)
+    if (res.ok) {
+      serverConnMsg.value = {
+        ok: true,
+        message: `✓ 连接成功！服务端版本：${res.version}`,
+      }
+    } else {
+      serverConnMsg.value = {
+        ok: false,
+        message: res.error || '无法连接该地址',
+      }
+    }
+  } finally {
+    testingServerConn.value = false
+  }
+}
+
+function saveServerConn(): void {
+  const target = editServerUrl.value.trim()
+  api.setServerUrl(target ? target : null)
+  currentServerUrl.value = target
+  serverConnMsg.value = {
+    ok: true,
+    message: '✓ 已保存服务端地址！正在重新加载...',
+  }
+  setTimeout(() => {
+    window.location.reload()
+  }, 800)
+}
+
+function resetServerConn(): void {
+  api.setServerUrl(null)
+  editServerUrl.value = ''
+  currentServerUrl.value = ''
+  serverConnMsg.value = {
+    ok: true,
+    message: '✓ 已恢复为默认地址！正在重新加载...',
+  }
+  setTimeout(() => {
+    window.location.reload()
+  }, 800)
+}
+
 // ── 媒体库连接与扫描指南交互 ─────────────────────────────────
 const selectedOs = ref<'windows' | 'linux' | 'macos'>('windows')
 const copied = ref(false)
@@ -1276,6 +1329,53 @@ async function deleteUserAccount(u: api.UserAccount): Promise<void> {
           class="settings-section"
         >
           <div class="section-title">服务端</div>
+
+          <!-- 客户端服务连接地址配置卡片 -->
+          <div class="storage-accounts-card server-conn-box">
+            <div class="card-header">
+              <div>
+                <h3 class="card-title">客户端与服务端连接配置</h3>
+                <p class="card-desc">配置当前客户端所连接的 WhatMedia 服务端地址（局域网 IP / 远程域名）。移动端 App 必须配置该地址。</p>
+              </div>
+            </div>
+            <div class="server-conn-content">
+              <div class="server-input-flex">
+                <input
+                  v-model="editServerUrl"
+                  type="url"
+                  class="form-input font-mono"
+                  placeholder="例如 http://192.168.1.100:8080 (留空为同源默认)"
+                />
+                <button
+                  type="button"
+                  class="btn btn-secondary"
+                  :disabled="testingServerConn"
+                  @click="testCurrentServerConn"
+                >
+                  {{ testingServerConn ? '正在检测…' : '测试连接' }}
+                </button>
+                <button
+                  type="button"
+                  class="btn btn-primary"
+                  @click="saveServerConn"
+                >
+                  保存并生效
+                </button>
+                <button
+                  v-if="currentServerUrl"
+                  type="button"
+                  class="btn btn-ghost"
+                  @click="resetServerConn"
+                >
+                  恢复默认
+                </button>
+              </div>
+              <div v-if="serverConnMsg" class="server-test-banner" :class="{ 'is-ok': serverConnMsg.ok }">
+                {{ serverConnMsg.message }}
+              </div>
+            </div>
+          </div>
+
           <div class="settings-dl">
             <div class="settings-row">
               <div>
@@ -4787,6 +4887,39 @@ async function deleteUserAccount(u: api.UserAccount): Promise<void> {
 .btn-modal-confirm:disabled {
   opacity: 0.6;
   cursor: not-allowed;
+}
+
+/* 客户端服务连接配置卡片 */
+.server-conn-box {
+  margin-bottom: 20px;
+}
+.server-conn-content {
+  padding: 16px;
+}
+.server-input-flex {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+.server-input-flex input {
+  flex: 1;
+  min-width: 240px;
+}
+.server-test-banner {
+  margin-top: 12px;
+  padding: 10px 14px;
+  border-radius: 8px;
+  font-size: 13px;
+  line-height: 1.5;
+  background: rgba(239, 68, 68, 0.15);
+  border: 1px solid rgba(239, 68, 68, 0.3);
+  color: #fca5a5;
+}
+.server-test-banner.is-ok {
+  background: rgba(16, 185, 129, 0.15);
+  border: 1px solid rgba(16, 185, 129, 0.3);
+  color: #6ee7b7;
 }
 </style>
 

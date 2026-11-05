@@ -160,8 +160,8 @@ async function confirmDeleteItem(): Promise<void> {
 onMounted(load)
 watch(id, load)
 
-const backdrop = computed(() => `/api/v1/items/${id.value}/images/backdrop`)
-const poster = computed(() => `/api/v1/items/${id.value}/images/poster`)
+const backdrop = computed(() => api.resolveMediaUrl(`/items/${id.value}/images/backdrop`))
+const poster = computed(() => api.resolveMediaUrl(`/items/${id.value}/images/poster`))
 const posterError = ref(false)
 
 

@@ -14,27 +14,20 @@ vi.mock('vue-router', async (importOriginal) => {
   }
 })
 
-vi.mock('./api/client', () => ({
-  ApiError: class ApiError extends Error {
-    constructor(
-      public detail: { code: string; message: string },
-      public status: number,
-    ) {
-      super(detail.message)
-    }
-    get isNetwork(): boolean {
-      return this.status === 0
-    }
-  },
-  search: vi.fn(),
-  listNotifications: vi.fn().mockResolvedValue({ data: [] }),
-  readNotification: vi.fn(),
-  readAllNotifications: vi.fn(),
-  health: vi.fn().mockResolvedValue({ status: 'ok', version: '0.1.0' }),
-  whoami: vi.fn().mockResolvedValue({
-    user: { id: 'u1', username: 'admin', role: 'admin', is_child: false },
-  }),
-}))
+vi.mock('./api/client', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('./api/client')>()
+  return {
+    ...actual,
+    search: vi.fn(),
+    listNotifications: vi.fn().mockResolvedValue({ data: [] }),
+    readNotification: vi.fn(),
+    readAllNotifications: vi.fn(),
+    health: vi.fn().mockResolvedValue({ status: 'ok', version: '0.1.0' }),
+    whoami: vi.fn().mockResolvedValue({
+      user: { id: 'u1', username: 'admin', role: 'admin', is_child: false },
+    }),
+  }
+})
 
 import App from './App.vue'
 import AppSidebar from './components/AppSidebar.vue'
