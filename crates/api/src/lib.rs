@@ -8,6 +8,8 @@
 //! 未接数据库时（例如只做健康检查的容器探针），数据类端点返回 503 而不是 501，
 //! 这样前端能区分"功能没做"和"后端没准备好"。
 
+#![cfg_attr(not(test), warn(clippy::unwrap_used))]
+
 pub mod aggregator;
 pub mod ai;
 pub mod auth;
@@ -32,6 +34,7 @@ use crate::auth::Current;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
+use tower_http::catch_panic::CatchPanicLayer;
 use tower_http::trace::TraceLayer;
 use uuid::Uuid;
 use whatmedia_config::AppConfig;
@@ -68,7 +71,7 @@ pub struct ScanTaskView {
 impl ScanRegistry {
     pub fn insert(&self, view: ScanTaskView) {
         let id = view.id;
-        self.inner.lock().unwrap().insert(
+        self.inner.lock().unwrap_or_else(|e| e.into_inner()).insert(
             id,
             RegistryEntry {
                 view,
@@ -78,7 +81,7 @@ impl ScanRegistry {
     }
 
     pub fn update(&self, id: Uuid, progress: ScanProgress) {
-        if let Some(entry) = self.inner.lock().unwrap().get_mut(&id) {
+        if let Some(entry) = self.inner.lock().unwrap_or_else(|e| e.into_inner()).get_mut(&id) {
             if progress.finished && entry.finished_at.is_none() {
                 entry.finished_at = Some(std::time::Instant::now());
             }
@@ -87,7 +90,7 @@ impl ScanRegistry {
     }
 
     pub fn list(&self) -> Vec<ScanTaskView> {
-        let mut map = self.inner.lock().unwrap();
+        let mut map = self.inner.lock().unwrap_or_else(|e| e.into_inner());
         // 自动清理完成超过 30 秒的历史扫描任务，防止内存无限累加
         map.retain(|_, entry| {
             if let Some(fin) = entry.finished_at {
@@ -111,11 +114,11 @@ pub struct StorageRegistry {
 
 impl StorageRegistry {
     pub fn get(&self, root: &str) -> Option<Arc<LocalStorage>> {
-        self.inner.lock().unwrap().get(root).cloned()
+        self.inner.lock().unwrap_or_else(|e| e.into_inner()).get(root).cloned()
     }
 
     pub fn insert(&self, root: &str, storage: Arc<LocalStorage>) {
-        self.inner.lock().unwrap().insert(root.to_string(), storage);
+        self.inner.lock().unwrap_or_else(|e| e.into_inner()).insert(root.to_string(), storage);
     }
 }
 
@@ -151,13 +154,15 @@ pub struct AppState {
     /// `GET /api/v1/settings` 看到，否则用户永远不知道自己那次改动没生效。
     pub rejected_settings: Arc<Vec<String>>,
     pub started_at: chrono::DateTime<Utc>,
+    /// 敏感端点登录限流器。
+    pub login_limiter: auth::LoginRateLimiter,
 }
 
 impl AppState {
     pub fn new(config: AppConfig) -> Self {
         let hls_root = config.paths.cache_dir.join("hls");
         // 密钥要在 config 被搬进 Arc 之前读出来。
-        let signing = auth::init_signing_key(&config.security);
+        let signing = auth::init_signing_key(&config.security, Some(&config.paths.data_dir));
         Self {
             config: Arc::new(config),
             db: None,
@@ -182,6 +187,7 @@ impl AppState {
             )),
             rejected_settings: Arc::new(Vec::new()),
             started_at: Utc::now(),
+            login_limiter: auth::LoginRateLimiter::default(),
         }
     }
 
@@ -1270,6 +1276,22 @@ fn guarded_routes(state: AppState) -> Router {
         .with_state(state)
 }
 
+pub fn panic_response(err: Box<dyn std::any::Any + Send + 'static>) -> Response {
+    let message = if let Some(s) = err.downcast_ref::<&str>() {
+        s.to_string()
+    } else if let Some(s) = err.downcast_ref::<String>() {
+        s.clone()
+    } else {
+        "Unknown panic".to_string()
+    };
+    tracing::error!("服务请求捕获到未处理 Panic: {message}");
+    error_response(
+        StatusCode::INTERNAL_SERVER_ERROR,
+        "INTERNAL_ERROR",
+        "服务器内部异常，已自动拦截",
+    )
+}
+
 pub fn build_router(state: AppState) -> Router {
     let fallback_state = state.clone();
     Router::new()
@@ -1279,6 +1301,8 @@ pub fn build_router(state: AppState) -> Router {
             let s = fallback_state.clone();
             async move { fallback(s, uri, req).await }
         })
+        .layer(CatchPanicLayer::custom(panic_response))
+        .layer(tower::limit::ConcurrencyLimitLayer::new(1024))
         .layer(TraceLayer::new_for_http())
 }
 
@@ -1459,5 +1483,28 @@ mod tests {
             .unwrap();
         let json: serde_json::Value = serde_json::from_slice(&body).unwrap();
         assert_eq!(json["error"]["code"], "NOT_FOUND");
+    }
+
+    #[tokio::test]
+    async fn panic_is_caught_and_returns_500() {
+        let router = Router::new()
+            .route(
+                "/api/v1/test/panic",
+                get(|| async {
+                    panic!("intentional panic for test");
+                    #[allow(unreachable_code)]
+                    StatusCode::OK
+                }),
+            )
+            .layer(CatchPanicLayer::custom(panic_response));
+        let res = router
+            .oneshot(Request::builder().uri("/api/v1/test/panic").body(Body::empty()).unwrap())
+            .await
+            .unwrap();
+        assert_eq!(res.status(), StatusCode::INTERNAL_SERVER_ERROR);
+        let body = axum::body::to_bytes(res.into_body(), usize::MAX).await.unwrap();
+        let v: serde_json::Value = serde_json::from_slice(&body).unwrap();
+        assert_eq!(v["error"]["code"], "INTERNAL_ERROR");
+        assert_eq!(v["error"]["message"], "服务器内部异常，已自动拦截");
     }
 }

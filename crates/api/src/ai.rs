@@ -975,13 +975,9 @@ impl AiActions for AppActions {
 /// 取条目当前绑定的元数据来源。`ItemDetail` 不带这两个字段，
 /// 与其为了它们把整个结构扩一遍，不如单独查一行。
 async fn provider_of(db: &Db, item_id: Id) -> Result<(Option<String>, Option<String>), AiError> {
-    let row = sqlx::query_as::<_, (Option<String>, Option<String>)>(
-        "SELECT provider, provider_id FROM media_item WHERE id = ?",
-    )
-    .bind(item_id.to_string())
-    .fetch_optional(db.pool())
-    .await
-    .map_err(|e| AiError::host(format!("读取条目来源失败：{e}")))?;
+    let row = whatmedia_database::repo::media::get_item_provider_info(db, item_id)
+        .await
+        .map_err(|e| AiError::host(format!("读取条目来源失败：{e}")))?;
     Ok(row.unwrap_or((None, None)))
 }
 

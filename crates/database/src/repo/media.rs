@@ -737,3 +737,44 @@ pub async fn delete_item(db: &Db, id: Id) -> Result<bool> {
     Ok(r.rows_affected() > 0)
 }
 
+/// 更新图片的本地缓存路径。
+pub async fn update_image_cached_path(db: &Db, url: &str, cached_path: &str) -> Result<u64> {
+    let r = sqlx::query("UPDATE image SET cached_path = ? WHERE url = ?")
+        .bind(cached_path)
+        .bind(url)
+        .execute(db.pool())
+        .await?;
+    Ok(r.rows_affected())
+}
+
+/// 根据 provider 与标题查找已导入的媒体条目 ID。
+pub async fn find_item_by_provider_and_title(
+    db: &Db,
+    provider: &str,
+    title: &str,
+) -> Result<Option<Id>> {
+    let row: Option<(String,)> = sqlx::query_as(
+        "SELECT id FROM media_item WHERE provider = ? AND title = ? LIMIT 1",
+    )
+    .bind(provider)
+    .bind(title)
+    .fetch_optional(db.pool())
+    .await?;
+
+    Ok(row.and_then(|(s,)| Id::parse_str(&s).ok()))
+}
+
+/// 获取指定条目的 provider 与 provider_id 元数据来源信息。
+pub async fn get_item_provider_info(
+    db: &Db,
+    item_id: Id,
+) -> Result<Option<(Option<String>, Option<String>)>> {
+    let row: Option<(Option<String>, Option<String>)> = sqlx::query_as(
+        "SELECT provider, provider_id FROM media_item WHERE id = ?",
+    )
+    .bind(item_id.to_string())
+    .fetch_optional(db.pool())
+    .await?;
+    Ok(row)
+}
+

@@ -8,7 +8,6 @@
 //!    "我关了"，必须有 `reap_idle` 兜底，否则"继续观看"里全是僵尸会话。
 
 use anyhow::Result;
-use chrono::Utc;
 use whatmedia_core::{Id, PlaybackSession, PlaybackStrategy};
 use whatmedia_database::repo::{
     create_session, delete_session, force_position, get_session, heartbeat, resume_points,
@@ -110,17 +109,7 @@ impl SessionManager {
     }
 
     pub async fn reap_idle_with(&self, idle_secs: i64) -> Result<usize> {
-        let cutoff = (Utc::now() - chrono::Duration::seconds(idle_secs)).to_rfc3339();
-        let r = sqlx::query(
-            "UPDATE playback_session SET stopped_at = ?, updated_at = ?
-              WHERE stopped_at IS NULL AND updated_at < ?",
-        )
-        .bind(Utc::now().to_rfc3339())
-        .bind(Utc::now().to_rfc3339())
-        .bind(cutoff)
-        .execute(self.db.pool())
-        .await?;
-        Ok(r.rows_affected() as usize)
+        whatmedia_database::repo::playback::reap_idle_playback_sessions(&self.db, idle_secs).await
     }
 }
 

@@ -33,8 +33,8 @@ whatmedia-aggregator = { path = "crates/aggregator" }
 
 tokio = { version = "1", features = ["rt-multi-thread", "macros", "signal", "time", "sync", "fs", "net", "process", "rt", "io-util"] }
 axum = { version = "0.8", features = ["macros"] }
-tower = { version = "0.5", features = ["util"] }
-tower-http = { version = "0.6", features = ["trace", "cors", "compression-gzip", "fs"] }
+tower = { version = "0.5", features = ["util", "limit"] }
+tower-http = { version = "0.6", features = ["trace", "cors", "compression-gzip", "fs", "catch-panic"] }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 toml = "0.8"
@@ -91,5 +91,5 @@ getrandom = "0.4"
 opt-level = 3
 lto = "thin"
 codegen-units = 1
-panic = "abort"
+panic = "unwind"
 strip = true

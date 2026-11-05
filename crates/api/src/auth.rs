@@ -507,7 +507,70 @@ fn session_expiry(state: &AppState, kind: &str) -> chrono::DateTime<Utc> {
         tag = "auth"
     )
 )]
-pub async fn login(State(state): State<AppState>, Json(body): Json<LoginInput>) -> Response {
+/// 登录限流器（基于内存滑动窗口）。
+///
+/// 限制同一客户端在指定窗口期内的登录尝试次数，
+/// 阻断针对 Argon2id 密码哈希的 CPU 耗尽 DoS 攻击与多用户名分布式爆破。
+#[derive(Clone, Default)]
+pub struct LoginRateLimiter {
+    inner: Arc<std::sync::Mutex<std::collections::HashMap<String, Vec<std::time::Instant>>>>,
+}
+
+impl LoginRateLimiter {
+    pub fn check_and_record(&self, client_key: &str) -> bool {
+        self.check_and_record_with(client_key, std::time::Duration::from_secs(60), 30)
+    }
+
+    pub fn check_and_record_with(
+        &self,
+        client_key: &str,
+        window: std::time::Duration,
+        max_attempts: usize,
+    ) -> bool {
+        let mut map = self.inner.lock().unwrap_or_else(|e| e.into_inner());
+        let now = std::time::Instant::now();
+        let list = map.entry(client_key.to_string()).or_default();
+        list.retain(|t| now.duration_since(*t) < window);
+        if list.len() >= max_attempts {
+            return false;
+        }
+        list.push(now);
+        true
+    }
+}
+
+pub async fn login(
+    State(state): State<AppState>,
+    headers: axum::http::HeaderMap,
+    Json(body): Json<LoginInput>,
+) -> Response {
+    let client_ip = headers
+        .get("x-forwarded-for")
+        .and_then(|v| v.to_str().ok())
+        .and_then(|s| s.split(',').next())
+        .map(|s| s.trim().to_string())
+        .or_else(|| {
+            headers
+                .get("x-real-ip")
+                .and_then(|v| v.to_str().ok())
+                .map(|s| s.trim().to_string())
+        })
+        .unwrap_or_else(|| "127.0.0.1".to_string());
+
+    if !state.login_limiter.check_and_record(&client_ip) {
+        tracing::warn!(%client_ip, "客户端登录尝试过于频繁，已触发限流 (429)");
+        return (
+            StatusCode::TOO_MANY_REQUESTS,
+            Json(ErrorBody {
+                error: ErrorDetail {
+                    code: "RATE_LIMITED",
+                    message: "登录尝试过于频繁，请稍后再试".to_string(),
+                    trace_id: None,
+                },
+            }),
+        )
+            .into_response();
+    }
     let db = match db_or_503(&state) {
         Ok(d) => d,
         Err(r) => return *r,
@@ -718,14 +781,9 @@ async fn find_or_register_device(
 
 fn device_kind(body: &LoginInput) -> &str {
     match body.device_kind.as_deref() {
-        Some("desktop") | Some("mobile") | Some("tv") => {
-            // 借用 device_kind 的静态分支让我们少一处字符串爆破。
-            match body.device_kind.as_deref().unwrap() {
-                "desktop" => "desktop",
-                "mobile" => "mobile",
-                _ => "tv",
-            }
-        }
+        Some("desktop") => "desktop",
+        Some("mobile") => "mobile",
+        Some("tv") => "tv",
         _ => "web",
     }
 }
@@ -1303,27 +1361,47 @@ pub async fn bootstrap_dev_user(
     Ok(Some((username, id)))
 }
 
-/// 生成签名密钥。
+/// 初始化签名密钥。
 ///
-/// 配了就用配的（多实例共享），没配就每个进程随机一个 ——
-/// 重启后所有在途的签名 URL 失效，这在自托管场景里是想要的行为，
-/// 因为它顺手把"上次崩溃前发出去的那批 URL"收回来了。
-pub fn init_signing_key(sec: &whatmedia_config::SecurityConfig) -> Arc<SigningKey> {
-    let key = match sec.signing_key.as_deref().and_then(SigningKey::from_base64) {
-        Some(k) => {
-            tracing::info!("已加载配置的签名密钥（多实例共享）");
-            k
-        }
-        None => {
-            if sec.signing_key.is_some() {
-                tracing::warn!(
-                    "security.signing_key 格式不对（需要 32 字节的 base64url），本次随机生成"
-                );
+/// 1. 若配置中显式提供了密钥（多实例共享），优先使用它；
+/// 2. 若未配置但指定了持久化路径（如数据目录 `data/signing.key`），尝试从该文件加载；若文件不存在则随机生成并持久化写入，使单机重启后 URL 签名依然稳定有效；
+/// 3. 若未指定持久化路径或写入失败，则降级为纯内存随机密钥。
+pub fn init_signing_key(
+    sec: &whatmedia_config::SecurityConfig,
+    data_dir: Option<&std::path::Path>,
+) -> Arc<SigningKey> {
+    if let Some(k) = sec.signing_key.as_deref().and_then(SigningKey::from_base64) {
+        tracing::info!("已加载配置的签名密钥（多实例共享）");
+        return Arc::new(k);
+    }
+    if sec.signing_key.is_some() {
+        tracing::warn!(
+            "security.signing_key 格式不对（需要 32 字节的 base64url），本次尝试从本地持久化文件恢复或重新生成"
+        );
+    }
+
+    if let Some(dir) = data_dir {
+        let key_file = dir.join("signing.key");
+        if key_file.exists() {
+            if let Ok(content) = std::fs::read_to_string(&key_file) {
+                if let Some(k) = SigningKey::from_base64(content.trim()) {
+                    tracing::info!("已从本地持久化文件加载签名密钥：{}", key_file.display());
+                    return Arc::new(k);
+                }
             }
-            SigningKey::generate()
         }
-    };
-    Arc::new(key)
+
+        let new_key = SigningKey::generate();
+        let _ = std::fs::create_dir_all(dir);
+        if let Err(e) = std::fs::write(&key_file, new_key.to_base64()) {
+            tracing::warn!("持久化签名密钥至 {} 失败：{e}，将在内存中运行", key_file.display());
+        } else {
+            tracing::info!("未配置签名密钥，已生成新密钥并持久化保存至：{}", key_file.display());
+        }
+        return Arc::new(new_key);
+    }
+
+    Arc::new(SigningKey::generate())
 }
 
 /// 过期 / 被吊销会话的物理清理。
@@ -1402,5 +1480,29 @@ mod tests {
         for r in ["admin", "user", "child"] {
             assert!(Role::parse(r).is_some(), "{r}");
         }
+    }
+
+    #[test]
+    fn signing_key_persists_across_restarts() {
+        let temp = tempfile::tempdir().unwrap();
+        let sec = whatmedia_config::SecurityConfig::default();
+
+        let key1 = init_signing_key(&sec, Some(temp.path()));
+        let key2 = init_signing_key(&sec, Some(temp.path()));
+
+        assert_eq!(key1.to_base64(), key2.to_base64());
+        let sig = key1.sign("/test", 1000);
+        assert!(key2.verify("/test", 1000, &sig, 500).is_ok());
+    }
+
+    #[test]
+    fn login_rate_limiter_blocks_burst_attempts() {
+        let limiter = LoginRateLimiter::default();
+        let ip = "192.168.1.100";
+        for _ in 0..3 {
+            assert!(limiter.check_and_record_with(ip, std::time::Duration::from_secs(60), 3));
+        }
+        assert!(!limiter.check_and_record_with(ip, std::time::Duration::from_secs(60), 3));
+        assert!(limiter.check_and_record_with("192.168.1.101", std::time::Duration::from_secs(60), 3));
     }
 }

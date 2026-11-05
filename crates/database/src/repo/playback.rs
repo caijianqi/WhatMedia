@@ -180,6 +180,22 @@ pub async fn delete_session(db: &Db, id: Id) -> Result<()> {
     Ok(())
 }
 
+/// 回收超时空闲的播放会话（标记 stopped_at）。
+pub async fn reap_idle_playback_sessions(db: &Db, idle_secs: i64) -> Result<usize> {
+    let now = now_str();
+    let cutoff = (Utc::now() - chrono::Duration::seconds(idle_secs)).to_rfc3339();
+    let r = sqlx::query(
+        "UPDATE playback_session SET stopped_at = ?, updated_at = ?
+          WHERE stopped_at IS NULL AND updated_at < ?",
+    )
+    .bind(&now)
+    .bind(&now)
+    .bind(cutoff)
+    .execute(db.pool())
+    .await?;
+    Ok(r.rows_affected() as usize)
+}
+
 /// 续播点视图。"继续观看"页面只需要这些字段。
 #[derive(Debug, Clone, Serialize)]
 #[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]

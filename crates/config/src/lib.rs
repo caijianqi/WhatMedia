@@ -60,7 +60,7 @@ pub struct PathsConfig {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct DatabaseConfig {
-    /// "sqlite" | "postgres"。v1.0 之前只用 sqlite，postgres 为预留分支。
+    /// 数据库类型。当前版本仅支持 "sqlite"。
     pub kind: String,
     pub url: String,
     pub max_connections: u32,
@@ -335,9 +335,6 @@ impl AppConfig {
             };
         }
         if let Ok(v) = std::env::var("WHATMEDIA_DATABASE_URL") {
-            if v.starts_with("postgres") {
-                self.database.kind = "postgres".into();
-            }
             self.database.url = v;
         }
         if let Ok(v) = std::env::var("WHATMEDIA_LOG_LEVEL") {

@@ -29,6 +29,9 @@ impl Db {
     ///
     /// `url` 形式：`sqlite:/path/to/whatmedia.db?mode=rwc` 或 `sqlite::memory:`。
     pub async fn open(url: &str) -> Result<Self> {
+        if !url.starts_with("sqlite:") && !url.starts_with("sqlite://") {
+            anyhow::bail!("当前构建仅支持 SQLite 数据库引擎，不支持的数据库 URL：{url}。请使用 sqlite:///path/to/whatmedia.db 或 sqlite::memory:");
+        }
         let is_memory = url.contains(":memory:") || url.contains("mode=memory");
 
         let mut opts = SqliteConnectOptions::from_str(url)

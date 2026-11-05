@@ -192,7 +192,6 @@ WhatMedia 采用标准的 Rust Workspace 单体多包（Monorepo）模式，由 
 | **转码播放** | `crates/hardware` | 跨平台 GPU 硬件加速节点自检（DRM, NVIDIA, QSV, MPP） |
 | | `crates/transcoder` | FFmpeg 进程调度池，参数动态构建，HLS 分片切片，HDR 色调映射 |
 | | `crates/playback` | 播放决策裁决中心（Direct Play / Remux / 转码），会话心跳与进度追踪 |
-| | `crates/subtitle` | 字幕轨扫描（内嵌+外挂），格式自动转换（ASS/SRT → WebVTT）与压制规划 |
 | **增值业务** | `crates/metadata` | TMDB / Bangumi / 本地 NFO 混合刮削，候选打分，图片多规格缓存池 |
 | | `crates/live` | M3U 播放列表解析，IPTV 频道管理，直播流连通性探针 |
 | | `crates/auth` | Argon2id 密码哈希，设备签名票据，多角色权限控制，儿童设备家长审批 |
@@ -280,7 +279,6 @@ whatmedia [子命令] [参数...]
 | **`lock`** | `whatmedia lock --item <ID> --fields title,overview` | 永久锁定指定字段，避免被后续自动刮削覆盖 |
 | **`hardware`** | `whatmedia hardware` | 硬件加速探测自检：检查 CPU 拓扑、GPU 驱动节点与可用转码档位 |
 | **`play`** | `whatmedia play --item <ID> --client web` | 离线预演播放决策：模拟指定终端在该片源下的转码参数与 FFmpeg 命令行 |
-| **`subtitles`** | `whatmedia subtitles --item <ID>` | 提取并打印指定媒体的内嵌字幕轨与外挂同名字幕 |
 | **`resume`** | `whatmedia resume --limit 20` | 查看当前账户未播完的视频记录与进度百分比 |
 | **`images`** | `whatmedia images --stats --evict` | 查看海报图片缓存占用，并主动清理超期或超出容量预算的缓存 |
 | **`reap-streams`**| `whatmedia reap-streams` | 强制回收清理因异常退出或崩溃遗留的临时 HLS 分片目录 |

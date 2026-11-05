@@ -835,23 +835,21 @@ pub async fn import_vod_to_library(
     };
 
     // 2. 检查是否已经入库
-    let existing_check: Result<Option<(String,)>, sqlx::Error> = sqlx::query_as(
-        "SELECT id FROM media_item WHERE provider = 'vod_aggregate' AND title = ? LIMIT 1",
+    let existing_check = whatmedia_database::repo::media::find_item_by_provider_and_title(
+        &db,
+        "vod_aggregate",
+        title,
     )
-    .bind(title)
-    .fetch_optional(db.pool())
     .await;
 
-    if let Ok(Some((id_str,))) = existing_check {
-        if let Ok(uuid) = uuid::Uuid::parse_str(&id_str) {
-            return Json(ImportVodResponse {
-                item_id: uuid,
-                library_id: library.id,
-                title: title.to_string(),
-                is_new: false,
-            })
-            .into_response();
-        }
+    if let Ok(Some(item_id)) = existing_check {
+        return Json(ImportVodResponse {
+            item_id,
+            library_id: library.id,
+            title: title.to_string(),
+            is_new: false,
+        })
+        .into_response();
     }
 
     // 3. 构造 MediaItem 并写入
@@ -1091,22 +1089,19 @@ pub async fn check_vod_imported(
         .into_response();
     }
 
-    let existing: Result<Option<(String,)>, sqlx::Error> = sqlx::query_as(
-        "SELECT id FROM media_item WHERE provider = 'vod_aggregate' AND title = ? LIMIT 1",
+    let existing = whatmedia_database::repo::media::find_item_by_provider_and_title(
+        &db,
+        "vod_aggregate",
+        title,
     )
-    .bind(title)
-    .fetch_optional(db.pool())
     .await;
 
     match existing {
-        Ok(Some((id_str,))) => {
-            let uuid = uuid::Uuid::parse_str(&id_str).ok();
-            Json(CheckImportedResponse {
-                imported: true,
-                item_id: uuid,
-            })
-            .into_response()
-        }
+        Ok(Some(uuid)) => Json(CheckImportedResponse {
+            imported: true,
+            item_id: Some(uuid),
+        })
+        .into_response(),
         _ => Json(CheckImportedResponse {
             imported: false,
             item_id: None,

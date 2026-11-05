@@ -1,7 +1,7 @@
 //! WhatMedia 运维与诊断命令行工具集，包含：
 //! - 媒体库增删查与入库扫描（`scan`, `list`, `search`, `libraries`）
 //! - 元数据刮削与审核确认（`scrape`, `scrape-stats`, `review`, `candidates`, `identify`, `lock`）
-//! - 硬件诊断与播放决策模拟（`hardware`, `play`, `subtitles`, `resume`, `config`, `migrations`）
+//! - 硬件诊断与播放决策模拟（`hardware`, `play`, `resume`, `config`, `migrations`）
 //! - 缓存与流清理维护（`images`, `reap-streams`）
 //! - OpenAPI 契约导出（`openapi`）
 
