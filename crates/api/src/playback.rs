@@ -58,19 +58,32 @@ pub struct StreamRegistry {
 
 impl StreamRegistry {
     pub fn insert(&self, h: StreamHandle) {
-        self.inner.lock().unwrap().insert(h.job_id, h);
+        self.inner
+            .lock()
+            .expect("stream registry lock poisoned")
+            .insert(h.job_id, h);
     }
 
     pub fn get(&self, id: Id) -> Option<StreamHandle> {
-        self.inner.lock().unwrap().get(&id).cloned()
+        self.inner
+            .lock()
+            .expect("stream registry lock poisoned")
+            .get(&id)
+            .cloned()
     }
 
     pub fn remove(&self, id: Id) -> Option<StreamHandle> {
-        self.inner.lock().unwrap().remove(&id)
+        self.inner
+            .lock()
+            .expect("stream registry lock poisoned")
+            .remove(&id)
     }
 
     pub fn len(&self) -> usize {
-        self.inner.lock().unwrap().len()
+        self.inner
+            .lock()
+            .expect("stream registry lock poisoned")
+            .len()
     }
 
     pub fn is_empty(&self) -> bool {
@@ -539,10 +552,7 @@ pub async fn session_stop(
         tag = "playback"
     )
 )]
-pub async fn session_delete(
-    State(state): State<AppState>,
-    AxumPath(id): AxumPath<Id>,
-) -> Response {
+pub async fn session_delete(State(state): State<AppState>, AxumPath(id): AxumPath<Id>) -> Response {
     let sessions = match state.sessions.clone() {
         Some(s) => s,
         None => return unavailable("播放会话未初始化"),
@@ -1214,12 +1224,13 @@ async fn build_media(
     db: &whatmedia_database::Db,
     target: &FileTarget,
 ) -> anyhow::Result<MediaCapability> {
-    let mut streams: Vec<MediaStream> = whatmedia_database::repo::files_for_item(db, target.item_id)
-        .await?
-        .into_iter()
-        .find(|(f, _)| f.id == target.file.id)
-        .map(|(_, s)| s)
-        .unwrap_or_default();
+    let mut streams: Vec<MediaStream> =
+        whatmedia_database::repo::files_for_item(db, target.item_id)
+            .await?
+            .into_iter()
+            .find(|(f, _)| f.id == target.file.id)
+            .map(|(_, s)| s)
+            .unwrap_or_default();
 
     // 保底：若为全网聚合添加的云端条目且数据库尚未生成轨信息，自动补全默认 H264/AAC 流，防止报 NoVideoTrack
     if streams.is_empty()

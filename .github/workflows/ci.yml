@@ -42,15 +42,35 @@ jobs:
       - name: Smoke (healthz)
         run: |
           cargo build -p whatmedia
+          mkdir -p /tmp/whatmedia/config /tmp/whatmedia/data /tmp/whatmedia/cache /tmp/whatmedia/logs
           WHATMEDIA_CONFIG_DIR=/tmp/whatmedia/config \
           WHATMEDIA_DATA_DIR=/tmp/whatmedia/data \
           WHATMEDIA_CACHE_DIR=/tmp/whatmedia/cache \
           WHATMEDIA_LOG_DIR=/tmp/whatmedia/logs \
+          WHATMEDIA_MIGRATIONS_DIR="$PWD/migrations" \
           WHATMEDIA_DATABASE_URL="sqlite:/tmp/whatmedia/config/whatmedia.db?mode=rwc" \
-          ./target/debug/whatmedia serve & SRV=$!
-          for i in $(seq 1 30); do
-            curl -fsS http://127.0.0.1:8080/healthz && break || sleep 1
+          ./target/debug/whatmedia serve > /tmp/whatmedia_server.log 2>&1 & SRV=$!
+
+          SUCCESS=0
+          for i in $(seq 1 45); do
+            if ! kill -0 $SRV 2>/dev/null; then
+              echo "❌ 服务进程已异常退出！日志输出如下："
+              cat /tmp/whatmedia_server.log
+              exit 1
+            fi
+            if curl -fsS http://127.0.0.1:8080/healthz; then
+              SUCCESS=1
+              break
+            fi
+            sleep 1
           done
+
+          if [ $SUCCESS -ne 1 ]; then
+            echo "❌ 45秒内探针未就绪！日志输出如下："
+            cat /tmp/whatmedia_server.log
+            exit 1
+          fi
+
           curl -fsS http://127.0.0.1:8080/healthz | grep -q '"status":"ok"'
           kill $SRV
 
@@ -139,7 +159,8 @@ jobs:
         uses: docker/build-push-action@v6
         with:
           context: .
-          platforms: linux/amd64,linux/arm64
+          # 仅在打 release tag (v*) 或手动触发时编译极度耗时的 QEMU arm64；普通 push/PR 仅构建 amd64 保障 CI 快速通过
+          platforms: ${{ (startsWith(github.ref, 'refs/tags/v') || github.event_name == 'workflow_dispatch') && 'linux/amd64,linux/arm64' || 'linux/amd64' }}
           push: ${{ github.event_name != 'pull_request' }}
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}

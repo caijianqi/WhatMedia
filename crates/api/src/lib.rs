@@ -22,6 +22,9 @@ pub mod storage;
 #[cfg(feature = "openapi")]
 pub mod openapi;
 
+use crate::auth::Current;
+#[cfg(feature = "openapi")]
+use crate::playback::AckView;
 use axum::{
     extract::{Path as AxumPath, Query, State},
     http::StatusCode,
@@ -30,7 +33,6 @@ use axum::{
     Json, Router,
 };
 use chrono::Utc;
-use crate::auth::Current;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
@@ -81,7 +83,12 @@ impl ScanRegistry {
     }
 
     pub fn update(&self, id: Uuid, progress: ScanProgress) {
-        if let Some(entry) = self.inner.lock().unwrap_or_else(|e| e.into_inner()).get_mut(&id) {
+        if let Some(entry) = self
+            .inner
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .get_mut(&id)
+        {
             if progress.finished && entry.finished_at.is_none() {
                 entry.finished_at = Some(std::time::Instant::now());
             }
@@ -114,11 +121,18 @@ pub struct StorageRegistry {
 
 impl StorageRegistry {
     pub fn get(&self, root: &str) -> Option<Arc<LocalStorage>> {
-        self.inner.lock().unwrap_or_else(|e| e.into_inner()).get(root).cloned()
+        self.inner
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .get(root)
+            .cloned()
     }
 
     pub fn insert(&self, root: &str, storage: Arc<LocalStorage>) {
-        self.inner.lock().unwrap_or_else(|e| e.into_inner()).insert(root.to_string(), storage);
+        self.inner
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .insert(root.to_string(), storage);
     }
 }
 
@@ -677,7 +691,11 @@ async fn delete_item(
     AxumPath(id): AxumPath<Id>,
 ) -> Response {
     if principal.is_child() {
-        return error_response(StatusCode::FORBIDDEN, "CHILD_RESTRICTED", "儿童模式禁止删除媒体");
+        return error_response(
+            StatusCode::FORBIDDEN,
+            "CHILD_RESTRICTED",
+            "儿童模式禁止删除媒体",
+        );
     }
     let db = match state.db_or_503() {
         Ok(d) => d,
@@ -1263,10 +1281,7 @@ fn guarded_routes(state: AppState) -> Router {
             "/api/v1/aggregator/check_imported",
             get(aggregator::check_vod_imported),
         )
-        .route(
-            "/api/v1/aggregator/hot",
-            get(aggregator::get_hot_vod_items),
-        )
+        .route("/api/v1/aggregator/hot", get(aggregator::get_hot_vod_items))
         // 鉴权中间件放在with_state之前 —— 它需要自己持有 State，
         // 于是这条 router 里此后新增的路由**默认被保护**。
         .layer(axum::middleware::from_fn_with_state(
@@ -1498,11 +1513,18 @@ mod tests {
             )
             .layer(CatchPanicLayer::custom(panic_response));
         let res = router
-            .oneshot(Request::builder().uri("/api/v1/test/panic").body(Body::empty()).unwrap())
+            .oneshot(
+                Request::builder()
+                    .uri("/api/v1/test/panic")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
             .await
             .unwrap();
         assert_eq!(res.status(), StatusCode::INTERNAL_SERVER_ERROR);
-        let body = axum::body::to_bytes(res.into_body(), usize::MAX).await.unwrap();
+        let body = axum::body::to_bytes(res.into_body(), usize::MAX)
+            .await
+            .unwrap();
         let v: serde_json::Value = serde_json::from_slice(&body).unwrap();
         assert_eq!(v["error"]["code"], "INTERNAL_ERROR");
         assert_eq!(v["error"]["message"], "服务器内部异常，已自动拦截");

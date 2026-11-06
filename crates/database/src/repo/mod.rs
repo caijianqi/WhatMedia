@@ -33,9 +33,10 @@ pub use auth::{
     insert_device, insert_session, insert_user, list_pending_approvals, list_sessions,
     list_user_devices, list_users, pending_approval_for_user, prune_sessions, record_login_failure,
     record_login_success, revoke_session, revoke_user_sessions, set_device_approved,
-    set_user_disabled, set_user_display_name, set_user_limits, set_user_password, set_user_pin, set_user_role,
-    touch_device, touch_session, username_exists, ApprovalRow, DeviceRow, NewApproval, NewDevice,
-    NewSession as NewAuthSession, NewUser, SessionRow, SessionWithUser, UserAuthRow, UserView,
+    set_user_disabled, set_user_display_name, set_user_limits, set_user_password, set_user_pin,
+    set_user_role, touch_device, touch_session, username_exists, ApprovalRow, DeviceRow,
+    NewApproval, NewDevice, NewSession as NewAuthSession, NewUser, SessionRow, SessionWithUser,
+    UserAuthRow, UserView,
 };
 pub use image::ItemImage;
 pub use library::{find_library_by_root, get_library, insert_library, list_libraries};

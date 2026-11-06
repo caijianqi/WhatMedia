@@ -91,6 +91,7 @@ use crate::{
         // playback
         crate::playback::decide_playback,
         crate::playback::create_playback_session,
+        crate::playback::session_delete,
         crate::playback::session_heartbeat,
         crate::playback::session_stop,
         crate::playback::resume_list,
@@ -150,11 +151,17 @@ use crate::{
         crate::aggregator::import_vod_sources,
         crate::aggregator::delete_vod_source,
         crate::aggregator::toggle_vod_source,
+        crate::aggregator::import_vod_to_library,
+        crate::aggregator::check_vod_imported,
+        crate::aggregator::get_hot_vod_items,
     ),
     components(schemas(
         // ── aggregator ───────────────────────────────────
         crate::aggregator::AggregateSearchParams,
         crate::aggregator::AggregateSearchResponse,
+        crate::aggregator::ImportVodRequest,
+        crate::aggregator::ImportVodResponse,
+        crate::aggregator::CheckImportedResponse,
         whatmedia_aggregator::AggregatedVodItem,
         whatmedia_aggregator::VodRoute,
         whatmedia_aggregator::VodEpisode,

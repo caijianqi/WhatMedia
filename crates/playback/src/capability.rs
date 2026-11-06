@@ -508,4 +508,3 @@ mod tests {
         assert!(web.supports_container(&Container::Other("application/x-mpegURL".into())));
     }
 }
-

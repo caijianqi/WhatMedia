@@ -491,22 +491,6 @@ fn session_expiry(state: &AppState, kind: &str) -> chrono::DateTime<Utc> {
     }
 }
 
-#[cfg_attr(
-    feature = "openapi",
-    utoipa::path(
-        post,
-        path = "/api/v1/auth/login",
-        request_body = LoginInput,
-        responses(
-            (status = 200, description = "登录成功", body = LoginResult),
-            (status = 401, description = "用户名或口令不对", body = ErrorBody),
-            (status = 403, description = "账户已停用 / 设备等待家长批准", body = ErrorBody),
-            (status = 429, description = "连续失败过多，账户已临时锁定", body = ErrorBody),
-            (status = 503, description = "数据库未就绪", body = ErrorBody),
-        ),
-        tag = "auth"
-    )
-)]
 /// 登录限流器（基于内存滑动窗口）。
 ///
 /// 限制同一客户端在指定窗口期内的登录尝试次数，
@@ -539,6 +523,22 @@ impl LoginRateLimiter {
     }
 }
 
+#[cfg_attr(
+    feature = "openapi",
+    utoipa::path(
+        post,
+        path = "/api/v1/auth/login",
+        request_body = LoginInput,
+        responses(
+            (status = 200, description = "登录成功", body = LoginResult),
+            (status = 401, description = "用户名或口令不对", body = ErrorBody),
+            (status = 403, description = "账户已停用 / 设备等待家长批准", body = ErrorBody),
+            (status = 429, description = "连续失败过多，账户已临时锁定", body = ErrorBody),
+            (status = 503, description = "数据库未就绪", body = ErrorBody),
+        ),
+        tag = "auth"
+    )
+)]
 pub async fn login(
     State(state): State<AppState>,
     headers: axum::http::HeaderMap,
@@ -1394,9 +1394,15 @@ pub fn init_signing_key(
         let new_key = SigningKey::generate();
         let _ = std::fs::create_dir_all(dir);
         if let Err(e) = std::fs::write(&key_file, new_key.to_base64()) {
-            tracing::warn!("持久化签名密钥至 {} 失败：{e}，将在内存中运行", key_file.display());
+            tracing::warn!(
+                "持久化签名密钥至 {} 失败：{e}，将在内存中运行",
+                key_file.display()
+            );
         } else {
-            tracing::info!("未配置签名密钥，已生成新密钥并持久化保存至：{}", key_file.display());
+            tracing::info!(
+                "未配置签名密钥，已生成新密钥并持久化保存至：{}",
+                key_file.display()
+            );
         }
         return Arc::new(new_key);
     }
@@ -1503,6 +1509,10 @@ mod tests {
             assert!(limiter.check_and_record_with(ip, std::time::Duration::from_secs(60), 3));
         }
         assert!(!limiter.check_and_record_with(ip, std::time::Duration::from_secs(60), 3));
-        assert!(limiter.check_and_record_with("192.168.1.101", std::time::Duration::from_secs(60), 3));
+        assert!(limiter.check_and_record_with(
+            "192.168.1.101",
+            std::time::Duration::from_secs(60),
+            3
+        ));
     }
 }

@@ -530,28 +530,28 @@ impl Scraper {
             }
 
             for c in score_candidates(&query, list, &self.cfg.thresholds) {
-                    // 不过滤 Reject：人工确认界面要能看到"最接近的几部"，
-                    // 哪怕分数很低 —— 空白列表比低分候选更让人无从下手。
-                    let poster = c
-                        .record
-                        .images
-                        .iter()
-                        .find(|i| i.kind == "poster")
-                        .map(|i| i.url.clone());
-                    out.push(CandidateView {
-                        provider: c.record.provider.clone(),
-                        provider_id: c.record.provider_id.clone(),
-                        title: c.record.title.clone(),
-                        original_title: c.record.original_title.clone(),
-                        year: c.record.year,
-                        overview: c.record.overview.clone(),
-                        poster: poster.clone(),
-                        poster_url: poster,
-                        score: c.score,
-                        confidence: format!("{:?}", c.confidence),
-                    });
-                }
+                // 不过滤 Reject：人工确认界面要能看到"最接近的几部"，
+                // 哪怕分数很低 —— 空白列表比低分候选更让人无从下手。
+                let poster = c
+                    .record
+                    .images
+                    .iter()
+                    .find(|i| i.kind == "poster")
+                    .map(|i| i.url.clone());
+                out.push(CandidateView {
+                    provider: c.record.provider.clone(),
+                    provider_id: c.record.provider_id.clone(),
+                    title: c.record.title.clone(),
+                    original_title: c.record.original_title.clone(),
+                    year: c.record.year,
+                    overview: c.record.overview.clone(),
+                    poster: poster.clone(),
+                    poster_url: poster,
+                    score: c.score,
+                    confidence: format!("{:?}", c.confidence),
+                });
             }
+        }
         out.sort_by(|a, b| {
             b.score
                 .partial_cmp(&a.score)

@@ -382,8 +382,9 @@ pub async fn proxy_vod_stream(
     let mut response_headers = axum::http::HeaderMap::new();
     response_headers.insert(
         axum::http::header::CONTENT_TYPE,
-        axum::http::HeaderValue::from_str(out_ct)
-            .unwrap_or(axum::http::HeaderValue::from_static("application/octet-stream")),
+        axum::http::HeaderValue::from_str(out_ct).unwrap_or(axum::http::HeaderValue::from_static(
+            "application/octet-stream",
+        )),
     );
     response_headers.insert(
         axum::http::header::ACCESS_CONTROL_ALLOW_ORIGIN,
@@ -429,12 +430,7 @@ fn rewrite_tag_uri(line: &str, base_url: &reqwest::Url) -> String {
             let orig_uri = &after[..end];
             if let Ok(abs_url) = base_url.join(orig_uri) {
                 let proxy_uri = encode_vod_proxy_url(abs_url.as_str());
-                return format!(
-                    "{}URI='{}'{}",
-                    &line[..start],
-                    proxy_uri,
-                    &after[end + 1..]
-                );
+                return format!("{}URI='{}'{}", &line[..start], proxy_uri, &after[end + 1..]);
             }
         }
     }
@@ -781,6 +777,21 @@ pub struct CheckImportedResponse {
     pub item_id: Option<uuid::Uuid>,
 }
 
+#[cfg_attr(
+    feature = "openapi",
+    utoipa::path(
+        post,
+        path = "/api/v1/aggregator/import",
+        request_body = ImportVodRequest,
+        responses(
+            (status = 200, description = "导入结果", body = ImportVodResponse),
+            (status = 400, description = "请求参数不合法", body = crate::ErrorBody),
+            (status = 403, description = "儿童模式受限", body = crate::ErrorBody),
+            (status = 503, description = "数据库未就绪", body = crate::ErrorBody),
+        ),
+        tag = "aggregator"
+    )
+)]
 pub async fn import_vod_to_library(
     State(state): State<AppState>,
     Current(principal): Current,
@@ -1071,6 +1082,21 @@ pub async fn import_vod_to_library(
     .into_response()
 }
 
+#[cfg_attr(
+    feature = "openapi",
+    utoipa::path(
+        get,
+        path = "/api/v1/aggregator/check_imported",
+        params(
+            ("title" = String, Query, description = "影视标题"),
+        ),
+        responses(
+            (status = 200, description = "检查结果", body = CheckImportedResponse),
+            (status = 503, description = "数据库未就绪", body = crate::ErrorBody),
+        ),
+        tag = "aggregator"
+    )
+)]
 pub async fn check_vod_imported(
     State(state): State<AppState>,
     Query(query): Query<CheckImportedQuery>,
@@ -1110,6 +1136,17 @@ pub async fn check_vod_imported(
     }
 }
 
+#[cfg_attr(
+    feature = "openapi",
+    utoipa::path(
+        get,
+        path = "/api/v1/aggregator/hot",
+        responses(
+            (status = 200, description = "热门影视列表", body = Vec<AggregatedVodItem>),
+        ),
+        tag = "aggregator"
+    )
+)]
 pub async fn get_hot_vod_items(
     State(state): State<AppState>,
     Current(principal): Current,
@@ -1142,15 +1179,19 @@ https://cdn.example.com/hls/seg-002.ts
 #EXT-X-ENDLIST"#;
 
         let rewritten = rewrite_vod_m3u8(m3u8_content, &base_url);
-        
+
         // 验证 AES-128 KEY 是否被重写为代理地址
         assert!(rewritten.contains("#EXT-X-KEY:METHOD=AES-128,URI=\"/api/v1/proxy/vod_stream?url=https%3A%2F%2Fcdn.example.com%2Fhls%2Fenc.key\",IV=0x1234"));
         // 验证 EXT-X-MAP 是否被重写
         assert!(rewritten.contains("#EXT-X-MAP:URI=\"/api/v1/proxy/vod_stream?url=https%3A%2F%2Fcdn.example.com%2Fhls%2Finit.mp4\""));
         // 验证相对切片
-        assert!(rewritten.contains("/api/v1/proxy/vod_stream?url=https%3A%2F%2Fcdn.example.com%2Fhls%2Fseg-001.ts"));
+        assert!(rewritten.contains(
+            "/api/v1/proxy/vod_stream?url=https%3A%2F%2Fcdn.example.com%2Fhls%2Fseg-001.ts"
+        ));
         // 验证绝对切片
-        assert!(rewritten.contains("/api/v1/proxy/vod_stream?url=https%3A%2F%2Fcdn.example.com%2Fhls%2Fseg-002.ts"));
+        assert!(rewritten.contains(
+            "/api/v1/proxy/vod_stream?url=https%3A%2F%2Fcdn.example.com%2Fhls%2Fseg-002.ts"
+        ));
     }
 
     #[test]
@@ -1164,4 +1205,3 @@ https://cdn.example.com/hls/seg-002.ts
         assert_eq!(urldecode(&step1), "https://example.com/play.m3u8");
     }
 }
-

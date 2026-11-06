@@ -27,8 +27,10 @@ fn allowlist() -> BTreeSet<&'static str> {
 /// 路由注册有写成一行的，也有 rustfmt 折成多行的（路径落在下一行），
 /// 所以不能按行匹配 —— 从 `.route(` 起往后找第一个字符串字面量。
 fn routes_in_source() -> BTreeSet<String> {
-    let src = fs::read_to_string(concat!(env!("CARGO_MANIFEST_DIR"), "/src/lib.rs"))
+    let raw = fs::read_to_string(concat!(env!("CARGO_MANIFEST_DIR"), "/src/lib.rs"))
         .expect("读不到 crates/api/src/lib.rs");
+
+    let src = raw.split("#[cfg(test)]").next().unwrap_or(&raw);
 
     let mut out = BTreeSet::new();
     let mut at = 0;

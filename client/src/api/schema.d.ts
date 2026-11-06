@@ -4,6 +4,54 @@
  */
 
 export interface paths {
+    "/api/v1/aggregator/check_imported": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["check_vod_imported"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/aggregator/hot": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["get_hot_vod_items"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/aggregator/import": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["import_vod_to_library"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/ai/chat": {
         parameters: {
             query?: never;
@@ -940,6 +988,22 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/playback/sessions/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        delete: operations["session_delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/playback/sessions/{id}/heartbeat": {
         parameters: {
             query?: never;
@@ -1341,7 +1405,7 @@ export interface components {
             /** @description 主演 */
             actor?: string | null;
             /** @description 清洗后的纯净比对标题 (全小写、去修饰词) */
-            clean_title: string;
+            clean_title?: string;
             /** @description 简介 */
             content?: string | null;
             /** @description 导演 */
@@ -1353,7 +1417,7 @@ export interface components {
             /** @description 更新状态 (如 "更新至30集") */
             remark?: string | null;
             /** @description 聚合的多条播放线路 */
-            routes: components["schemas"]["VodRoute"][];
+            routes?: components["schemas"]["VodRoute"][];
             /** @description 原始标题或副标题 */
             sub_title?: string | null;
             /** @description 规范化主标题 */
@@ -1449,6 +1513,11 @@ export interface components {
             title: string;
             /** Format: int32 */
             year?: number | null;
+        };
+        CheckImportedResponse: {
+            imported: boolean;
+            /** Format: uuid */
+            item_id?: string | null;
         };
         Container: "mp4" | "mkv" | "ts" | "webm" | "m2ts" | "iso" | "avi" | "flv" | {
             other: string;
@@ -1676,6 +1745,25 @@ export interface components {
         IdentifyRequest: {
             provider: string;
             provider_id: string;
+        };
+        /** @description 入库请求参数 */
+        ImportVodRequest: {
+            /** @description 指定首选/默认线路源 ID */
+            default_source_id?: string | null;
+            item: components["schemas"]["AggregatedVodItem"];
+            /** Format: uuid */
+            library_id?: string | null;
+            /** @description 指定入库的线路源 ID 列表；若为空，则入库全部可用线路 */
+            selected_source_ids?: string[] | null;
+        };
+        /** @description 入库响应结果 */
+        ImportVodResponse: {
+            is_new: boolean;
+            /** Format: uuid */
+            item_id: string;
+            /** Format: uuid */
+            library_id: string;
+            title: string;
         };
         /** @description 详情：item + 所有版本 + 每个版本的文件 + 每个文件的流。 */
         ItemDetail: components["schemas"]["ItemSummary"] & {
@@ -2129,6 +2217,8 @@ export interface components {
             /** @description 强制全量重新刮削所有条目（无论是否已完成），用于凭据变更或重新刷新图片与演职员。 */
             force?: boolean;
             /** Format: uuid */
+            item_id?: string | null;
+            /** Format: uuid */
             library_id?: string | null;
             /** @description 只重跑失败项。 */
             retry_failed?: boolean;
@@ -2326,9 +2416,11 @@ export interface components {
         };
         UpdateUserInput: {
             disabled?: boolean | null;
+            display_name?: string | null;
             max_rating?: string | null;
             /** Format: uuid */
             parent_id?: string | null;
+            password?: string | null;
             role?: string | null;
         };
         UserOut: {
@@ -2406,6 +2498,109 @@ export interface components {
 }
 export type $defs = Record<string, never>;
 export interface operations {
+    check_vod_imported: {
+        parameters: {
+            query: {
+                /** @description 影视标题 */
+                title: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description 检查结果 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CheckImportedResponse"];
+                };
+            };
+            /** @description 数据库未就绪 */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+        };
+    };
+    get_hot_vod_items: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description 热门影视列表 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AggregatedVodItem"][];
+                };
+            };
+        };
+    };
+    import_vod_to_library: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ImportVodRequest"];
+            };
+        };
+        responses: {
+            /** @description 导入结果 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ImportVodResponse"];
+                };
+            };
+            /** @description 请求参数不合法 */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description 儿童模式受限 */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description 数据库未就绪 */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+        };
+    };
     chat: {
         parameters: {
             query?: never;
@@ -4584,6 +4779,38 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description 数据库未就绪 */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+        };
+    };
+    session_delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description 会话 id */
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description 成功 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AckView"];
                 };
             };
             /** @description 数据库未就绪 */

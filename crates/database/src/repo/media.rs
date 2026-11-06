@@ -753,13 +753,12 @@ pub async fn find_item_by_provider_and_title(
     provider: &str,
     title: &str,
 ) -> Result<Option<Id>> {
-    let row: Option<(String,)> = sqlx::query_as(
-        "SELECT id FROM media_item WHERE provider = ? AND title = ? LIMIT 1",
-    )
-    .bind(provider)
-    .bind(title)
-    .fetch_optional(db.pool())
-    .await?;
+    let row: Option<(String,)> =
+        sqlx::query_as("SELECT id FROM media_item WHERE provider = ? AND title = ? LIMIT 1")
+            .bind(provider)
+            .bind(title)
+            .fetch_optional(db.pool())
+            .await?;
 
     Ok(row.and_then(|(s,)| Id::parse_str(&s).ok()))
 }
@@ -769,12 +768,10 @@ pub async fn get_item_provider_info(
     db: &Db,
     item_id: Id,
 ) -> Result<Option<(Option<String>, Option<String>)>> {
-    let row: Option<(Option<String>, Option<String>)> = sqlx::query_as(
-        "SELECT provider, provider_id FROM media_item WHERE id = ?",
-    )
-    .bind(item_id.to_string())
-    .fetch_optional(db.pool())
-    .await?;
+    let row: Option<(Option<String>, Option<String>)> =
+        sqlx::query_as("SELECT provider, provider_id FROM media_item WHERE id = ?")
+            .bind(item_id.to_string())
+            .fetch_optional(db.pool())
+            .await?;
     Ok(row)
 }
-

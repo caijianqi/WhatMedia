@@ -42,18 +42,31 @@ pub struct ScrapeRunView {
 
 impl ScrapeRegistry {
     fn insert(&self, v: ScrapeRunView) {
-        self.inner.lock().unwrap_or_else(|e| e.into_inner()).insert(v.id, v);
+        self.inner
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .insert(v.id, v);
     }
 
     fn finish(&self, id: Uuid, stats: ScrapeStats) {
-        if let Some(v) = self.inner.lock().unwrap_or_else(|e| e.into_inner()).get_mut(&id) {
+        if let Some(v) = self
+            .inner
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .get_mut(&id)
+        {
             v.running = false;
             v.stats = Some(stats);
         }
     }
 
     pub fn list(&self) -> Vec<ScrapeRunView> {
-        self.inner.lock().unwrap_or_else(|e| e.into_inner()).values().cloned().collect()
+        self.inner
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .values()
+            .cloned()
+            .collect()
     }
 }
 
@@ -617,9 +630,7 @@ pub async fn item_image(
                 let p_clone = path_str.clone();
                 tokio::spawn(async move {
                     let _ = whatmedia_database::repo::media::update_image_cached_path(
-                        &db_clone,
-                        &url_clone,
-                        &p_clone,
+                        &db_clone, &url_clone, &p_clone,
                     )
                     .await;
                 });

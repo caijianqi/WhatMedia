@@ -204,9 +204,8 @@ pub fn clean_search_title(raw: &str) -> (String, Option<i32>) {
 
     // 1. 去除常见的中括号/小括号包裹的内容，如 [4K] [国语] (重制版) 【国语中字】
     static BRACKET_RE: std::sync::OnceLock<regex::Regex> = std::sync::OnceLock::new();
-    let bracket_re = BRACKET_RE.get_or_init(|| {
-        regex::Regex::new(r"\[[^\]]*\]|\([^\)]*\)|【[^】]*】|（[^）]*）").unwrap()
-    });
+    let bracket_re = BRACKET_RE
+        .get_or_init(|| regex::Regex::new(r"\[[^\]]*\]|\([^\)]*\)|【[^】]*】|（[^）]*）").unwrap());
     s = bracket_re.replace_all(&s, " ").to_string();
 
     // 2. 剥离副标题分隔符之后的部分，如 "经验派护士～数字化到底是什么啊！？～" -> "经验派护士"
@@ -220,9 +219,7 @@ pub fn clean_search_title(raw: &str) -> (String, Option<i32>) {
     // 3. 提取并剥离 4 位数字年份（1950 ~ 2035）
     let mut year_hint = None;
     static YEAR_RE: std::sync::OnceLock<regex::Regex> = std::sync::OnceLock::new();
-    let year_re = YEAR_RE.get_or_init(|| {
-        regex::Regex::new(r"(19\d\d|20[0-3]\d)").unwrap()
-    });
+    let year_re = YEAR_RE.get_or_init(|| regex::Regex::new(r"(19\d\d|20[0-3]\d)").unwrap());
     if let Some(m) = year_re.find(&s) {
         if let Ok(y) = m.as_str().parse::<i32>() {
             year_hint = Some(y);
@@ -243,7 +240,7 @@ pub fn clean_search_title(raw: &str) -> (String, Option<i32>) {
     let mut cleaned = String::with_capacity(s.len());
     let mut last_space = false;
     for c in s.chars() {
-        if c.is_alphanumeric() || (c >= '\u{4e00}' && c <= '\u{9fa5}') {
+        if c.is_alphanumeric() || ('\u{4e00}'..='\u{9fa5}').contains(&c) {
             cleaned.push(c);
             last_space = false;
         } else if !last_space && (c.is_whitespace() || c == ':' || c == '：') {
@@ -275,8 +272,8 @@ pub fn score_candidates(
         .map(|r| {
             // 标题：原名和译名都试一遍，且结合原始标题与净化后标题取最高者。
             // 例如原名为 "凡人修仙传2020"，净化为 "凡人修仙传"，与 TMDB "凡人修仙传" 即可完美匹配。
-            let by_title = similarity(&query.title, &r.title)
-                .max(similarity(&clean_q_title, &r.title));
+            let by_title =
+                similarity(&query.title, &r.title).max(similarity(&clean_q_title, &r.title));
             let by_original = r
                 .original_title
                 .as_deref()
@@ -316,7 +313,11 @@ pub fn score_candidates(
     } else if scored.len() == 1 && scored[0].title_score >= 0.85 {
         // 单一高置信候选：即便缺年份或没有第二名拉开分差，也自动采纳，避免界面变成无元数据
         Confidence::Auto
-    } else if scored.first().map(|c| c.title_score >= 0.95 && (c.title_score - runner_up) >= thresholds.margin).unwrap_or(false) {
+    } else if scored
+        .first()
+        .map(|c| c.title_score >= 0.95 && (c.title_score - runner_up) >= thresholds.margin)
+        .unwrap_or(false)
+    {
         Confidence::Auto
     } else {
         Confidence::Review
@@ -499,4 +500,3 @@ mod tests {
         assert_eq!(t5, "经验派护士");
     }
 }
-

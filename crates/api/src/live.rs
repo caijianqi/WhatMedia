@@ -122,19 +122,32 @@ pub struct LiveRegistry {
 
 impl LiveRegistry {
     pub fn get(&self, channel: Id) -> Option<LiveHandle> {
-        self.inner.lock().unwrap().get(&channel).cloned()
+        self.inner
+            .lock()
+            .expect("live registry lock poisoned")
+            .get(&channel)
+            .cloned()
     }
 
     pub fn insert(&self, h: LiveHandle) {
-        self.inner.lock().unwrap().insert(h.channel_id, h);
+        self.inner
+            .lock()
+            .expect("live registry lock poisoned")
+            .insert(h.channel_id, h);
     }
 
     pub fn remove(&self, channel: Id) -> Option<LiveHandle> {
-        self.inner.lock().unwrap().remove(&channel)
+        self.inner
+            .lock()
+            .expect("live registry lock poisoned")
+            .remove(&channel)
     }
 
     pub fn len(&self) -> usize {
-        self.inner.lock().unwrap().len()
+        self.inner
+            .lock()
+            .expect("live registry lock poisoned")
+            .len()
     }
 
     pub fn is_empty(&self) -> bool {
@@ -930,7 +943,8 @@ pub struct LiveProxyQuery {
 }
 
 pub fn encode_proxy_url(abs: &str) -> String {
-    let mut dummy = reqwest::Url::parse("http://localhost/api/v1/live/proxy").unwrap();
+    let mut dummy = reqwest::Url::parse("http://localhost/api/v1/live/proxy")
+        .expect("static proxy url is valid");
     dummy.query_pairs_mut().append_pair("url", abs);
     format!("/api/v1/live/proxy?{}", dummy.query().unwrap_or_default())
 }

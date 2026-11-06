@@ -216,7 +216,6 @@ pub struct ResumePoint {
     pub updated_at: String,
 }
 
-
 /// 最近观看。同一部片只取最新一条，已看完（进度 > 92%）的不进列表。
 pub async fn resume_points(db: &Db, user_id: Option<Id>, limit: u32) -> Result<Vec<ResumePoint>> {
     let rows = sqlx::query_as::<

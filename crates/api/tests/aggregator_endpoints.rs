@@ -219,7 +219,10 @@ async fn import_vod_item_and_check_imported_flow() {
     // 1. 初始状态检查：未入库
     let res = send(
         &state,
-        get_authed(&token, "/api/v1/aggregator/check_imported?title=%E6%B5%81%E6%B5%AA%E5%9C%B0%E7%90%83%202"),
+        get_authed(
+            &token,
+            "/api/v1/aggregator/check_imported?title=%E6%B5%81%E6%B5%AA%E5%9C%B0%E7%90%83%202",
+        ),
     )
     .await;
     assert_eq!(res.status, StatusCode::OK);
@@ -240,7 +243,10 @@ async fn import_vod_item_and_check_imported_flow() {
     // 3. 再次检查：已入库
     let res = send(
         &state,
-        get_authed(&token, "/api/v1/aggregator/check_imported?title=%E6%B5%81%E6%B5%AA%E5%9C%B0%E7%90%83%202"),
+        get_authed(
+            &token,
+            "/api/v1/aggregator/check_imported?title=%E6%B5%81%E6%B5%AA%E5%9C%B0%E7%90%83%202",
+        ),
     )
     .await;
     assert_eq!(res.status, StatusCode::OK);

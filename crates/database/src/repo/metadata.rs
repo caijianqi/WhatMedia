@@ -336,7 +336,6 @@ pub async fn requeue_item(db: &Db, item_id: Id) -> Result<()> {
     Ok(())
 }
 
-
 /// 强制全量重新入队。无论先前状态是 done、failed、skipped 还是 pending，
 /// 全部重置为 pending 并补齐未入队的条目，用于凭据变更或重新刷新图片与演职员。
 pub async fn requeue_all(db: &Db, library_id: Option<Id>) -> Result<u64> {
