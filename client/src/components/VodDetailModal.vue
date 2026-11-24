@@ -93,7 +93,7 @@ async function playEpisodeTest(ep: VodEpisode): Promise<void> {
   await nextTick()
   const video = testVideoRef.value
   if (!video) return
-  video.referrerPolicy = 'no-referrer'
+  video.setAttribute('referrerpolicy', 'no-referrer')
 
   if (hlsInstance) {
     hlsInstance.destroy()

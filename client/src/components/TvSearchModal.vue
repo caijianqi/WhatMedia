@@ -64,7 +64,7 @@ watch(keyword, (newVal) => {
   searchTimer = setTimeout(async () => {
     try {
       const res = await api.searchAggregate(trimmed)
-      localResults.value = res.local?.items ?? []
+      localResults.value = res.local?.data ?? []
       remoteResults.value = res.remote ?? []
     } catch {
       localResults.value = []
@@ -175,12 +175,11 @@ const hasResults = computed(() => localResults.value.length > 0 || remoteResults
                   @click="onSelectLocal(item)"
                 >
                   <div class="card-thumb">
-                    <img v-if="item.poster_url" :src="item.poster_url" :alt="item.title" loading="lazy" />
-                    <div v-else class="thumb-placeholder">{{ item.title.slice(0, 1) }}</div>
+                    <img :src="api.resolveMediaUrl(`/items/${item.id}/images/poster`)" :alt="item.title" loading="lazy" />
                   </div>
                   <div class="card-info">
                     <strong class="title">{{ item.title }}</strong>
-                    <span class="meta">{{ item.year ?? '影视' }} · {{ item.media_type === 'series' ? '剧集' : '电影' }}</span>
+                    <span class="meta">{{ item.year ?? '影视' }} · {{ item.kind === 'series' ? '剧集' : '电影' }}</span>
                   </div>
                 </button>
               </div>
@@ -201,12 +200,12 @@ const hasResults = computed(() => localResults.value.length > 0 || remoteResults
                   @click="onSelectRemote(vod)"
                 >
                   <div class="card-thumb">
-                    <img v-if="vod.picture" :src="vod.picture" :alt="vod.name" loading="lazy" />
-                    <div v-else class="thumb-placeholder">{{ vod.name.slice(0, 1) }}</div>
+                    <img v-if="vod.poster" :src="vod.poster" :alt="vod.title" loading="lazy" />
+                    <div v-else class="thumb-placeholder">{{ vod.title.slice(0, 1) }}</div>
                   </div>
                   <div class="card-info">
-                    <strong class="title">{{ vod.name }}</strong>
-                    <span class="meta">{{ vod.source_name }} · {{ vod.type_name ?? '影视' }}</span>
+                    <strong class="title">{{ vod.title }}</strong>
+                    <span class="meta">{{ vod.routes[0]?.source_name ?? '全网聚合' }} · {{ vod.type_name ?? '影视' }}</span>
                   </div>
                 </button>
               </div>
@@ -219,6 +218,7 @@ const hasResults = computed(() => localResults.value.length > 0 || remoteResults
     <!-- 聚合影视详情抽屉弹层 -->
     <VodDetailModal
       v-if="selectedVod"
+      :open="!!selectedVod"
       :item="selectedVod"
       @close="onCloseVodModal"
     />

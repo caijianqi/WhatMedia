@@ -7,9 +7,18 @@ vi.mock('../api/client', async (importOriginal) => {
   const actual = await importOriginal<typeof import('../api/client')>()
   return {
     ...actual,
+    resolveMediaUrl: vi.fn().mockReturnValue('https://example.com/poster.jpg'),
     searchAggregate: vi.fn().mockResolvedValue({
-      local: { items: [{ id: 'm1', title: '流浪地球', year: 2019, media_type: 'movie' }], total: 1 },
-      remote: [{ id: 'v1', name: '狂飙', source_name: '量子资源', routes: [] }],
+      local: {
+        data: [{ id: 'm1', title: '流浪地球', year: 2019, kind: 'movie', added_at: '2026-01-01' }],
+        pagination: { page: 1, page_size: 20, total: 1, total_pages: 1 },
+      },
+      remote: [{
+        id: 'v1',
+        title: '狂飙',
+        clean_title: '狂飙',
+        routes: [{ source_id: 'lz', source_name: '量子资源', play_from: 'lz', episodes: [] }],
+      }],
     }),
   }
 })

@@ -78,7 +78,6 @@ export class WebPlayer implements MediaPlayer {
   /** 卸载标志：异步回调回来时实例可能已经销毁了。 */
   private disposed = false
 
-  private currentHlsUrl = ''
   private mediaErrorRecoverCount = 0
 
   private onHlsError: ((...args: unknown[]) => void) | null = null
@@ -113,7 +112,7 @@ export class WebPlayer implements MediaPlayer {
     video.playsInline = true
     video.controls = false // 控制条自己画，原生控制条样式改不动
     video.preload = 'metadata'
-    video.referrerPolicy = 'no-referrer'
+    video.setAttribute('referrerpolicy', 'no-referrer')
     // 画面填满容器，letterbox 交给 CSS。
     video.style.width = '100%'
     video.style.height = '100%'
@@ -157,7 +156,6 @@ export class WebPlayer implements MediaPlayer {
   }
 
   private async loadHls(video: HTMLVideoElement, url: string): Promise<void> {
-    this.currentHlsUrl = url
     if (this.options.preferNativeHls && this.nativeHlsSupported(video)) {
       video.src = url
       return
@@ -448,7 +446,6 @@ export class WebPlayer implements MediaPlayer {
     this.onHlsError = null
     this.onHlsManifestParsed = null
     this.onHlsLevelSwitched = null
-    this.hasFallenBackToProxy = false
     this.mediaErrorRecoverCount = 0
   }
 
