@@ -168,10 +168,7 @@ pub fn is_junk_channel_name(name: &str) -> bool {
         }
     }
     // 过滤形如纯日期戳的名称 "2026-10-12"
-    if trimmed.starts_with("202") && trimmed.contains('-') && trimmed.len() <= 20 {
-        return true;
-    }
-    false
+    trimmed.starts_with("202") && trimmed.contains('-') && trimmed.len() <= 20
 }
 
 /// 解析一份国内通用 TXT 格式的直播订阅（如 `频道名,URL` 或 `分组,#genre#`）。
