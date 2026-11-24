@@ -90,6 +90,23 @@ async fn add_source(st: &AppState, tok: &str, url: &str) -> String {
     r.json()["id"].as_str().unwrap().to_string()
 }
 
+async fn wait_for_channels(st: &AppState, tok: &str, expected_count: usize) -> Value {
+    for _ in 0..50 {
+        let r = send(st, get(tok, "/api/v1/live/channels")).await;
+        if r.status == StatusCode::OK {
+            let ch = r.json();
+            if let Some(arr) = ch.as_array() {
+                if arr.len() == expected_count {
+                    return ch;
+                }
+            }
+        }
+        tokio::time::sleep(tokio::time::Duration::from_millis(20)).await;
+    }
+    let r = send(st, get(tok, "/api/v1/live/channels")).await;
+    r.json()
+}
+
 #[tokio::test]
 async fn sync_imports_channels_with_groups_and_logos() {
     let (st, tok, dir) = state().await;
@@ -105,9 +122,7 @@ async fn sync_imports_channels_with_groups_and_logos() {
     assert_eq!(r.status, StatusCode::OK);
     assert_eq!(r.json()["channels"], 2);
 
-    let r = send(&st, get(&tok, "/api/v1/live/channels")).await;
-    assert_eq!(r.status, StatusCode::OK);
-    let ch = r.json();
+    let ch = wait_for_channels(&st, &tok, 2).await;
     assert_eq!(ch.as_array().unwrap().len(), 2);
     assert_eq!(ch[0]["name"], "CCTV-1 综合");
     assert_eq!(ch[0]["group"], "央视");
@@ -136,27 +151,46 @@ async fn channels_never_leak_into_the_media_library() {
 }
 
 #[tokio::test]
-async fn bad_playlist_is_reported_not_swallowed() {
-    // "同步成功，0 个频道"是最糟的反馈：用户以为自己配对了。
+async fn bad_playlist_is_rejected_at_source_creation() {
     let (st, tok, dir) = state().await;
     let p = dir.path().join("bad.m3u");
     tokio::fs::write(&p, "这不是播放列表\nhttp://a.ts\n")
         .await
         .unwrap();
 
-    let id = add_source(&st, &tok, &p.to_string_lossy()).await;
+    // 在添加源阶段直接前置校验，坏播放列表直接拒绝，不入库
     let r = send(
         &st,
-        post_json(&tok, &format!("/api/v1/live/sources/{id}/sync"), json!({})),
+        post_json(
+            &tok,
+            "/api/v1/live/sources",
+            json!({ "name": "坏源", "kind": "m3u", "url": p.to_str().unwrap() }),
+        ),
     )
     .await;
     assert_eq!(r.status, StatusCode::BAD_GATEWAY);
     assert_eq!(r.json()["error"]["code"], "BAD_PLAYLIST");
 
-    // 失败次数要留痕，否则前端永远显示"从未同步"。
+    // 数据库中不残留任何坏源
     let r = send(&st, get(&tok, "/api/v1/live/sources")).await;
-    let src = r.json();
-    assert!(src[0]["sync_error"].as_str().unwrap().contains("M3U"));
+    let sources = r.json();
+    assert_eq!(sources.as_array().unwrap().len(), 0);
+}
+
+#[tokio::test]
+async fn unreachable_url_is_rejected_at_source_creation() {
+    let (st, tok, _dir) = state().await;
+    let r = send(
+        &st,
+        post_json(
+            &tok,
+            "/api/v1/live/sources",
+            json!({ "name": "死链源", "kind": "m3u", "url": "http://127.0.0.1:54321/dead.m3u" }),
+        ),
+    )
+    .await;
+    assert_eq!(r.status, StatusCode::BAD_GATEWAY);
+    assert_eq!(r.json()["error"]["code"], "SOURCE_UNREACHABLE");
 }
 
 #[tokio::test]
@@ -164,13 +198,17 @@ async fn header_only_playlist_is_empty_not_ok() {
     let (st, tok, dir) = state().await;
     let p = dir.path().join("empty.m3u");
     tokio::fs::write(&p, "#EXTM3U\n").await.unwrap();
-    let id = add_source(&st, &tok, &p.to_string_lossy()).await;
     let r = send(
         &st,
-        post_json(&tok, &format!("/api/v1/live/sources/{id}/sync"), json!({})),
+        post_json(
+            &tok,
+            "/api/v1/live/sources",
+            json!({ "name": "空源", "kind": "m3u", "url": p.to_str().unwrap() }),
+        ),
     )
     .await;
     assert_eq!(r.status, StatusCode::BAD_GATEWAY);
+    assert_eq!(r.json()["error"]["code"], "EMPTY_PLAYLIST");
 }
 
 #[tokio::test]
@@ -215,8 +253,7 @@ async fn resync_replaces_channels_instead_of_accumulating() {
     .await;
     assert_eq!(r.json()["channels"], 1);
 
-    let r = send(&st, get(&tok, "/api/v1/live/channels")).await;
-    let ch = r.json();
+    let ch = wait_for_channels(&st, &tok, 1).await;
     assert_eq!(ch.as_array().unwrap().len(), 1);
     assert_eq!(ch[0]["name"], "CCTV-5");
 }
@@ -287,7 +324,7 @@ async fn sync_imports_txt_playlist_with_genres() {
     assert_eq!(r.status, StatusCode::OK);
     assert_eq!(r.json()["channels"], 2);
 
-    let chs = send(&st, get(&tok, "/api/v1/live/channels")).await.json();
+    let chs = wait_for_channels(&st, &tok, 2).await;
     let arr = chs.as_array().unwrap();
     assert_eq!(arr.len(), 2);
     assert_eq!(arr[0]["name"], "CCTV-1");
@@ -334,7 +371,14 @@ rtmp://live.example.com/live/stream
         .unwrap();
 
     assert_eq!(total, 2);
-    assert_eq!(disabled, 1); // 坏流被标记禁用，RTMP保留
+    assert_eq!(disabled, 1); // 坏流被探测出死链并物理删除，RTMP保留
+
+    // 验证坏流已从数据库彻底物理删除，频道数由 2 变为 1
+    let db_chs = whatmedia_database::repo::list_channels_by_source(db, src_id)
+        .await
+        .unwrap();
+    assert_eq!(db_chs.len(), 1);
+    assert_eq!(db_chs[0].name, "好流-RTMP");
 
     // 获取频道列表，坏流已被过滤
     let chs = send(&st, get(&tok, "/api/v1/live/channels")).await.json();
@@ -360,7 +404,7 @@ http://example.com/live/cctv1.m3u8
     )
     .await;
 
-    let chs = send(&st, get(&tok, "/api/v1/live/channels")).await.json();
+    let chs = wait_for_channels(&st, &tok, 1).await;
     let cid = chs[0]["id"].as_str().unwrap();
 
     // 播放该 HTTP 直播频道：必须秒级返回 direct = true 且指向代理流，无需启动 ffmpeg
@@ -383,6 +427,49 @@ http://example.com/live/cctv1.m3u8
             .starts_with("/api/v1/live/proxy?url="),
         "必须返回轻量内存代理地址"
     );
+}
+
+#[tokio::test]
+async fn unverified_channel_cannot_be_played() {
+    let (st, tok, _dir) = state().await;
+    let db = st.db.as_ref().unwrap();
+
+    // 直接向数据库创建直播源（不触发后台自动探活）
+    let src_id = whatmedia_database::repo::insert_live_source(db, "未探活源", "m3u", None, None)
+        .await
+        .unwrap();
+
+    // 插入初始状态 enabled = 0 的频道
+    let drafts = vec![whatmedia_live::ChannelDraft {
+        name: "未校验频道".into(),
+        stream_url: "http://example.com/unverified.m3u8".into(),
+        logo_url: None,
+        group_title: None,
+        epg_channel_id: None,
+        number: Some(99),
+        sort_order: 99,
+    }];
+    whatmedia_database::repo::replace_channels(db, src_id, &drafts)
+        .await
+        .unwrap();
+
+    let chs = whatmedia_database::repo::list_channels_by_source(db, src_id)
+        .await
+        .unwrap();
+    let unverified_id = whatmedia_core::Id::parse_str(&chs[0].id).unwrap();
+
+    // 尝试起播未校验通过的频道（enabled = 0），必须前置拦截直接返回 400 CHANNEL_NOT_VERIFIED
+    let r = send(
+        &st,
+        post_json(
+            &tok,
+            &format!("/api/v1/live/channels/{unverified_id}/play"),
+            json!({}),
+        ),
+    )
+    .await;
+    assert_eq!(r.status, StatusCode::BAD_REQUEST);
+    assert_eq!(r.json()["error"]["code"], "CHANNEL_NOT_VERIFIED");
 }
 
 // 这条依赖 `openapi` feature；不开 feature 的 `cargo test` 会连符号都没有，

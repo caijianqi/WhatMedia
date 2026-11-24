@@ -136,7 +136,7 @@ pub async fn replace_channels(
             "INSERT INTO live_channel
              (id, source_id, number, name, logo_url, group_title, stream_url,
               dvr_window_secs, enabled, epg_channel_id, sort_order)
-             VALUES (?, ?, ?, ?, ?, ?, ?, 0, 1, ?, ?)",
+             VALUES (?, ?, ?, ?, ?, ?, ?, 0, 0, ?, ?)",
         )
         .bind(id.to_string())
         .bind(source_id.to_string())
@@ -198,6 +198,36 @@ pub async fn set_channels_disabled(db: &crate::Db, ids: &[Id]) -> Result<()> {
     let mut tx = db.pool().begin().await?;
     for id in ids {
         sqlx::query("UPDATE live_channel SET enabled = 0 WHERE id = ?")
+            .bind(id.to_string())
+            .execute(&mut *tx)
+            .await?;
+    }
+    tx.commit().await?;
+    Ok(())
+}
+
+pub async fn set_channels_enabled(db: &crate::Db, ids: &[Id]) -> Result<()> {
+    if ids.is_empty() {
+        return Ok(());
+    }
+    let mut tx = db.pool().begin().await?;
+    for id in ids {
+        sqlx::query("UPDATE live_channel SET enabled = 1 WHERE id = ?")
+            .bind(id.to_string())
+            .execute(&mut *tx)
+            .await?;
+    }
+    tx.commit().await?;
+    Ok(())
+}
+
+pub async fn delete_channels(db: &crate::Db, ids: &[Id]) -> Result<()> {
+    if ids.is_empty() {
+        return Ok(());
+    }
+    let mut tx = db.pool().begin().await?;
+    for id in ids {
+        sqlx::query("DELETE FROM live_channel WHERE id = ?")
             .bind(id.to_string())
             .execute(&mut *tx)
             .await?;

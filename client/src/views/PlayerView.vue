@@ -21,6 +21,7 @@ import {
   type RemoteKeyName,
   type Direction,
   type Focusable,
+  parseRemoteKeyEvent,
 } from '../lib/tv'
 import { isElementVisible } from '../composables/useTvFocus'
 import { seekSecondsForDrag, volumeDeltaForDrag } from '../lib/platform'
@@ -508,31 +509,7 @@ function onPointerMove() {
 
 // ── 遥控器（TV）────────────────────────────────────────────
 function tvKeyName(e: KeyboardEvent): RemoteKeyName | null {
-  switch (e.key) {
-    case 'ArrowUp':
-      return 'up'
-    case 'ArrowDown':
-      return 'down'
-    case 'ArrowLeft':
-      return 'left'
-    case 'ArrowRight':
-      return 'right'
-    case 'Enter':
-      return 'select'
-    case 'Escape':
-    case 'Backspace':
-      return 'back'
-    case 'MediaPlayPause':
-      return 'toggle'
-    case 'MediaTrackNext':
-    case 'PageDown':
-      return 'next'
-    case 'MediaTrackPrevious':
-    case 'PageUp':
-      return 'previous'
-    default:
-      return null
-  }
+  return parseRemoteKeyEvent(e)
 }
 
 function onRemoteKey(name: RemoteKeyName): void {

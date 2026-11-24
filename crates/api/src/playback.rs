@@ -21,7 +21,8 @@ use std::sync::{Arc, Mutex};
 use tokio_util::io::ReaderStream;
 use tracing::warn;
 use whatmedia_core::{
-    ByteRange, Container, HardwareProfile, Id, MediaStream, PlaybackStrategy, TaskPriority,
+    ByteRange, Container, HardwareProfile, Id, MediaStream, PlaybackStrategy, StorageProvider,
+    TaskPriority,
 };
 use whatmedia_database::repo::{FileTarget, StreamSession};
 use whatmedia_playback::{
@@ -429,10 +430,15 @@ pub async fn create_playback_session(
             || target.file.path.starts_with("http://")
             || target.file.path.starts_with("https://")
         {
-            Some(format!(
-                "/api/v1/proxy/vod_stream?url={}",
-                crate::aggregator::urlencoding(&target.file.path)
-            ))
+            // 聚合在线流：直接下发原始第三方流地址，100% 客户端直连播放，不消耗云服务器中转带宽
+            Some(target.file.path.clone())
+        } else if let Ok(storage) = state.storage_for(&target.library_root) {
+            // 检查存储是否为支持直链的远程存储 (如 WebDAV / AList / 百度 / 夸克 / 迅雷 / NAS)
+            if let Ok(Some(direct_url)) = storage.get_direct_url(&target.file.path).await {
+                Some(direct_url)
+            } else {
+                Some(format!("/api/v1/stream/{}", target.file.id))
+            }
         } else {
             Some(format!("/api/v1/stream/{}", target.file.id))
         }
@@ -641,17 +647,19 @@ pub async fn stream_direct(
         || target.file.path.starts_with("http://")
         || target.file.path.starts_with("https://")
     {
-        let proxy_url = format!(
-            "/api/v1/proxy/vod_stream?url={}",
-            crate::aggregator::urlencoding(&target.file.path)
-        );
-        return axum::response::Redirect::temporary(&proxy_url).into_response();
+        // 聚合在线流：直接 302 临时重定向至原始三方流地址，零带宽中转
+        return axum::response::Redirect::temporary(&target.file.path).into_response();
     }
 
     let storage = match state.storage_for(&target.library_root) {
         Ok(s) => s,
         Err(r) => return *r,
     };
+
+    // 检查是否为 WebDAV / AList / 百度 / 夸克 / 迅雷 / NAS 直链：如果是，直接 302 重定向到直链
+    if let Ok(Some(direct_url)) = storage.get_direct_url(&target.file.path).await {
+        return axum::response::Redirect::temporary(&direct_url).into_response();
+    }
 
     let total = target.file.size_bytes.max(0) as u64;
     let resolved = match storage.resolve_path(&target.file.path) {

@@ -203,6 +203,104 @@ export type RemoteKeyName =
   | 'previous'
   | 'stop'
 
+/**
+ * 将原生键盘/遥控器事件标准化为统一的语义按键名。
+ *
+ * 优先采用 Android TV 物理 KeyCode（19~23, 4, 82, 85 等）兜底，
+ * 彻底解决老旧机顶盒或第三方电视盒子在 WebView 下 `e.key` 为 "Unidentified" 的兼容隐患。
+ */
+export function parseRemoteKeyEvent(e: KeyboardEvent): RemoteKeyName | null {
+  const code = e.keyCode || e.which
+
+  // 1. Android TV / 机顶盒硬件 KeyCode 优先匹配
+  switch (code) {
+    case 19: // KEYCODE_DPAD_UP
+    case 38: // VK_UP
+    case 166: // KEYCODE_CHANNEL_UP
+      return 'up'
+    case 20: // KEYCODE_DPAD_DOWN
+    case 40: // VK_DOWN
+    case 167: // KEYCODE_CHANNEL_DOWN
+      return 'down'
+    case 21: // KEYCODE_DPAD_LEFT
+    case 37: // VK_LEFT
+      return 'left'
+    case 22: // KEYCODE_DPAD_RIGHT
+    case 39: // VK_RIGHT
+      return 'right'
+    case 23: // KEYCODE_DPAD_CENTER
+    case 66: // KEYCODE_ENTER
+    case 13: // VK_RETURN
+      return 'select'
+    case 4: // KEYCODE_BACK
+    case 27: // VK_ESCAPE
+    case 8: // VK_BACK (Backspace)
+      return 'back'
+    case 82: // KEYCODE_MENU
+      return 'menu'
+    case 85: // KEYCODE_MEDIA_PLAY_PAUSE
+    case 179: // VK_MEDIA_PLAY_PAUSE
+      return 'toggle'
+    case 126: // KEYCODE_MEDIA_PLAY
+      return 'play'
+    case 127: // KEYCODE_MEDIA_PAUSE
+      return 'pause'
+    case 86: // KEYCODE_MEDIA_STOP
+    case 178: // VK_MEDIA_STOP
+      return 'stop'
+    case 87: // KEYCODE_MEDIA_NEXT
+    case 34: // VK_NEXT (PageDown)
+      return 'next'
+    case 88: // KEYCODE_MEDIA_PREVIOUS
+    case 33: // VK_PRIOR (PageUp)
+      return 'previous'
+    case 89: // KEYCODE_MEDIA_REWIND
+      return 'seek-backward'
+    case 90: // KEYCODE_MEDIA_FAST_FORWARD
+      return 'seek-forward'
+  }
+
+  // 2. W3C 标准 e.key 兜底
+  switch (e.key) {
+    case 'ArrowUp':
+      return 'up'
+    case 'ArrowDown':
+      return 'down'
+    case 'ArrowLeft':
+      return 'left'
+    case 'ArrowRight':
+      return 'right'
+    case 'Enter':
+      return 'select'
+    case 'Escape':
+    case 'Backspace':
+      return 'back'
+    case 'ContextMenu':
+    case 'Menu':
+      return 'menu'
+    case 'MediaPlayPause':
+      return 'toggle'
+    case 'MediaPlay':
+      return 'play'
+    case 'MediaPause':
+      return 'pause'
+    case 'MediaStop':
+      return 'stop'
+    case 'MediaTrackNext':
+    case 'PageDown':
+      return 'next'
+    case 'MediaTrackPrevious':
+    case 'PageUp':
+      return 'previous'
+    case 'MediaFastForward':
+      return 'seek-forward'
+    case 'MediaRewind':
+      return 'seek-backward'
+    default:
+      return null
+  }
+}
+
 /** 按键映射后的动作。UI 只认这个，不认原始按键。 */
 export type RemoteAction =
   | { kind: 'move'; direction: Direction }

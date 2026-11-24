@@ -15,11 +15,12 @@
  * 安全区必须吃到布局里。不处理的后果是 iPhone 上底栏被手势条盖住一半，
  * 而开发者拿不带刘海的测试机完全看不出来。
  */
-import { computed, onBeforeUnmount, onMounted, watch } from 'vue'
+import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useRoute } from 'vue-router'
 import AppSidebar from './components/AppSidebar.vue'
 import TopBar from './components/TopBar.vue'
 import GlobalToast from './components/GlobalToast.vue'
+import TvSearchModal from './components/TvSearchModal.vue'
 import { useLayoutStore } from './stores/layout'
 import { useSessionStore } from './stores/session'
 import { useTvFocus } from './composables/useTvFocus'
@@ -30,9 +31,19 @@ const layout = useLayoutStore()
 // 但这里必须建一次：它是路由守卫与 api 层未授权回调的依赖。
 useSessionStore()
 
+const showTvSearch = ref(false)
+
 const isStandalone = computed(() => route.name === 'play' || route.name === 'login')
 const tvFocusEnabled = computed(() => !isStandalone.value)
-const { resetFocus } = useTvFocus({ enabled: tvFocusEnabled })
+const { resetFocus } = useTvFocus({
+  enabled: tvFocusEnabled,
+  onMenu: () => {
+    // 遥控器 Menu 菜单键：快捷唤醒 TV 大屏首字母搜索
+    if (!isStandalone.value) {
+      showTvSearch.value = !showTvSearch.value
+    }
+  },
+})
 
 watch(
   () => route.fullPath,
@@ -101,12 +112,18 @@ const rootStyle = computed(() => ({
 
 <template>
   <div :class="isStandalone ? 'app-standalone' : 'app'" :style="rootStyle">
-    <AppSidebar v-if="showSidebar" />
+    <AppSidebar v-if="showSidebar" @open-search="showTvSearch = true" />
 
-    <main class="main" :style="contentStyle">
+    <main class="main" :style="contentStyle" data-tv-zone="main">
       <TopBar v-if="showTopBar" :show-search="showTopBarSearch" />
       <RouterView />
     </main>
+
+    <!-- TV 大屏专属遥控搜索面板 -->
+    <TvSearchModal
+      v-if="showTvSearch"
+      @close="showTvSearch = false"
+    />
 
     <!-- 移动端原生悬浮底栏 -->
     <nav v-if="showBottomNav" class="mobile-bottom" :style="bottomBarStyle">

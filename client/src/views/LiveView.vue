@@ -15,6 +15,7 @@ import { RouterLink, useRouter } from 'vue-router'
 import Hls from 'hls.js'
 import * as api from '../api/client'
 import type { LiveChannel } from '../api/client'
+import { parseRemoteKeyEvent } from '../lib/tv'
 
 const router = useRouter()
 
@@ -434,39 +435,71 @@ async function togglePip(): Promise<void> {
 function handleKeyDown(e: KeyboardEvent): void {
   const target = e.target as HTMLElement
   if (target && (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.tagName === 'SELECT')) {
-    if (e.key === 'Escape') target.blur()
+    if (e.key === 'Escape' || e.keyCode === 27 || e.keyCode === 4) target.blur()
     return
   }
 
+  const rk = parseRemoteKeyEvent(e)
+  if (rk) {
+    switch (rk) {
+      case 'up':
+        e.preventDefault()
+        playPrev()
+        armHideTimer()
+        return
+      case 'down':
+        e.preventDefault()
+        playNext()
+        armHideTimer()
+        return
+      case 'left':
+        e.preventDefault()
+        if (!isDrawerOpen.value) {
+          openDrawer()
+        } else if (currentChannel.value && currentChannel.value.routes.length > 1) {
+          const prevIdx =
+            (activeRouteIndex.value - 1 + currentChannel.value.routes.length) %
+            currentChannel.value.routes.length
+          void switchRoute(prevIdx)
+        }
+        armHideTimer()
+        return
+      case 'right':
+        e.preventDefault()
+        if (isDrawerOpen.value) {
+          isDrawerOpen.value = false
+        } else if (currentChannel.value && currentChannel.value.routes.length > 1) {
+          const nextIdx = (activeRouteIndex.value + 1) % currentChannel.value.routes.length
+          void switchRoute(nextIdx)
+        }
+        armHideTimer()
+        return
+      case 'select':
+        e.preventDefault()
+        toggleDrawer()
+        armHideTimer()
+        return
+      case 'toggle':
+      case 'play':
+      case 'pause':
+        e.preventDefault()
+        togglePlay()
+        armHideTimer()
+        return
+      case 'back':
+        if (isDrawerOpen.value) {
+          e.preventDefault()
+          isDrawerOpen.value = false
+          armHideTimer()
+          return
+        }
+        break
+      default:
+        break
+    }
+  }
+
   switch (e.key) {
-    case 'ArrowUp':
-      e.preventDefault()
-      playPrev()
-      break
-    case 'ArrowDown':
-      e.preventDefault()
-      playNext()
-      break
-    case 'ArrowLeft':
-      e.preventDefault()
-      if (!isDrawerOpen.value) {
-        openDrawer()
-      } else if (currentChannel.value && currentChannel.value.routes.length > 1) {
-        const prevIdx =
-          (activeRouteIndex.value - 1 + currentChannel.value.routes.length) %
-          currentChannel.value.routes.length
-        void switchRoute(prevIdx)
-      }
-      break
-    case 'ArrowRight':
-      e.preventDefault()
-      if (isDrawerOpen.value) {
-        isDrawerOpen.value = false
-      } else if (currentChannel.value && currentChannel.value.routes.length > 1) {
-        const nextIdx = (activeRouteIndex.value + 1) % currentChannel.value.routes.length
-        void switchRoute(nextIdx)
-      }
-      break
     case 'm':
     case 'M':
       toggleMute()
@@ -474,10 +507,6 @@ function handleKeyDown(e: KeyboardEvent): void {
     case 'f':
     case 'F':
       toggleFullscreen()
-      break
-    case 'Enter':
-      e.preventDefault()
-      toggleDrawer()
       break
     case ' ':
       e.preventDefault()

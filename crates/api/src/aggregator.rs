@@ -256,7 +256,7 @@ fn build_aggregate_sse_stream(
 pub async fn proxy_vod_stream(
     Current(principal): Current,
     Query(query): Query<VodProxyQuery>,
-    client_headers: axum::http::HeaderMap,
+    _client_headers: axum::http::HeaderMap,
 ) -> Response {
     if principal.is_child() {
         return error_response(
@@ -278,135 +278,11 @@ pub async fn proxy_vod_stream(
         return bad_request("非法代理目标 URL");
     };
 
-    let client = reqwest::Client::builder()
-        .danger_accept_invalid_certs(true)
-        .build()
-        .unwrap_or_default();
-
-    // 伪装 Referer 与 Origin 防盗链检测
-    let origin = format!(
-        "{}://{}",
-        target_url.scheme(),
-        target_url.host_str().unwrap_or("")
-    );
-    let referer = format!("{}/", origin);
-
-    let mut req = client
-        .get(target_url.as_str())
-        .header(
-            reqwest::header::USER_AGENT,
-            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-        )
-        .header(reqwest::header::REFERER, referer)
-        .header("Origin", origin)
-        .header(reqwest::header::ACCEPT, "*/*");
-
-    // 透传客户端的 Range 请求头，支持分片 Seek 和 byte-range 请求
-    if let Some(range) = client_headers.get(axum::http::header::RANGE) {
-        if let Ok(val) = range.to_str() {
-            req = req.header(reqwest::header::RANGE, val);
-        }
-    }
-
-    let resp = match req.send().await {
-        Ok(r) => r,
-        Err(e) => {
-            return error_response(
-                StatusCode::BAD_GATEWAY,
-                "UPSTREAM_FAILED",
-                format!("请求上游资源失败: {e}"),
-            );
-        }
-    };
-
-    let status = resp.status();
-    let content_type = resp
-        .headers()
-        .get(reqwest::header::CONTENT_TYPE)
-        .and_then(|v| v.to_str().ok())
-        .unwrap_or("")
-        .to_string();
-
-    let content_range = resp
-        .headers()
-        .get(reqwest::header::CONTENT_RANGE)
-        .and_then(|v| v.to_str().ok())
-        .map(|s| s.to_string());
-
-    let bytes = match resp.bytes().await {
-        Ok(b) => b,
-        Err(e) => {
-            return error_response(
-                StatusCode::BAD_GATEWAY,
-                "UPSTREAM_READ_ERROR",
-                format!("读取上游数据失败: {e}"),
-            );
-        }
-    };
-
-    // 智能探查 M3U8：URL 包含 .m3u8、或 Content-Type 匹配、或内容前缀包含 #EXTM3U
-    let is_m3u8 = raw_url.contains(".m3u8")
-        || content_type.contains("mpegurl")
-        || content_type.contains("application/x-mpegurl")
-        || bytes.starts_with(b"#EXTM3U");
-
-    if is_m3u8 {
-        if let Ok(text) = std::str::from_utf8(&bytes) {
-            let rewritten = rewrite_vod_m3u8(text, &target_url);
-            return (
-                status,
-                [
-                    (
-                        axum::http::header::CONTENT_TYPE,
-                        "application/vnd.apple.mpegurl",
-                    ),
-                    (axum::http::header::ACCESS_CONTROL_ALLOW_ORIGIN, "*"),
-                    (axum::http::header::ACCESS_CONTROL_ALLOW_HEADERS, "*"),
-                    (
-                        axum::http::header::CACHE_CONTROL,
-                        "no-cache, no-store, must-revalidate",
-                    ),
-                ],
-                rewritten,
-            )
-                .into_response();
-        }
-    }
-
-    let out_ct = if content_type.is_empty() {
-        "video/MP2T"
-    } else {
-        &content_type
-    };
-
-    let mut response_headers = axum::http::HeaderMap::new();
-    response_headers.insert(
-        axum::http::header::CONTENT_TYPE,
-        axum::http::HeaderValue::from_str(out_ct).unwrap_or(axum::http::HeaderValue::from_static(
-            "application/octet-stream",
-        )),
-    );
-    response_headers.insert(
-        axum::http::header::ACCESS_CONTROL_ALLOW_ORIGIN,
-        axum::http::HeaderValue::from_static("*"),
-    );
-    response_headers.insert(
-        axum::http::header::ACCESS_CONTROL_ALLOW_HEADERS,
-        axum::http::HeaderValue::from_static("*"),
-    );
-    response_headers.insert(
-        axum::http::header::CACHE_CONTROL,
-        axum::http::HeaderValue::from_static("public, max-age=86400"),
-    );
-    if let Some(cr) = content_range {
-        if let Ok(v) = axum::http::HeaderValue::from_str(&cr) {
-            response_headers.insert(axum::http::header::CONTENT_RANGE, v);
-        }
-    }
-
-    (status, response_headers, bytes).into_response()
+    // 云服务器零带宽设计：不再中继拉流、不解析切片，直接 302 临时重定向给客户端直连，绝不占用云服务器带宽
+    axum::response::Redirect::temporary(target_url.as_str()).into_response()
 }
 
+#[allow(dead_code)]
 fn rewrite_tag_uri(line: &str, base_url: &reqwest::Url) -> String {
     let uri_pattern = "URI=\"";
     if let Some(start) = line.find(uri_pattern) {
@@ -437,6 +313,7 @@ fn rewrite_tag_uri(line: &str, base_url: &reqwest::Url) -> String {
     line.to_string()
 }
 
+#[allow(dead_code)]
 fn rewrite_vod_m3u8(text: &str, base_url: &reqwest::Url) -> String {
     let mut out = String::with_capacity(text.len() + 1024);
     for line in text.lines() {
@@ -473,6 +350,7 @@ fn rewrite_vod_m3u8(text: &str, base_url: &reqwest::Url) -> String {
     out
 }
 
+#[allow(dead_code)]
 fn encode_vod_proxy_url(url: &str) -> String {
     format!("/api/v1/proxy/vod_stream?url={}", urlencoding(url))
 }

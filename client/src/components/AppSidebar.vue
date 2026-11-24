@@ -5,10 +5,13 @@
  * - 品牌标志带渐变投影与 <small>YOUR HOME CINEMA</small>
  * - 分组导航：发现内容与个人空间
  */
+defineEmits<{
+  (e: 'open-search'): void
+}>()
 </script>
 
 <template>
-  <aside class="sidebar" aria-label="主导航">
+  <aside class="sidebar" aria-label="主导航" data-tv-zone="sidebar">
     <RouterLink to="/" class="brand">
       <span class="brand-mark">
         <svg viewBox="0 0 24 24" aria-hidden="true">
@@ -23,6 +26,21 @@
 
     <div class="nav-label">发现内容</div>
     <nav class="nav" id="mainNav">
+      <button
+        type="button"
+        class="nav-btn"
+        data-tv-focus
+        @click="$emit('open-search')"
+      >
+        <span class="ico">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8">
+            <circle cx="11" cy="11" r="8" />
+            <line x1="21" y1="21" x2="16.65" y2="16.65" />
+          </svg>
+        </span>
+        <span class="nav-text">搜索</span>
+      </button>
+
       <RouterLink
         :to="{ name: 'home' }"
         active-class=""

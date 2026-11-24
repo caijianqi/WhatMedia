@@ -5,6 +5,7 @@ import {
   moveFocus,
   recoverFocus,
   remoteKeyToAction,
+  parseRemoteKeyEvent,
   SEEK_JUMP_SECONDS,
   type Focusable,
 } from './tv'
@@ -178,5 +179,37 @@ describe('remoteKeyToAction', () => {
     expect(remoteKeyToAction('next').kind).toBe('ignore')
     expect(remoteKeyToAction('stop').kind).toBe('ignore')
     expect(remoteKeyToAction('previous').kind).toBe('ignore')
+  })
+})
+
+describe('parseRemoteKeyEvent 兼容性与兜底解析', () => {
+  it('正确解析 Android TV 物理 KeyCode (19~23, 4, 82, 85 等)', () => {
+    const makeEvent = (keyCode: number) => ({ keyCode, which: keyCode, key: 'Unidentified' } as KeyboardEvent)
+
+    expect(parseRemoteKeyEvent(makeEvent(19))).toBe('up')
+    expect(parseRemoteKeyEvent(makeEvent(20))).toBe('down')
+    expect(parseRemoteKeyEvent(makeEvent(21))).toBe('left')
+    expect(parseRemoteKeyEvent(makeEvent(22))).toBe('right')
+    expect(parseRemoteKeyEvent(makeEvent(23))).toBe('select')
+    expect(parseRemoteKeyEvent(makeEvent(66))).toBe('select')
+    expect(parseRemoteKeyEvent(makeEvent(4))).toBe('back')
+    expect(parseRemoteKeyEvent(makeEvent(82))).toBe('menu')
+    expect(parseRemoteKeyEvent(makeEvent(85))).toBe('toggle')
+    expect(parseRemoteKeyEvent(makeEvent(89))).toBe('seek-backward')
+    expect(parseRemoteKeyEvent(makeEvent(90))).toBe('seek-forward')
+  })
+
+  it('正确解析标准 W3C e.key 字符串', () => {
+    const makeEvent = (key: string) => ({ keyCode: 0, which: 0, key } as KeyboardEvent)
+
+    expect(parseRemoteKeyEvent(makeEvent('ArrowUp'))).toBe('up')
+    expect(parseRemoteKeyEvent(makeEvent('ArrowDown'))).toBe('down')
+    expect(parseRemoteKeyEvent(makeEvent('ArrowLeft'))).toBe('left')
+    expect(parseRemoteKeyEvent(makeEvent('ArrowRight'))).toBe('right')
+    expect(parseRemoteKeyEvent(makeEvent('Enter'))).toBe('select')
+    expect(parseRemoteKeyEvent(makeEvent('Escape'))).toBe('back')
+    expect(parseRemoteKeyEvent(makeEvent('MediaPlayPause'))).toBe('toggle')
+    expect(parseRemoteKeyEvent(makeEvent('MediaFastForward'))).toBe('seek-forward')
+    expect(parseRemoteKeyEvent(makeEvent('ContextMenu'))).toBe('menu')
   })
 })

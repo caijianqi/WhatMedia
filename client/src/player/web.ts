@@ -79,7 +79,6 @@ export class WebPlayer implements MediaPlayer {
   private disposed = false
 
   private currentHlsUrl = ''
-  private hasFallenBackToProxy = false
   private mediaErrorRecoverCount = 0
 
   private onHlsError: ((...args: unknown[]) => void) | null = null
@@ -114,6 +113,7 @@ export class WebPlayer implements MediaPlayer {
     video.playsInline = true
     video.controls = false // 控制条自己画，原生控制条样式改不动
     video.preload = 'metadata'
+    video.referrerPolicy = 'no-referrer'
     // 画面填满容器，letterbox 交给 CSS。
     video.style.width = '100%'
     video.style.height = '100%'
@@ -223,24 +223,11 @@ export class WebPlayer implements MediaPlayer {
       return
     }
 
-    // 2. 直连网络受阻（CORS 或防盗链）时，透明降级回退到本地反代（对齐 MoonTV 直连优先 + 本地兜底）
-    if (
-      data.type === 'networkError' &&
-      !this.hasFallenBackToProxy &&
-      (this.currentHlsUrl.startsWith('http://') || this.currentHlsUrl.startsWith('https://')) &&
-      !this.currentHlsUrl.includes('/api/v1/proxy/vod_stream')
-    ) {
-      this.hasFallenBackToProxy = true
-      const fallbackUrl = `/api/v1/proxy/vod_stream?url=${encodeURIComponent(this.currentHlsUrl)}`
-      this.hls?.loadSource(fallbackUrl)
-      return
-    }
-
     const code: PlayerErrorCode =
       data.type === 'networkError' ? 'network' : data.type === 'mediaError' ? 'decode' : 'unknown'
     const message =
       code === 'network'
-        ? '视频流加载失败，网络中断或上游切片响应超时'
+        ? '直连视频流加载失败（可能因跨域限制或上游服务器不可达），建议切换其他线路或在桌面/安卓原生端播放'
         : '浏览器无法解码此视频格式（可能为 HEVC/H.265 编码或特殊音轨），推荐使用桌面客户端（内置 MPV）获得全格式流畅播放'
     this.core.fail(code, message)
   }

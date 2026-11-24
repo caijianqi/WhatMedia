@@ -93,14 +93,14 @@ async function playEpisodeTest(ep: VodEpisode): Promise<void> {
   await nextTick()
   const video = testVideoRef.value
   if (!video) return
+  video.referrerPolicy = 'no-referrer'
 
   if (hlsInstance) {
     hlsInstance.destroy()
     hlsInstance = null
   }
 
-  let streamUrl = ep.play_url
-  let hasFallenBack = false
+  const streamUrl = ep.play_url
 
   if (Hls.isSupported() && (streamUrl.includes('.m3u8') || streamUrl.startsWith('http'))) {
     const hls = new Hls({
@@ -112,13 +112,7 @@ async function playEpisodeTest(ep: VodEpisode): Promise<void> {
     hls.attachMedia(video)
     hls.on(Hls.Events.ERROR, (_, data) => {
       if (data.fatal) {
-        if (!hasFallenBack && (streamUrl.startsWith('http://') || streamUrl.startsWith('https://'))) {
-          hasFallenBack = true
-          streamUrl = api.getVodStreamProxyUrl(ep.play_url, activeRoute.value?.source_id || '')
-          hls.loadSource(streamUrl)
-          return
-        }
-        testError.value = '该分集测试加载失败，建议切换上方其他可用线路试播'
+        testError.value = '该分集直连加载受阻，建议切换上方其他可用线路试播'
       }
     })
     hlsInstance = hls

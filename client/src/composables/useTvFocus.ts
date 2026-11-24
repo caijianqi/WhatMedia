@@ -5,15 +5,19 @@ import {
   moveFocus,
   recoverFocus,
   initialFocus,
+  parseRemoteKeyEvent,
   type Direction,
   type Focusable,
 } from '../lib/tv'
+import { useToastStore } from '../stores/toast'
 
 export interface UseTvFocusOptions {
   /** 是否启用。默认 true */
   enabled?: Ref<boolean> | boolean
   /** 发生返回键时的自定义处理。返回 true 表示已消费，不再走默认 router.back() */
   onBack?: () => boolean | void
+  /** 发生菜单键时的自定义处理 (如打开 TV 大屏搜索或操作抽屉) */
+  onMenu?: () => void
 }
 
 const FOCUSABLE_SELECTOR = [
@@ -88,6 +92,10 @@ export function useTvFocus(options: UseTvFocusOptions = {}) {
   const lastIndex = ref(0)
   const isTvNavigating = ref(false)
 
+  let lastMainElement: HTMLElement | null = null
+  let lastSidebarElement: HTMLElement | null = null
+  let lastBackPressTime = 0
+
   const isEnabled = () => {
     if (typeof options.enabled === 'boolean') return options.enabled
     if (options.enabled && 'value' in options.enabled) return options.enabled.value
@@ -100,7 +108,8 @@ export function useTvFocus(options: UseTvFocusOptions = {}) {
     })
     el.classList.add('tv-focused')
     el.focus({ preventScroll: true })
-    el.scrollIntoView({ block: 'nearest', inline: 'nearest', behavior: 'smooth' })
+    // TV 3米视距居中平滑对齐，预留四周边缘安全区
+    el.scrollIntoView({ block: 'center', inline: 'nearest', behavior: 'smooth' })
   }
 
   function handleDirection(dir: Direction): boolean {
@@ -111,16 +120,80 @@ export function useTvFocus(options: UseTvFocusOptions = {}) {
 
     isTvNavigating.value = true
 
-    // 查找当前焦点索引
+    // 查找当前焦点项
     let currentIdx = -1
     const active = document.activeElement as HTMLElement | null
     if (active) {
       currentIdx = elements.indexOf(active)
       if (currentIdx < 0) {
-        // 可能聚焦在子节点上，往上寻找
         const parentFocusable = active.closest<HTMLElement>(FOCUSABLE_SELECTOR)
         if (parentFocusable) {
           currentIdx = elements.indexOf(parentFocusable)
+        }
+      }
+    }
+
+    // ── 智能跨区路由 (Zone Navigation: Sidebar ⇄ Main) ──
+    if (!modal && active) {
+      const inSidebar = !!active.closest('.sidebar, [data-tv-zone="sidebar"]')
+      const inMain = !!active.closest('.main, [data-tv-zone="main"]')
+
+      if (inMain) {
+        lastMainElement = active
+        if (dir === 'left') {
+          // 检查在主内容区内部，左侧是否还有可聚焦候选项
+          const mainEl = active.closest<HTMLElement>('.main, [data-tv-zone="main"]')
+          const mainFocusables = mainEl ? collectFocusables(mainEl) : null
+          let hasLeftCandidateInMain = false
+          if (mainFocusables) {
+            const curMainIdx = mainFocusables.elements.indexOf(active)
+            if (curMainIdx >= 0) {
+              const nextMainIdx = moveFocus(mainFocusables.items, curMainIdx, 'left', { memory })
+              if (nextMainIdx !== curMainIdx) {
+                hasLeftCandidateInMain = true
+              }
+            }
+          }
+
+          if (!hasLeftCandidateInMain) {
+            // 已达主内容区最左列边界，跨区穿越进入侧边栏
+            const sidebar = document.querySelector<HTMLElement>('.sidebar, [data-tv-zone="sidebar"]')
+            if (sidebar) {
+              const { elements: sbElements } = collectFocusables(sidebar)
+              if (sbElements.length > 0) {
+                const target =
+                  (lastSidebarElement && isElementVisible(lastSidebarElement) && sbElements.includes(lastSidebarElement)
+                    ? lastSidebarElement
+                    : null) ||
+                  sidebar.querySelector<HTMLElement>('a.active') ||
+                  sbElements[0]
+                if (target) {
+                  applyFocus(target)
+                  return true
+                }
+              }
+            }
+          }
+        }
+      } else if (inSidebar) {
+        lastSidebarElement = active
+        if (dir === 'right') {
+          // 从侧栏向右切入主内容区：优先恢复离开前聚焦的卡片，无缝保持浏览高度
+          const main = document.querySelector<HTMLElement>('.main, [data-tv-zone="main"]')
+          if (main) {
+            if (lastMainElement && isElementVisible(lastMainElement) && main.contains(lastMainElement)) {
+              applyFocus(lastMainElement)
+              return true
+            }
+            const { elements: mainElements, items: mainItems } = collectFocusables(main)
+            if (mainElements.length > 0) {
+              const idx = initialFocus(mainItems)
+              if (mainElements[idx]) {
+                applyFocus(mainElements[idx]!)
+                return true
+              }
+            }
+          }
         }
       }
     }
@@ -145,7 +218,6 @@ export function useTvFocus(options: UseTvFocusOptions = {}) {
   function handleSelect(): boolean {
     const active = document.activeElement as HTMLElement | null
     if (!active || active === document.body) {
-      // 若当前没有聚焦项，尝试聚焦第一项
       const modal = getActiveModalScope()
       const { elements, items } = collectFocusables(modal || document.body)
       if (items.length > 0) {
@@ -158,7 +230,6 @@ export function useTvFocus(options: UseTvFocusOptions = {}) {
       return false
     }
 
-    // 触发点击
     active.click()
     return true
   }
@@ -169,7 +240,7 @@ export function useTvFocus(options: UseTvFocusOptions = {}) {
       if (handled) return true
     }
 
-    // 检查是否有打开的模态窗，优先关闭它
+    // 1. 优先关闭激活的模态窗并还焦
     const modal = getActiveModalScope()
     if (modal) {
       const closeBtn = modal.querySelector<HTMLElement>(
@@ -181,23 +252,94 @@ export function useTvFocus(options: UseTvFocusOptions = {}) {
       }
     }
 
-    // 无弹层时，回退路由
-    if (router && window.history.length > 1) {
+    // 2. 次级页面回退路由
+    const currentRouteName = router?.currentRoute?.value?.name
+    const isAtRoot = currentRouteName === 'home' || !router || window.history.length <= 1
+
+    if (!isAtRoot && router) {
       router.back()
       return true
     }
-    return false
+
+    // 3. 根路由（首页）双击返回防误触保护
+    const now = Date.now()
+    if (now - lastBackPressTime < 2000) {
+      try {
+        const tauri = (window as any).__TAURI_INTERNALS__
+        if (tauri) {
+          void tauri.invoke('plugin:process|exit')
+        }
+      } catch {
+        /* 忽略非原生桌面/移动壳环境 */
+      }
+      return true
+    } else {
+      lastBackPressTime = now
+      try {
+        const toast = useToastStore()
+        toast.show('再按一次退出 WhatMedia', { type: 'info', duration: 2000 })
+      } catch {
+        /* 忽略单元测试无 pinia 上下文 */
+      }
+      return true
+    }
   }
 
   function onKeyDown(e: KeyboardEvent) {
     if (!isEnabled()) return
 
-    // 如果焦点在真正的输入框中打字，放行左右输入，但支持上下或回车
     const target = e.target as HTMLElement | null
     const isTyping =
       target &&
       /^(INPUT|TEXTAREA)$/.test(target.tagName) &&
       !['checkbox', 'radio', 'range', 'button', 'submit'].includes((target as HTMLInputElement).type)
+
+    const rk = parseRemoteKeyEvent(e)
+    if (rk) {
+      switch (rk) {
+        case 'up':
+          e.preventDefault()
+          handleDirection('up')
+          break
+        case 'down':
+          e.preventDefault()
+          handleDirection('down')
+          break
+        case 'left':
+          if (!isTyping) {
+            e.preventDefault()
+            handleDirection('left')
+          }
+          break
+        case 'right':
+          if (!isTyping) {
+            e.preventDefault()
+            handleDirection('right')
+          }
+          break
+        case 'select':
+          if (!isTyping) {
+            e.preventDefault()
+            handleSelect()
+          }
+          break
+        case 'back':
+          if (!isTyping) {
+            e.preventDefault()
+            handleBack()
+          }
+          break
+        case 'menu':
+          if (options.onMenu) {
+            e.preventDefault()
+            options.onMenu()
+          }
+          break
+        default:
+          break
+      }
+      return
+    }
 
     switch (e.key) {
       case 'ArrowUp':

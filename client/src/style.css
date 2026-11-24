@@ -2134,6 +2134,8 @@ a {
 /* ===== TV 10-Foot 遥控器空间导航与焦点高亮系统 ===== */
 .tv-focused {
   outline: none !important;
+  border-color: #57c8f5 !important;
+  box-shadow: 0 0 0 2.5px #ffffff, 0 0 22px rgba(87, 200, 245, 0.65) !important;
 }
 
 /* 按钮、标签、选集按钮的 TV 聚焦态 */
@@ -2157,6 +2159,44 @@ a {
   transform: scale(1.05);
   z-index: 5;
   transition: transform 0.15s ease, box-shadow 0.15s ease, border-color 0.15s ease;
+}
+
+/* 继续观看卡片 TV 聚焦 */
+.continue-card.tv-focused,
+.continue-card:focus-visible {
+  outline: none !important;
+  border-color: #57c8f5 !important;
+  box-shadow: 0 0 0 3px #ffffff, 0 0 28px rgba(87, 200, 245, 0.75) !important;
+  transform: scale(1.04);
+  z-index: 10;
+}
+
+/* 类型流派卡片 TV 聚焦 */
+.genre-card.tv-focused,
+.genre-card:focus-visible {
+  outline: none !important;
+  border-color: #57c8f5 !important;
+  box-shadow: 0 0 0 3px #ffffff, 0 0 26px rgba(87, 200, 245, 0.7) !important;
+  transform: scale(1.06);
+  z-index: 10;
+}
+
+/* 设置页菜单项 TV 聚焦 */
+.settings-nav button.tv-focused,
+.settings-nav button:focus-visible {
+  outline: none !important;
+  color: #fff !important;
+  background: rgba(87, 200, 245, 0.25) !important;
+  box-shadow: 0 0 0 2.5px #57c8f5, 0 0 20px rgba(87, 200, 245, 0.5) !important;
+  transform: translateX(6px);
+}
+
+/* 设置项开关切换 TV 聚焦 */
+.switch.tv-focused,
+.switch:focus-visible {
+  outline: none !important;
+  box-shadow: 0 0 0 3px #57c8f5, 0 0 18px rgba(87, 200, 245, 0.6) !important;
+  transform: scale(1.15);
 }
 
 /* 播放器控制界面的 TV 聚焦态 */

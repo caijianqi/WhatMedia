@@ -94,4 +94,38 @@ describe('useTvFocus helper utilities', () => {
     expect(items[0]?.id).toBe('btn-1')
     expect(items[1]?.id).toBe('btn-2')
   })
+
+  it('智能跨区导航: 在主区最左侧按左键穿透至侧栏', () => {
+    // 构造侧边栏和主区域 DOM
+    const sidebar = document.createElement('aside')
+    sidebar.className = 'sidebar'
+    sidebar.setAttribute('data-tv-zone', 'sidebar')
+
+    const navBtn = document.createElement('a')
+    navBtn.id = 'nav-home'
+    navBtn.href = '#/'
+    navBtn.className = 'active'
+    sidebar.appendChild(navBtn)
+    document.body.appendChild(sidebar)
+
+    const main = document.createElement('main')
+    main.className = 'main'
+    main.setAttribute('data-tv-zone', 'main')
+
+    const card = document.createElement('button')
+    card.id = 'card-1'
+    main.appendChild(card)
+    document.body.appendChild(main)
+
+    // JSDOM getBoundingClientRect mock
+    navBtn.getBoundingClientRect = () => ({
+      width: 180, height: 40, top: 20, left: 10, right: 190, bottom: 60, x: 10, y: 20, toJSON: () => {},
+    })
+    card.getBoundingClientRect = () => ({
+      width: 200, height: 300, top: 100, left: 240, right: 440, bottom: 400, x: 240, y: 100, toJSON: () => {},
+    })
+
+    card.focus()
+    expect(document.activeElement).toBe(card)
+  })
 })

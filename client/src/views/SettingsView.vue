@@ -915,13 +915,7 @@ async function addLiveSource(): Promise<void> {
     newSourceName.value = ''
     newSourceUrl.value = ''
     newSourceEpg.value = ''
-    liveNotice.value = `已添加订阅源「${src.name}」，正在自动同步频道...`
-    try {
-      const res = await api.syncLiveSource(src.id)
-      liveNotice.value = `「${src.name}」同步完成，成功导入 ${res.channels} 个频道！`
-    } catch (syncErr) {
-      liveNotice.value = `添加成功，但首次同步遇到问题：${syncErr instanceof Error ? syncErr.message : String(syncErr)}`
-    }
+    liveNotice.value = `已添加订阅源「${src.name}」，成功导入 ${src.channel_count} 个频道，后台正在自动校验连通性...`
     await loadLiveSources()
   } catch (e) {
     liveNotice.value = `添加失败：${e instanceof Error ? e.message : String(e)}`

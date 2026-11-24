@@ -41,12 +41,12 @@ pub use auth::{
 pub use image::ItemImage;
 pub use library::{find_library_by_root, get_library, insert_library, list_libraries};
 pub use live::{
-    bump_live_session, current_program, delete_live_session, delete_live_source,
+    bump_live_session, current_program, delete_channels, delete_live_session, delete_live_source,
     find_channel_by_epg_id, get_live_channel, get_live_source, insert_live_source,
     list_channels_by_source, list_dead_live_sessions, list_live_channels, list_live_sources,
     live_ref_count, release_live_session, replace_channels, replace_programs, set_channel_enabled,
-    set_channels_disabled, set_source_sync_result, upcoming_programs, LiveChannelRow,
-    LiveSourceRow, ProgramRow,
+    set_channels_disabled, set_channels_enabled, set_source_sync_result, upcoming_programs,
+    LiveChannelRow, LiveSourceRow, ProgramRow,
 };
 pub use media::{
     count_items, delete_item, get_item, kind_counts, list_items, replace_streams, upsert_file,

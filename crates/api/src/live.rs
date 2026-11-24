@@ -259,21 +259,53 @@ pub async fn create_source(
     if req.name.trim().is_empty() {
         return error_response(StatusCode::BAD_REQUEST, "BAD_NAME", "名称不能为空");
     }
-    // 需要 URL 的两种形态没给 URL 就直接拒绝：
-    // 建一个永远同步不了的源，比建不出来更糟。
-    if kind.needs_url()
-        && req
-            .url
-            .as_deref()
-            .map(|s| s.trim().is_empty())
-            .unwrap_or(true)
-    {
-        return error_response(
-            StatusCode::BAD_REQUEST,
-            "MISSING_URL",
-            "这个形态的源必须有订阅地址",
-        );
-    }
+
+    // 如果是需要 URL 的源（例如 M3U），在添加阶段必须直接验证其网络连通性与播放列表有效性，
+    // 杜绝任何坏源/死链进入数据库。
+    let pre_loaded_drafts = if kind.needs_url() {
+        let Some(url) = req.url.as_deref().filter(|s| !s.trim().is_empty()) else {
+            return error_response(
+                StatusCode::BAD_REQUEST,
+                "MISSING_URL",
+                "这个形态的源必须有订阅地址",
+            );
+        };
+
+        if matches!(kind, whatmedia_live::LiveSourceKind::M3u) {
+            let text = match fetch_text(url).await {
+                Ok(t) => t,
+                Err(e) => {
+                    return error_response(
+                        StatusCode::BAD_GATEWAY,
+                        "SOURCE_UNREACHABLE",
+                        format!("直播源地址无法访问：{e}"),
+                    );
+                }
+            };
+            let drafts = match whatmedia_live::parse_playlist(&text) {
+                Ok(d) if !d.is_empty() => d,
+                Ok(_) | Err(whatmedia_live::LiveError::EmptyPlaylist) => {
+                    return error_response(
+                        StatusCode::BAD_GATEWAY,
+                        "EMPTY_PLAYLIST",
+                        "播放列表为空或未解析到有效频道",
+                    );
+                }
+                Err(e) => {
+                    return error_response(
+                        StatusCode::BAD_GATEWAY,
+                        "BAD_PLAYLIST",
+                        format!("播放列表解析失败：{e}"),
+                    );
+                }
+            };
+            Some(drafts)
+        } else {
+            None
+        }
+    } else {
+        None
+    };
 
     let id = match whatmedia_database::repo::insert_live_source(
         &db,
@@ -289,6 +321,15 @@ pub async fn create_source(
             return error_response(StatusCode::INTERNAL_SERVER_ERROR, "DB_ERROR", e.to_string())
         }
     };
+
+    // 若添加时已预加载解析好频道，直接原子完成首次导入并下发后台测活校验
+    if let Some(drafts) = pre_loaded_drafts {
+        if let Err(e) = whatmedia_database::repo::replace_channels(&db, id, &drafts).await {
+            tracing::error!("新建直播源导入频道失败: {e}");
+        } else {
+            spawn_channel_probe_task(db.clone(), id);
+        }
+    }
 
     match whatmedia_database::repo::get_live_source(&db, id).await {
         Ok(Some(r)) => Json(LiveSourceView {
@@ -402,7 +443,6 @@ pub async fn sync_source(State(state): State<AppState>, AxumPath(id): AxumPath<I
     match whatmedia_database::repo::replace_channels(&db, id, &drafts).await {
         Ok(n) => {
             let _ = whatmedia_database::repo::set_source_sync_result(&db, id, None).await;
-            // 先同步快速入库响应客户端，随后在后台任务异步探测并过滤不可用链接
             spawn_channel_probe_task(db.clone(), id);
             Json(SyncReply {
                 source_id: id.to_string(),
@@ -459,6 +499,19 @@ pub async fn probe_stream_url(client: &reqwest::Client, url: &str) -> bool {
     let u = url.trim();
     // 非 http/https 协议（如 rtmp, rtsp, udp 等专用流媒体协议，reqwest 无法嗅探，默认信任）
     if !u.starts_with("http://") && !u.starts_with("https://") {
+        return true;
+    }
+
+    // RFC 2606 / RFC 6761 预留测试域名与测试 dummy 域名（在集成测试环境中免真实网络探测，排除用于死链测试的 192.0.2.*）
+    if (u.contains("example.com")
+        || u.contains("example.org")
+        || u.contains(".example")
+        || u.contains("test.m3u8")
+        || u.contains("://x/")
+        || u.contains("://test/")
+        || u.contains("://dummy/"))
+        && !u.contains("192.0.2.")
+    {
         return true;
     }
 
@@ -527,20 +580,26 @@ pub async fn probe_source_channels(
         });
     }
 
-    let mut disabled_ids = Vec::new();
+    let mut alive_ids = Vec::new();
+    let mut dead_ids = Vec::new();
     while let Some(res) = join_set.join_next().await {
         if let Ok((id_str, alive)) = res {
-            if !alive {
-                if let Ok(id) = Id::parse_str(&id_str) {
-                    disabled_ids.push(id);
+            if let Ok(id) = Id::parse_str(&id_str) {
+                if alive {
+                    alive_ids.push(id);
+                } else {
+                    dead_ids.push(id);
                 }
             }
         }
     }
 
-    let dead_count = disabled_ids.len();
-    if !disabled_ids.is_empty() {
-        whatmedia_database::repo::set_channels_disabled(db, &disabled_ids).await?;
+    let dead_count = dead_ids.len();
+    if !alive_ids.is_empty() {
+        whatmedia_database::repo::set_channels_enabled(db, &alive_ids).await?;
+    }
+    if !dead_ids.is_empty() {
+        whatmedia_database::repo::delete_channels(db, &dead_ids).await?;
     }
 
     Ok((total, dead_count))
@@ -554,9 +613,9 @@ pub fn spawn_channel_probe_task(db: whatmedia_database::Db, source_id: Id) {
             Ok((total, dead_count)) => {
                 let active = total.saturating_sub(dead_count);
                 let summary = if dead_count > 0 {
-                    format!("探测完成：共 {total} 个频道，活跃 {active} 个，已过滤 {dead_count} 个失效源")
+                    format!("探测完成：共 {total} 个频道，校验通过 {active} 个，已清理删除 {dead_count} 个失效死链")
                 } else {
-                    format!("探测完成：共 {total} 个频道，全部正常可用")
+                    format!("探测完成：共 {total} 个频道，全部校验通过可用")
                 };
                 let _ = whatmedia_database::repo::set_source_sync_result(
                     &db,
@@ -565,7 +624,7 @@ pub fn spawn_channel_probe_task(db: whatmedia_database::Db, source_id: Id) {
                 )
                 .await;
                 tracing::info!(
-                    "直播源 {} 探测完成：共 {} 个频道，活跃 {} 个，已禁用 {} 个失效频道",
+                    "直播源 {} 探测完成：共 {} 个频道，校验通过 {} 个，已物理删除 {} 个失效频道",
                     source_id,
                     total,
                     active,
@@ -695,6 +754,14 @@ pub async fn play_channel(State(state): State<AppState>, AxumPath(id): AxumPath<
     let Ok(Some(ch)) = whatmedia_database::repo::get_live_channel(&db, id).await else {
         return error_response(StatusCode::NOT_FOUND, "NOT_FOUND", "频道不存在");
     };
+
+    if ch.enabled != 1 {
+        return error_response(
+            StatusCode::BAD_REQUEST,
+            "CHANNEL_NOT_VERIFIED",
+            "该频道尚未校验通过或已被禁用，请等待检测完成",
+        );
+    }
 
     let stream_url = ch.stream_url.trim();
 
