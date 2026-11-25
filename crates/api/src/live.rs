@@ -381,21 +381,6 @@ pub async fn delete_source(State(state): State<AppState>, AxumPath(id): AxumPath
     }
 }
 
-/// `POST /api/v1/live/sources/{id}/sync` —— 拉取订阅并替换频道。
-#[cfg_attr(
-    feature = "openapi",
-    utoipa::path(
-        post,
-        path = "/api/v1/live/sources/{id}/sync",
-        params(("id" = String, Path, description = "直播源 id")),
-        responses(
-            (status = 200, description = "同步完成", body = SyncReply),
-            (status = 404, description = "源不存在", body = crate::ErrorBody),
-            (status = 502, description = "订阅下载失败或格式不对", body = crate::ErrorBody),
-        ),
-        tag = "live"
-    )
-)]
 /// 内部同步直播源频道逻辑，供路由处理函数及启动时默认源同步复用。
 pub async fn sync_source_internal(db: &whatmedia_database::Db, id: Id) -> anyhow::Result<usize> {
     let src = whatmedia_database::repo::get_live_source(db, id)
@@ -438,6 +423,21 @@ pub async fn sync_source_internal(db: &whatmedia_database::Db, id: Id) -> anyhow
     Ok(n)
 }
 
+/// `POST /api/v1/live/sources/{id}/sync` —— 拉取订阅并替换频道。
+#[cfg_attr(
+    feature = "openapi",
+    utoipa::path(
+        post,
+        path = "/api/v1/live/sources/{id}/sync",
+        params(("id" = String, Path, description = "直播源 id")),
+        responses(
+            (status = 200, description = "同步完成", body = SyncReply),
+            (status = 404, description = "源不存在", body = crate::ErrorBody),
+            (status = 502, description = "订阅下载失败或格式不对", body = crate::ErrorBody),
+        ),
+        tag = "live"
+    )
+)]
 pub async fn sync_source(State(state): State<AppState>, AxumPath(id): AxumPath<Id>) -> Response {
     let Some(db) = state.db.clone() else {
         return error_response(
