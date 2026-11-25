@@ -871,6 +871,11 @@ watch(scrapeLibraryId, () => {
 })
 
 // ── 电视直播订阅源配置 ──────────────────────────────────────
+const DEFAULT_LIVE_SOURCE = {
+  name: '默认直播源 (IPTV)',
+  url: 'https://guovin.github.io/iptv-api/result.txt',
+}
+
 const liveSources = ref<api.LiveSource[]>([])
 const loadingLiveSources = ref(false)
 const liveError = ref<string | null>(null)
@@ -882,6 +887,17 @@ const probingSourceId = ref<string | null>(null)
 const newSourceName = ref('')
 const newSourceUrl = ref('')
 const newSourceEpg = ref('')
+
+function fillDefaultLiveSource(): void {
+  newSourceName.value = DEFAULT_LIVE_SOURCE.name
+  newSourceUrl.value = DEFAULT_LIVE_SOURCE.url
+  newSourceEpg.value = ''
+}
+
+async function addDefaultLiveSource(): Promise<void> {
+  fillDefaultLiveSource()
+  await addLiveSource()
+}
 
 async function loadLiveSources(): Promise<void> {
   loadingLiveSources.value = true
@@ -977,12 +993,39 @@ async function deleteSingleLiveSource(id: string, name: string): Promise<void> {
 }
 
 // ── 多源影视聚合 (Phase 3) ─────────────────────────────────
+const DEFAULT_VOD_SOURCES_CONFIG = {
+  api_site: {
+    lz: {
+      name: '量子资源',
+      api: 'https://cj.lziapi.com/api.php/provide/vod/',
+      active: true,
+    },
+    ff: {
+      name: '非凡资源',
+      api: 'https://cj.ffzyapi.com/api.php/provide/vod/',
+      active: true,
+    },
+  },
+}
+
+const DEFAULT_VOD_SOURCES_JSON = JSON.stringify(DEFAULT_VOD_SOURCES_CONFIG, null, 2)
+
 const vodSources = ref<api.VodSourceConfig[]>([])
 const loadingVodSources = ref(false)
 const vodSourcesError = ref<string | null>(null)
 const showAddVodModal = ref(false)
-const vodImportJson = ref('')
+const vodImportJson = ref(DEFAULT_VOD_SOURCES_JSON)
 const vodImportResult = ref<string | null>(null)
+
+function fillDefaultVodJson(): void {
+  vodImportJson.value = DEFAULT_VOD_SOURCES_JSON
+}
+
+async function importDefaultVodSources(): Promise<void> {
+  fillDefaultVodJson()
+  showAddVodModal.value = true
+  await importVodSourcesFromText()
+}
 
 async function loadVodSources(): Promise<void> {
   loadingVodSources.value = true
@@ -2143,6 +2186,14 @@ async function deleteUserAccount(u: api.UserAccount): Promise<void> {
                   >
                     <span>{{ liveBusy ? '正在处理...' : '➕ 添加并同步订阅源' }}</span>
                   </button>
+                  <button
+                    type="button"
+                    class="btn btn-ghost"
+                    :disabled="liveBusy"
+                    @click="fillDefaultLiveSource"
+                  >
+                    ⚡ 填入默认 IPTV 源
+                  </button>
                 </div>
               </div>
 
@@ -2168,6 +2219,15 @@ async function deleteUserAccount(u: api.UserAccount): Promise<void> {
             <div v-else-if="!liveSources.length" class="empty-live-box">
               <span class="empty-live-ico">📡</span>
               <span>暂未配置任何直播订阅源。请在上方输入播放列表 URL 添加订阅。</span>
+              <button
+                type="button"
+                class="btn btn-primary"
+                style="margin-top: 10px;"
+                :disabled="liveBusy"
+                @click="addDefaultLiveSource"
+              >
+                ⚡ 一键添加并同步官方推荐源
+              </button>
             </div>
 
             <div v-else class="live-sources-grid">
@@ -2304,6 +2364,13 @@ async function deleteUserAccount(u: api.UserAccount): Promise<void> {
                 >
                   立即解析并导入
                 </button>
+                <button
+                  type="button"
+                  class="btn btn-ghost"
+                  @click="fillDefaultVodJson"
+                >
+                  重置为推荐配置
+                </button>
               </div>
             </div>
 
@@ -2313,7 +2380,15 @@ async function deleteUserAccount(u: api.UserAccount): Promise<void> {
                 加载采集源中…
               </div>
               <div v-else-if="!vodSources.length" class="live-sources-empty">
-                暂无配置任何在线采集源。点击上方「批量导入」添加您的第一个采集站。
+                <div>暂无配置任何在线采集源。点击上方「批量导入」添加您的第一个采集站。</div>
+                <button
+                  type="button"
+                  class="btn btn-primary"
+                  style="margin-top: 10px;"
+                  @click="importDefaultVodSources"
+                >
+                  ⚡ 一键载入推荐采集源 (量子/非凡)
+                </button>
               </div>
               <div
                 v-for="src in vodSources"

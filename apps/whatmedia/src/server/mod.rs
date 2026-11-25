@@ -38,6 +38,11 @@ pub async fn run_server(config_path: Option<PathBuf>) -> Result<()> {
     db.migrate(&config.paths.migrations_dir).await?;
     db.ping().await?;
 
+    // ── 首次运行初始化默认源 ──────────────────────────────────
+    if let Err(e) = whatmedia_api::bootstrap_default_sources(&db).await {
+        warn!("初始化默认直播源与聚合采集源失败：{e:#}");
+    }
+
     // ── 首次运行引导账户 ──────────────────────────────────────
     // 部署者可以用 WHATMEDIA_BOOTSTRAP_USER / _PASSWORD 直接准备管理员
     match whatmedia_api::auth::bootstrap_dev_user(&db).await {

@@ -396,6 +396,48 @@ pub async fn delete_source(State(state): State<AppState>, AxumPath(id): AxumPath
         tag = "live"
     )
 )]
+/// 内部同步直播源频道逻辑，供路由处理函数及启动时默认源同步复用。
+pub async fn sync_source_internal(db: &whatmedia_database::Db, id: Id) -> anyhow::Result<usize> {
+    let src = whatmedia_database::repo::get_live_source(db, id)
+        .await?
+        .ok_or_else(|| anyhow::anyhow!("直播源不存在"))?;
+
+    let kind = whatmedia_live::LiveSourceKind::parse(&src.kind)
+        .unwrap_or(whatmedia_live::LiveSourceKind::M3u);
+    if !matches!(kind, whatmedia_live::LiveSourceKind::M3u) {
+        anyhow::bail!("当前只支持同步 m3u 形态的源；hdhomerun / dvb 在 L3");
+    }
+    let url = src
+        .url
+        .clone()
+        .filter(|u| !u.trim().is_empty())
+        .ok_or_else(|| anyhow::anyhow!("这个源没有订阅地址"))?;
+
+    // 拉订阅。本地文件也支持（很多人是把 m3u 放本地一个路径上）。
+    let text = match fetch_text(&url).await {
+        Ok(t) => t,
+        Err(e) => {
+            let msg = format!("订阅下载失败：{e}");
+            let _ = whatmedia_database::repo::set_source_sync_result(db, id, Some(&msg)).await;
+            anyhow::bail!(msg);
+        }
+    };
+
+    let drafts = match whatmedia_live::parse_playlist(&text) {
+        Ok(d) => d,
+        Err(e) => {
+            let msg = format!("{e}");
+            let _ = whatmedia_database::repo::set_source_sync_result(db, id, Some(&msg)).await;
+            anyhow::bail!(msg);
+        }
+    };
+
+    let n = whatmedia_database::repo::replace_channels(db, id, &drafts).await?;
+    let _ = whatmedia_database::repo::set_source_sync_result(db, id, None).await;
+    spawn_channel_probe_task(db.clone(), id);
+    Ok(n)
+}
+
 pub async fn sync_source(State(state): State<AppState>, AxumPath(id): AxumPath<Id>) -> Response {
     let Some(db) = state.db.clone() else {
         return error_response(
@@ -404,53 +446,27 @@ pub async fn sync_source(State(state): State<AppState>, AxumPath(id): AxumPath<I
             "数据库未就绪",
         );
     };
-    let Ok(Some(src)) = whatmedia_database::repo::get_live_source(&db, id).await else {
-        return error_response(StatusCode::NOT_FOUND, "NOT_FOUND", "直播源不存在");
-    };
 
-    let kind = whatmedia_live::LiveSourceKind::parse(&src.kind)
-        .unwrap_or(whatmedia_live::LiveSourceKind::M3u);
-    if !matches!(kind, whatmedia_live::LiveSourceKind::M3u) {
-        return error_response(
-            StatusCode::BAD_REQUEST,
-            "UNSUPPORTED_KIND",
-            "当前只支持同步 m3u 形态的源；hdhomerun / dvb 在 L3",
-        );
-    }
-    let Some(url) = src.url.clone().filter(|u| !u.trim().is_empty()) else {
-        return error_response(StatusCode::BAD_REQUEST, "MISSING_URL", "这个源没有订阅地址");
-    };
-
-    // 拉订阅。本地文件也支持（很多人是把 m3u 放本地一个路径上）。
-    let text = match fetch_text(&url).await {
-        Ok(t) => t,
+    match sync_source_internal(&db, id).await {
+        Ok(n) => Json(SyncReply {
+            source_id: id.to_string(),
+            channels: n,
+        })
+        .into_response(),
         Err(e) => {
-            let msg = format!("订阅下载失败：{e}");
-            let _ = whatmedia_database::repo::set_source_sync_result(&db, id, Some(&msg)).await;
-            return error_response(StatusCode::BAD_GATEWAY, "SYNC_FAILED", &msg);
+            let msg = e.to_string();
+            if msg.contains("不存在") {
+                error_response(StatusCode::NOT_FOUND, "NOT_FOUND", &msg)
+            } else if msg.contains("订阅下载失败") {
+                error_response(StatusCode::BAD_GATEWAY, "SYNC_FAILED", &msg)
+            } else if msg.contains("只支持同步 m3u") {
+                error_response(StatusCode::BAD_REQUEST, "UNSUPPORTED_KIND", &msg)
+            } else if msg.contains("没有订阅地址") {
+                error_response(StatusCode::BAD_REQUEST, "MISSING_URL", &msg)
+            } else {
+                error_response(StatusCode::BAD_GATEWAY, "BAD_PLAYLIST", &msg)
+            }
         }
-    };
-
-    let drafts = match whatmedia_live::parse_playlist(&text) {
-        Ok(d) => d,
-        Err(e) => {
-            let msg = format!("{e}");
-            let _ = whatmedia_database::repo::set_source_sync_result(&db, id, Some(&msg)).await;
-            return error_response(StatusCode::BAD_GATEWAY, "BAD_PLAYLIST", &msg);
-        }
-    };
-
-    match whatmedia_database::repo::replace_channels(&db, id, &drafts).await {
-        Ok(n) => {
-            let _ = whatmedia_database::repo::set_source_sync_result(&db, id, None).await;
-            spawn_channel_probe_task(db.clone(), id);
-            Json(SyncReply {
-                source_id: id.to_string(),
-                channels: n,
-            })
-            .into_response()
-        }
-        Err(e) => error_response(StatusCode::INTERNAL_SERVER_ERROR, "DB_ERROR", e.to_string()),
     }
 }
 

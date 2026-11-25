@@ -359,8 +359,9 @@ docker pull ghcr.io/caijianqi/whatmedia:latest
 ```
 
 ##### 2. 创建宿主机持久化目录（Linux / macOS）
-> [!TIP]
-> 容器默认以非 root 用户 `whatmedia` (UID `1000`, GID `1000`) 运行以保障安全，建议提前创建目录并授予权限：
+> [!IMPORTANT]
+> 容器默认以非 root 用户 `whatmedia` (UID `1000`, GID `1000`) 运行以保障安全。若宿主机目录由 root 创建，容器内将无法写入并报错 `(code: 14) unable to open database file`。
+> **请务必在宿主机提前创建目录并授予 UID 1000 权限**（或在启动命令中添加 `--user root`）：
 ```bash
 mkdir -p /opt/whatmedia/{config,data,cache,logs}
 sudo chown -R 1000:1000 /opt/whatmedia
@@ -581,6 +582,21 @@ sudo systemctl enable --now whatmedia
 
 #### Q4: 提示转码不可用，返回 `501 FFMPEG_UNAVAILABLE`？
 > **解答**：服务端未在宿主机系统路径下探测到 `ffmpeg`。可运行 `whatmedia hardware` 查看诊断报告，并通过环境变量 `WHATMEDIA_FFMPEG_PATH="C:/ffmpeg/bin/ffmpeg.exe"` 显式指定安装路径。
+
+#### Q5: Docker 启动报错 `(code: 14) unable to open database file`？
+> **解答**：这是由于宿主机挂载的 `/config` 目录缺少写权限导致的典型 Linux 文件权限问题。
+> 官方 Dockerfile 基于容器安全最小权限规范，默认以普通非 root 用户 `whatmedia` (UID `1000`, GID `1000`) 运行。当宿主机的挂载目录归属为 `root` 时，容器内进程无法创建 `whatmedia.db` 与 WAL 预写日志。
+> **解决方法（二选一）**：
+> 1. **在宿主机修正目录所有者（推荐）**：
+>    ```bash
+>    sudo chown -R 1000:1000 /opt/whatmedia
+>    # 或赋予写权限
+>    sudo chmod -R 775 /opt/whatmedia
+>    ```
+>    随后执行 `docker restart whatmedia` 即可。
+> 2. **直接以 root 身份运行容器（最便捷）**：
+>    在 `docker run` 命令中添加 `--user root` 参数（或在 docker-compose 中配置 `user: "0:0"`）即可完全免除宿主机权限烦恼。
+>    *（注：若宿主机启用了 SELinux，如 CentOS/RHEL/Fedora，需在挂载卷末尾附加 `:z` 标签，例如 `-v /opt/whatmedia/config:/config:z`）*
 
 ---
 

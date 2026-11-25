@@ -476,6 +476,10 @@ pub async fn bootstrap(
         return crate::internal("创建管理员失败");
     };
     tracing::info!(username = %body.username, "已创建首个管理员账户");
+
+    // 首次创建管理员账户后，确保默认源存在
+    let _ = crate::bootstrap_default_sources(&db).await;
+
     (
         StatusCode::CREATED,
         Json(serde_json::json!({"status": "ok", "id": id.to_string()})),

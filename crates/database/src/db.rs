@@ -52,6 +52,24 @@ impl Db {
                 if !parent.as_os_str().is_empty() {
                     std::fs::create_dir_all(&parent)
                         .with_context(|| format!("创建数据库目录失败：{}", parent.display()))?;
+
+                    // 预检目录写权限，避免直接抛出难以理解的 SQLite code 14 (unable to open database file)
+                    let test_file = parent.join(".whatmedia_perm_test");
+                    if let Err(err) = std::fs::OpenOptions::new()
+                        .create(true)
+                        .write(true)
+                        .truncate(true)
+                        .open(&test_file)
+                    {
+                        if err.kind() == std::io::ErrorKind::PermissionDenied {
+                            anyhow::bail!(
+                                "数据库目录 '{}' 权限不足 (Permission Denied)。\n                                 当前进程无权在此目录中创建数据库文件与 WAL 预写日志。\n                                 常见原因与解决办法：\n                                   1. Docker 容器默认使用非 root 用户 (UID 1000) 运行，请在宿主机执行：\n                                      sudo chown -R 1000:1000 <挂载目录> 或 sudo chmod -R 775 <挂载目录>\n                                   2. 或在 docker run / docker-compose 中直接指定以 root 身份运行：--user root\n                                   3. 若开启了 SELinux，请在挂载卷后追加 :z 标记 (如 -v /opt/whatmedia/config:/config:z)",
+                                parent.display()
+                            );
+                        }
+                    } else {
+                        let _ = std::fs::remove_file(&test_file);
+                    }
                 }
             }
         }

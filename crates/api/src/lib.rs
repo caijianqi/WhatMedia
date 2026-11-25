@@ -1321,6 +1321,64 @@ pub fn build_router(state: AppState) -> Router {
         .layer(TraceLayer::new_for_http())
 }
 
+/// 初始化系统默认内置源（默认直播源与默认影视聚合采集源）。
+/// 幂等操作：仅当数据库对应源列表为空时才写入，不覆盖用户已有配置。
+pub async fn bootstrap_default_sources(db: &Db) -> anyhow::Result<()> {
+    // 1. 默认电视直播源 (https://guovin.github.io/iptv-api/result.txt)
+    let live_sources = whatmedia_database::repo::list_live_sources(db).await?;
+    if live_sources.is_empty() {
+        let default_url = "https://guovin.github.io/iptv-api/result.txt";
+        let default_name = "默认直播源 (IPTV)";
+        tracing::info!(url = default_url, "初始化默认电视直播订阅源");
+        if let Ok(id) = whatmedia_database::repo::insert_live_source(
+            db,
+            default_name,
+            "m3u",
+            Some(default_url),
+            None,
+        )
+        .await
+        {
+            // 后台异步触发抓取解析与初次测活，不阻塞服务启动流程
+            let db_clone = db.clone();
+            tokio::spawn(async move {
+                if let Err(e) = crate::live::sync_source_internal(&db_clone, id).await {
+                    tracing::warn!("后台同步初始化默认直播源失败：{e}");
+                }
+            });
+        }
+    }
+
+    // 2. 默认影视聚合采集源 (量子资源、非凡资源)
+    let vod_sources = whatmedia_database::repo::list_vod_sources(db).await?;
+    if vod_sources.is_empty() {
+        tracing::info!("初始化默认多源影视聚合采集站 (量子资源、非凡资源)");
+        let default_vods = vec![
+            whatmedia_aggregator::VodSourceConfig {
+                id: "lz".into(),
+                name: "量子资源".into(),
+                api_url: "https://cj.lziapi.com/api.php/provide/vod/".into(),
+                is_active: true,
+                weight: 100,
+                timeout_ms: 2500,
+            },
+            whatmedia_aggregator::VodSourceConfig {
+                id: "ff".into(),
+                name: "非凡资源".into(),
+                api_url: "https://cj.ffzyapi.com/api.php/provide/vod/".into(),
+                is_active: true,
+                weight: 90,
+                timeout_ms: 2500,
+            },
+        ];
+        for s in default_vods {
+            let _ = whatmedia_database::repo::upsert_vod_source(db, &s).await;
+        }
+    }
+
+    Ok(())
+}
+
 /// 供集成测试使用：无需绑定端口即可发起请求。
 #[cfg(test)]
 mod tests {
