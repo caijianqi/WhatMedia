@@ -40,6 +40,10 @@
 - [六、 本地开发与构建](#六-本地开发与构建)
 - [七、 生产环境部署](#七-生产环境部署)
   - [1. Docker 容器化部署 (推荐)](#1-docker-容器化部署-推荐)
+    - [方式一：通过 docker pull 与 docker run 极速启动](#方式一通过-docker-pull-与-docker-run-极速启动)
+    - [方式二：通过 docker compose 编排部署](#方式二通过-docker-compose-编排部署)
+    - [硬件转码直通参数 (GPU Acceleration)](#硬件转码直通参数-gpu-acceleration)
+    - [服务初始化与 Web 界面访问](#服务初始化与-web-界面访问)
   - [2. Linux 裸机 Systemd 部署](#2-linux-裸机-systemd-部署)
   - [3. 环境变量完整速查表](#3-环境变量完整速查表)
   - [4. 反向代理与公网安全加固](#4-反向代理与公网安全加固)
@@ -345,14 +349,74 @@ make openapi-check
 
 ### 1. Docker 容器化部署 (推荐)
 
-WhatMedia 提供基于 Debian Slim 的官方多架构容器镜像（同时支持 `linux/amd64` 与 `linux/arm64`）。
+WhatMedia 提供基于 Debian Slim 的官方多架构容器镜像（同时原生支持 `linux/amd64` 与 `linux/arm64`），并已内置完整的极光流体 Web 前端与静态 FFmpeg 7.1 转码引擎，真正做到单镜像开箱即用。
 
-创建 `docker-compose.yml`：
+#### 方式一：通过 docker pull 与 docker run 极速启动
+
+##### 1. 拉取最新镜像
+```bash
+docker pull ghcr.io/caijianqi/whatmedia:latest
+```
+
+##### 2. 创建宿主机持久化目录（Linux / macOS）
+> [!TIP]
+> 容器默认以非 root 用户 `whatmedia` (UID `1000`, GID `1000`) 运行以保障安全，建议提前创建目录并授予权限：
+```bash
+mkdir -p /opt/whatmedia/{config,data,cache,logs}
+sudo chown -R 1000:1000 /opt/whatmedia
+```
+
+##### 3. 执行启动命令
+
+**Linux / macOS (Bash)：**
+```bash
+docker run -d \
+  --name whatmedia \
+  --restart unless-stopped \
+  -p 8080:8080 \
+  -v /opt/whatmedia/config:/config \
+  -v /opt/whatmedia/data:/data \
+  -v /opt/whatmedia/cache:/cache \
+  -v /opt/whatmedia/logs:/logs \
+  -v /mnt/media:/media:ro \
+  -e TZ=Asia/Shanghai \
+  -e WHATMEDIA_LOG_LEVEL=info \
+  -e WHATMEDIA_METADATA_TMDB_API_KEY=your_tmdb_api_key_here \
+  ghcr.io/caijianqi/whatmedia:latest
+```
+
+**Windows (PowerShell)：**
+```powershell
+docker run -d `
+  --name whatmedia `
+  --restart unless-stopped `
+  -p 8080:8080 `
+  -v D:\whatmedia\config:/config `
+  -v D:\whatmedia\data:/data `
+  -v D:\whatmedia\cache:/cache `
+  -v D:\whatmedia\logs:/logs `
+  -v D:\media:/media:ro `
+  -e TZ=Asia/Shanghai `
+  -e WHATMEDIA_LOG_LEVEL=info `
+  ghcr.io/caijianqi/whatmedia:latest
+```
+
+> **挂载说明**：
+> - `/config`：保存 SQLite 数据库、刮削凭证及用户个性化配置（**必须持久化**）
+> - `/data`：元数据高清海报与背景壁纸离线缓存目录
+> - `/cache`：HLS 流式分片与动态转码临时缓存（可挂载至高速 SSD 或 tmpfs 内存盘）
+> - `/media:ro`：宿主机实际存放影视资源的目录，**强烈建议以只读 (`:ro`) 模式挂载**，杜绝误删风险
+
+---
+
+#### 方式二：通过 docker compose 编排部署
+
+在宿主机目录创建 `docker-compose.yml`：
 
 ```yaml
 services:
   whatmedia:
-    image: ghcr.io/whatmedia/whatmedia:latest
+    image: ghcr.io/caijianqi/whatmedia:latest
     container_name: whatmedia
     restart: unless-stopped
     ports:
@@ -363,16 +427,18 @@ services:
       - WHATMEDIA_LOG_FORMAT=json
       - WHATMEDIA_DATABASE_URL=sqlite:/config/whatmedia.db?mode=rwc
       - WHATMEDIA_METADATA_TMDB_API_KEY=your_tmdb_api_key_here
+      # 可选：无人值守部署时直接预设管理员账户
+      # - WHATMEDIA_BOOTSTRAP_USER=admin
+      # - WHATMEDIA_BOOTSTRAP_PASSWORD=YourStrongPassword123
     volumes:
       - ./config:/config
       - ./data:/data
       - ./cache:/cache
       - ./logs:/logs
-      # 媒体目录建议只读挂载 (:ro)，避免误操作风险
       - /mnt/media:/media:ro
-    # 如需硬件转码，映射对应系统的显卡渲染节点（按需解注）：
+    # ── 硬件转码直通（根据硬件环境按需解注）──
     # devices:
-    #   - /dev/dri:/dev/dri      # Intel / AMD 核显与独显
+    #   - /dev/dri:/dev/dri      # Intel 核显 / AMD 核显与独显
     healthcheck:
       test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1:8080/healthz"]
       interval: 30s
@@ -381,10 +447,49 @@ services:
       retries: 3
 ```
 
-启动容器：
+启动并查看容器状态：
 ```bash
+# 后台启动
 docker compose up -d
+
+# 查看运行日志
+docker compose logs -f
+
+# 停止容器
+docker compose down
 ```
+
+---
+
+#### 硬件转码直通参数 (GPU Acceleration)
+
+若需要在 Docker 中启用硬件转码（如 Intel QSV、NVIDIA NVENC 或 ARM MPP），可在 `docker run` 命令中附加对应参数：
+
+* **Intel QuickSync (QSV) / AMD (VAAPI)**：
+  ```bash
+  --device /dev/dri:/dev/dri
+  ```
+* **NVIDIA 独立显卡**（宿主机需安装 `nvidia-container-toolkit`）：
+  ```bash
+  --gpus all
+  ```
+* **Rockchip RK3588 (如 Orange Pi / FriendlyElec ARM NAS)**：
+  ```bash
+  --device /dev/dri:/dev/dri \
+  --device /dev/mpp_service:/dev/mpp_service \
+  --device /dev/rga:/dev/rga
+  ```
+
+---
+
+#### 服务初始化与 Web 界面访问
+
+1. **访问前端管理界面**：
+   在局域网任意设备浏览器输入 `http://<服务器IP>:8080`。官方 Docker 镜像已内置完整的响应式 Web 播放器。
+2. **首次初始化向导**：
+   首次访问系统将自动进入管理员初始设置流程，设定管理员用户名与密码；若在环境变量中已配置 `WHATMEDIA_BOOTSTRAP_USER` 与 `WHATMEDIA_BOOTSTRAP_PASSWORD`，则可直接登录。
+3. **添加媒体库路径**：
+   进入「设置」$\to$「媒体库管理」，点击「添加媒体库」，路径填写容器内的挂载路径（例如 `/media`），点击「保存并扫描」即可开始智能入库与元数据刮削。
 
 ### 2. Linux 裸机 Systemd 部署
 
@@ -461,7 +566,9 @@ sudo systemctl enable --now whatmedia
 ## 八、 疑难排查与常见问题 (FAQ)
 
 #### Q1: 服务端成功运行，但打开 `8080` 端口只有一行 JSON 说明？
-> **解答**：后端专注于提供高性能 RESTful API 与流媒体输出，**不直接兼职静态 Web 服务器**。Web 前端在生产环境中由预构建的客户端静态托管（或打包于桌面端/移动端独立运行）。请访问前端端口（开发模式为 `1420`），或配置 Nginx 将前端静态页面反向代理到后端 `/api`。
+> **解答**：
+> - **若使用官方 Docker 镜像**：镜像内已预置并自动配置了 `WHATMEDIA_WEB_DIR`，直接访问 `http://<IP>:8080` 即可加载完整的极光流体 Web 播放器。若出现纯 JSON，请检查是否覆盖了 `WHATMEDIA_WEB_DIR` 环境变量或使用的是旧版镜像。
+> - **若通过源码裸机编译 (`cargo run / cargo build`)**：服务端核心只包含 RESTful API 与流媒体输出。如需通过后端同时托管 Web 前端，请在客户端执行 `npm run build`，并通过环境变量指定静态产物路径：`WHATMEDIA_WEB_DIR="client/dist"`；或者在开发模式下直接访问 Vite 开发服务器端口（默认 `http://localhost:1420`）。
 
 #### Q2: 扫描入库后，媒体条目没有海报、封面与剧情简介？
 > **解答**：元数据刮削需要配置外部 Provider 密钥。请设置环境变量 `WHATMEDIA_METADATA_TMDB_API_KEY=你的TMDB密钥` 或开启 Bangumi 支持，随后在 Web 设置页或通过命令 `whatmedia scrape` 即可开始抓取。

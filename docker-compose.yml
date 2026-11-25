@@ -16,7 +16,7 @@
 
 services:
   whatmedia:
-    image: ghcr.io/whatmedia/whatmedia:latest
+    image: ghcr.io/caijianqi/whatmedia:latest
     container_name: whatmedia
     restart: unless-stopped
     ports:
