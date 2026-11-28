@@ -4,6 +4,8 @@
 /target
 **/target
 *.rs.bk
+Cargo.lock
+**/Cargo.lock
 
 # 只忽略 Tauri 自动生成的 schema 目录与机器特定/密钥文件。
 /client/src-tauri/gen/schemas

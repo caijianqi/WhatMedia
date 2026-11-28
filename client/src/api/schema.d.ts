@@ -1905,8 +1905,9 @@ export interface components {
             dvr_window_secs: number;
             job_id: string;
             live: boolean;
-            /** @description master 播放列表，直接喂 hls.js */
+            /** @description master 播放列表，直接喂 hls.js (或代理地址) */
             playlist_url: string;
+            stream_url?: string | null;
         };
         LiveSourceView: {
             /** Format: int64 */
@@ -3953,6 +3954,8 @@ export interface operations {
             path: {
                 /** @description 频道 id */
                 id: string;
+                client: string | null;
+                direct: boolean | null;
             };
             cookie?: never;
         };

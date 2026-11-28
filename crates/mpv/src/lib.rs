@@ -66,7 +66,9 @@ mod tests {
     #[test]
     fn version_is_parsed_from_modern_v_prefixed_output() {
         assert_eq!(
-            parse_version("mpv v0.42.0-38-gbcde6b93c Copyright © 2000-2026 mpv/MPlayer/mplayer2 projects"),
+            parse_version(
+                "mpv v0.42.0-38-gbcde6b93c Copyright © 2000-2026 mpv/MPlayer/mplayer2 projects"
+            ),
             Some((0, 42))
         );
         assert!(version_ok("mpv v0.42.0-38-gbcde6b93c"));

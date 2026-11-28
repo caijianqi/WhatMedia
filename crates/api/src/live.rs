@@ -806,7 +806,13 @@ pub async fn play_channel(
             || query
                 .client
                 .as_deref()
-                .map(|c| c == "tauri-media3" || c == "tauri-mpv" || c == "media3" || c == "mpv" || c == "native")
+                .map(|c| {
+                    c == "tauri-media3"
+                        || c == "tauri-mpv"
+                        || c == "media3"
+                        || c == "mpv"
+                        || c == "native"
+                })
                 .unwrap_or(false);
 
         let final_playlist_url = if prefer_direct {

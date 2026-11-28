@@ -19,9 +19,7 @@ use crate::auth::{
     BootstrapInput, CreateUserInput, DecideInput, LoginInput, LoginResult, SignedUrlInput,
     SignedUrlOut, UpdateUserInput, UserOut,
 };
-use crate::live::{
-    CreateSourceRequest, LiveChannelView, LivePlayQuery, LivePlayView, LiveSourceView, SyncReply,
-};
+use crate::live::{CreateSourceRequest, LiveChannelView, LivePlayView, LiveSourceView, SyncReply};
 use crate::metadata::{
     IdentifyRequest, LockRequest, LockResult, ReviewItem, ScrapeAccepted, ScrapeRequest,
     ScrapeRunView, StatusView,

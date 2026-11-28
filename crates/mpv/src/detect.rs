@@ -126,7 +126,14 @@ fn candidates(env: &dyn MpvEnv) -> Vec<String> {
         }
     }
     if let Ok(cwd) = std::env::current_dir() {
-        out.push(cwd.join("client").join("src-tauri").join("bin").join(&exe).to_string_lossy().to_string());
+        out.push(
+            cwd.join("client")
+                .join("src-tauri")
+                .join("bin")
+                .join(&exe)
+                .to_string_lossy()
+                .to_string(),
+        );
         out.push(cwd.join("bin").join(&exe).to_string_lossy().to_string());
     }
 

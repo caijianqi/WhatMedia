@@ -93,20 +93,24 @@ impl Db {
         &self.pool
     }
 
-    /// 执行 `dir` 下所有未应用的迁移。重复调用是幂等的。
+    /// 直接执行 `dir` 下的初始化 SQL（例如 `migrations/init.sql`）。
     ///
-    /// **为什么运行时读目录而不是 `sqlx::migrate!` 编译期嵌入**：
-    /// 容器里迁移文件位于 `/usr/local/share/whatmedia/migrations`，进程 CWD 却在 `/config`，
-    /// 任何相对路径的编译期常量都会在生产环境失效。运行时按配置传入目录才是对的。
+    /// 不使用 `sqlx::migrate::Migrator`（不建 `_sqlx_migrations` 表、不做版本与校验和比对），
+    /// 所有建表/索引/触发器语句均带 `IF NOT EXISTS`，重复调用幂等。
     pub async fn migrate(&self, dir: &Path) -> Result<()> {
-        let migrator = sqlx::migrate::Migrator::new(dir.to_path_buf())
-            .await
-            .with_context(|| format!("读取迁移目录失败：{}", dir.display()))?;
-
-        migrator
-            .run(&self.pool)
-            .await
-            .context("执行数据库迁移失败")?;
+        let files = migration_files(dir)
+            .with_context(|| format!("读取初始化 SQL 目录失败：{}", dir.display()))?;
+        if files.is_empty() {
+            anyhow::bail!("初始化 SQL 目录为空：{}", dir.display());
+        }
+        for path in files {
+            let sql = std::fs::read_to_string(&path)
+                .with_context(|| format!("读取 SQL 文件失败：{}", path.display()))?;
+            sqlx::raw_sql(sqlx::AssertSqlSafe(sql))
+                .execute(&self.pool)
+                .await
+                .with_context(|| format!("执行初始化 SQL 失败：{}", path.display()))?;
+        }
         Ok(())
     }
 

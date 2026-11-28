@@ -1025,7 +1025,10 @@ pub async fn hls_master(State(state): State<AppState>, AxumPath(job): AxumPath<I
                 "application/vnd.apple.mpegurl".to_string(),
             ),
             (header::ACCESS_CONTROL_ALLOW_ORIGIN, "*".to_string()),
-            (header::ACCESS_CONTROL_ALLOW_METHODS, "GET, HEAD, OPTIONS".to_string()),
+            (
+                header::ACCESS_CONTROL_ALLOW_METHODS,
+                "GET, HEAD, OPTIONS".to_string(),
+            ),
             (header::CACHE_CONTROL, "no-cache".to_string()),
         ],
         body,
@@ -1098,15 +1101,16 @@ pub async fn hls_file(
             [
                 (header::CONTENT_TYPE, ctype.to_string()),
                 (header::ACCESS_CONTROL_ALLOW_ORIGIN, "*".to_string()),
-                (header::ACCESS_CONTROL_ALLOW_METHODS, "GET, HEAD, OPTIONS".to_string()),
+                (
+                    header::ACCESS_CONTROL_ALLOW_METHODS,
+                    "GET, HEAD, OPTIONS".to_string(),
+                ),
                 (header::CACHE_CONTROL, "no-cache".to_string()),
             ],
             bytes,
         )
             .into_response(),
-        None => {
-            error_response(StatusCode::NOT_FOUND, "NOT_READY", "分片尚未生成")
-        }
+        None => error_response(StatusCode::NOT_FOUND, "NOT_READY", "分片尚未生成"),
     }
 }
 
