@@ -100,9 +100,22 @@ async function playEpisodeTest(ep: VodEpisode): Promise<void> {
     hlsInstance = null
   }
 
-  const streamUrl = ep.play_url
+  let streamUrl = ep.play_url
+  if (
+    (streamUrl.startsWith('http://') || streamUrl.startsWith('https://')) &&
+    !streamUrl.includes('/proxy/vod_stream') &&
+    !streamUrl.includes('/live/proxy')
+  ) {
+    streamUrl = api.getVodStreamProxyUrl(
+      streamUrl,
+      props.item?.routes[activeRouteIndex.value]?.source_id,
+    )
+  }
 
-  if (Hls.isSupported() && (streamUrl.includes('.m3u8') || streamUrl.startsWith('http'))) {
+  if (
+    Hls.isSupported() &&
+    (streamUrl.includes('.m3u8') || streamUrl.startsWith('http') || streamUrl.startsWith('/'))
+  ) {
     const hls = new Hls({
       enableWorker: true,
       lowLatencyMode: true,

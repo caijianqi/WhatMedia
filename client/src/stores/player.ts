@@ -18,6 +18,7 @@ import {
   RecoveryCoordinator,
   type MediaPlayer,
   type PlaybackSource,
+  type PlayerBackend,
   type PlayerSnapshot,
   type PlayerTarget,
 } from '../player'
@@ -70,6 +71,8 @@ export const usePlayerStore = defineStore('player', () => {
   let lastSource: PlaybackSource | null = null
   let lastLoadOptions: { startAt?: number; autoplay?: boolean } = {}
   let retryTimer: number | undefined
+  /** 递增会话序号，防止旧播放器实例的异步事件或回退逻辑串台。 */
+  let openSeq = 0
   /** 上次 `open()` 的参数。地址失效时要能整段重来一次。 */
   let lastOpen: {
     target: PlayerTarget
@@ -87,19 +90,35 @@ export const usePlayerStore = defineStore('player', () => {
    * 会话会顺带启动转码任务，而播放器拿到的是转码输出地址 ——
    * 反过来做的话播放器会对一个还不存在的地址发请求。
    */
+  async function destroyCurrentPlayer(): Promise<void> {
+    unsubState?.()
+    unsubEvent?.()
+    unsubState = null
+    unsubEvent = null
+    if (player.value) {
+      const old = player.value
+      player.value = null
+      await old.destroy().catch(() => undefined)
+    }
+  }
+
   async function open(
     target: PlayerTarget,
     itemId: string,
-    opts: { startMs?: number; autoplay?: boolean; fileId?: string; client?: string } = {},
+    opts: { startMs?: number; autoplay?: boolean; fileId?: string; client?: string; backend?: PlayerBackend } = {},
   ): Promise<void> {
+    const seq = ++openSeq
     busy.value = true
     error.value = null
     lastOpen = { target, itemId, opts }
     try {
+      await destroyCurrentPlayer()
+      if (seq !== openSeq) return
       // 后端决定能力档，也就决定了服务端怎么决策 —— 所以必须先定后端，
       // 再用同一个判断去建会话。反过来的话会出现"服务端按 mpv 给了 MKV，
       // 播放器却是 Web"这种无处报错的错配。
-      const backend = await resolveBackend()
+      const backend = opts.backend ?? (await resolveBackend())
+      if (seq !== openSeq) return
 
       const view = await api.createSession({
         item_id: itemId,
@@ -107,6 +126,7 @@ export const usePlayerStore = defineStore('player', () => {
         client: opts.client ?? (backend === 'mpv' ? 'tauri-mpv' : 'web'),
         start_ms: opts.startMs ?? 0,
       })
+      if (seq !== openSeq) return
 
       sessionId.value = view.session_id
       strategy.value = view.strategy
@@ -114,6 +134,7 @@ export const usePlayerStore = defineStore('player', () => {
       hlsJob = hlsJobId(view.hls_url)
 
       const source = await pickSource(view)
+      if (seq !== openSeq) return
       if (!source) {
         error.value = view.reason || '服务端没有给出可用的播放地址'
         return
@@ -122,11 +143,17 @@ export const usePlayerStore = defineStore('player', () => {
       const p = createPlayer({ backend })
       player.value = p
       await p.initialize(target)
+      if (seq !== openSeq) {
+        await p.destroy().catch(() => undefined)
+        return
+      }
 
       unsubState = p.subscribe((s) => {
+        if (seq !== openSeq) return
         snapshot.value = s
       })
       unsubEvent = p.on((e) => {
+        if (seq !== openSeq) return
         if (e.type === 'timeupdate') {
           reporter?.onTimeUpdate(e.position, e.duration)
           recovery.recordPosition(e.position, e.duration)
@@ -254,6 +281,7 @@ export const usePlayerStore = defineStore('player', () => {
   }
 
   async function close(): Promise<void> {
+    openSeq++
     // 顺序：先补发进度，再停会话，最后销毁播放器。
     // 反过来的话播放器已经没了，最后一次进度就丢了。
     //
@@ -339,15 +367,27 @@ export const usePlayerStore = defineStore('player', () => {
   async function openVodUrl(
     target: PlayerTarget,
     streamUrl: string,
-    opts: { autoplay?: boolean; startMs?: number; itemId?: string; fileId?: string } = {},
+    opts: {
+      autoplay?: boolean
+      startMs?: number
+      itemId?: string
+      fileId?: string
+      backend?: PlayerBackend
+      retriedProxy?: boolean
+    } = {},
   ): Promise<void> {
+    const seq = ++openSeq
     busy.value = true
     error.value = null
+    reasons.value = []
     try {
-      const backend = await resolveBackend()
+      await destroyCurrentPlayer()
+      if (seq !== openSeq) return
+      const backend = opts.backend ?? (await resolveBackend())
+      if (seq !== openSeq) return
 
       // 若属于已入库的条目，创建会话以支持继续观看
-      if (opts.itemId) {
+      if (opts.itemId && !opts.retriedProxy) {
         try {
           const view = await api.createSession({
             item_id: opts.itemId,
@@ -355,26 +395,55 @@ export const usePlayerStore = defineStore('player', () => {
             client: backend === 'mpv' ? 'tauri-mpv' : 'web',
             start_ms: opts.startMs ?? 0,
           })
+          if (seq !== openSeq) return
           sessionId.value = view.session_id
           strategy.value = view.strategy
+          reasons.value = view.reasons ?? []
         } catch {
           // 容错：会话创建失败不阻断在线流播放
         }
       }
 
+      let finalStreamUrl = streamUrl
+      if (
+        backend === 'web' &&
+        (streamUrl.startsWith('http://') || streamUrl.startsWith('https://')) &&
+        !streamUrl.includes('/proxy/vod_stream') &&
+        !streamUrl.includes('/live/proxy')
+      ) {
+        finalStreamUrl = api.getVodStreamProxyUrl(streamUrl)
+      }
+
       const p = createPlayer({ backend })
       player.value = p
       await p.initialize(target)
+      if (seq !== openSeq) {
+        await p.destroy().catch(() => undefined)
+        return
+      }
 
       unsubState = p.subscribe((s) => {
+        if (seq !== openSeq) return
         snapshot.value = s
       })
       unsubEvent = p.on((e) => {
+        if (seq !== openSeq) return
         if (e.type === 'timeupdate') {
           reporter?.onTimeUpdate(e.position, e.duration)
           recovery.recordPosition(e.position, e.duration)
           recovery.markHealthy()
         } else if (e.type === 'error') {
+          if (
+            !opts.retriedProxy &&
+            (streamUrl.startsWith('http://') || streamUrl.startsWith('https://')) &&
+            !finalStreamUrl.includes('/proxy/vod_stream') &&
+            !finalStreamUrl.includes('/live/proxy')
+          ) {
+            console.warn('[whatmedia] 直连第三方在线流受阻，自动切换至服务端防盗链解密代理重试')
+            const proxied = api.getVodStreamProxyUrl(streamUrl)
+            void openVodUrl(target, proxied, { ...opts, retriedProxy: true })
+            return
+          }
           onPlayerError(e.error.code, e.error.message)
         }
       })
@@ -387,7 +456,7 @@ export const usePlayerStore = defineStore('player', () => {
         })
       }
 
-      const source: PlaybackSource = { kind: 'hls', url: streamUrl }
+      const source: PlaybackSource = { kind: 'hls', url: finalStreamUrl }
       lastSource = source
       lastLoadOptions = {
         startAt: (opts.startMs ?? 0) / 1000,
@@ -396,9 +465,13 @@ export const usePlayerStore = defineStore('player', () => {
       recovery.reset()
       await p.load(source, lastLoadOptions)
     } catch (e) {
-      error.value = describeError(e)
+      if (seq === openSeq) {
+        error.value = describeError(e)
+      }
     } finally {
-      busy.value = false
+      if (seq === openSeq) {
+        busy.value = false
+      }
     }
   }
 

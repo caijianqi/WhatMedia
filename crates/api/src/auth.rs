@@ -67,6 +67,14 @@ fn is_public(path: &str) -> bool {
     if path.starts_with("/api/v1/live/proxy") {
         return true;
     }
+    // 影视聚合在线流代理端点放行：前端原生流播放器拉取分片时不携带 Authorization 头
+    if path.starts_with("/api/v1/proxy/vod_stream") {
+        return true;
+    }
+    // HLS 转码流切片端点放行：前端原生播放器与 HLS 分片拉取时不携带 Authorization 头
+    if path.starts_with("/api/v1/hls/") {
+        return true;
+    }
     false
 }
 
@@ -111,8 +119,11 @@ pub(crate) async fn require_auth(
 ) -> Response {
     let path = req.uri().path().to_string();
 
-    // 快路径：探针与登录等公开端点直接放行。
+    // 快路径：探针与登录等公开端点直接放行。若携带凭据仍解析以注入上下文
     if is_public(&path) {
+        if let Some(principal) = principal_from_request(&state, req.headers()).await {
+            req.extensions_mut().insert(principal);
+        }
         return next.run(req).await;
     }
 
@@ -274,6 +285,21 @@ where
             .cloned()
             .map(Current)
             .ok_or_else(|| deny(AuthError::MissingCredential))
+    }
+}
+
+/// 可选鉴权提取器：适用于多媒体切片、图片代理等放行端点，
+/// 若客户端未携带 Token 则为 `None`，若携带了有效 Token 则提取出 `Principal`（便于判断儿童模式等）。
+pub struct MaybeCurrent(pub Option<Principal>);
+
+impl<S> FromRequestParts<S> for MaybeCurrent
+where
+    S: Send + Sync,
+{
+    type Rejection = std::convert::Infallible;
+
+    async fn from_request_parts(parts: &mut Parts, _state: &S) -> Result<Self, Self::Rejection> {
+        Ok(MaybeCurrent(parts.extensions.get::<Principal>().cloned()))
     }
 }
 

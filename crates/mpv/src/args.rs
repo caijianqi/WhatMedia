@@ -33,6 +33,10 @@ pub struct LaunchRequest {
     pub window: bool,
     /// 窗口标题。多开时能分清哪个是哪个。
     pub title: Option<String>,
+    /// 嵌入目标宿主窗口句柄（HWND/XID）。传入时强制无边框内嵌，不产生独立弹窗与任务栏图标。
+    pub wid: Option<i64>,
+    /// 自定义 HTTP 请求头（如 Authorization: Bearer ...）。
+    pub headers: Vec<String>,
 }
 
 /// 构造 mpv 的 argv。
@@ -51,6 +55,13 @@ pub fn build_args(req: &LaunchRequest) -> Vec<String> {
     // 不让它自己退出：进程活着才能让 IPC 控制。播完停在最后一帧。
     a.push("--keep-open=always".to_string());
 
+    // 伪装标准浏览器 User-Agent，防止三方流与 CDN 防盗链 403 阻断
+    a.push("--user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36".to_string());
+    // 容忍内网 NAS 自签名证书与部分过期 SSL 证书
+    a.push("--tls-verify=no".to_string());
+    // 网络重连机制
+    a.push("--demuxer-lavf-o=reconnect=1,reconnect_streamed=1,reconnect_delay_max=5".to_string());
+
     a.push(format!("--input-ipc-server={}", req.ipc.as_mpv_arg()));
 
     if let Some(hw) = &req.hwdec {
@@ -59,8 +70,23 @@ pub fn build_args(req: &LaunchRequest) -> Vec<String> {
         }
     }
 
-    if req.window {
+    if let Some(w) = req.wid {
+        a.push(format!("--wid={w}"));
+        a.push("--no-border".to_string());
+        a.push("--force-window=immediate".to_string());
+        a.push("--no-osc".to_string());
+        a.push("--no-osd-bar".to_string());
+        a.push("--no-input-default-bindings".to_string());
+        a.push("--vo=gpu".to_string());
+        a.push("--gpu-api=d3d11".to_string());
+    } else if req.window {
         a.push("--force-window=yes".to_string());
+    }
+
+    for h in &req.headers {
+        if !h.is_empty() {
+            a.push(format!("--http-header-fields={h}"));
+        }
     }
     if let Some(t) = &req.title {
         if !t.is_empty() {
@@ -156,6 +182,8 @@ mod tests {
             hwdec: None,
             window: true,
             title: None,
+            wid: None,
+            headers: vec![],
         }
     }
 
@@ -272,5 +300,28 @@ mod tests {
     fn relative_path_is_rejected() {
         // 相对路径会随 mpv 的 cwd 漂移，不接受。
         assert!(!url_allowed("media/a.mkv"));
+    }
+
+    #[test]
+    fn wid_embed_disables_osc_and_default_bindings() {
+        let mut req_wid = base();
+        req_wid.wid = Some(123456);
+        let args = build_args(&req_wid);
+        assert!(args.contains(&"--wid=123456".to_string()));
+        assert!(args.contains(&"--no-border".to_string()));
+        assert!(args.contains(&"--force-window=immediate".to_string()));
+        assert!(args.contains(&"--no-osc".to_string()));
+        assert!(args.contains(&"--no-osd-bar".to_string()));
+        assert!(args.contains(&"--no-input-default-bindings".to_string()));
+        assert!(args.contains(&"--vo=gpu".to_string()));
+        assert!(args.contains(&"--gpu-api=d3d11".to_string()));
+    }
+
+    #[test]
+    fn custom_headers_are_passed_as_http_header_fields() {
+        let mut req = base();
+        req.headers = vec!["Authorization: Bearer token123".to_string()];
+        let args = build_args(&req);
+        assert!(args.contains(&"--http-header-fields=Authorization: Bearer token123".to_string()));
     }
 }

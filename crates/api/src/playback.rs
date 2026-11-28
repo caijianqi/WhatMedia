@@ -1024,6 +1024,8 @@ pub async fn hls_master(State(state): State<AppState>, AxumPath(job): AxumPath<I
                 header::CONTENT_TYPE,
                 "application/vnd.apple.mpegurl".to_string(),
             ),
+            (header::ACCESS_CONTROL_ALLOW_ORIGIN, "*".to_string()),
+            (header::ACCESS_CONTROL_ALLOW_METHODS, "GET, HEAD, OPTIONS".to_string()),
             (header::CACHE_CONTROL, "no-cache".to_string()),
         ],
         body,
@@ -1074,18 +1076,35 @@ pub async fn hls_file(
     };
 
     let path = h.dir.join(&name);
-    match tokio::fs::read(&path).await {
-        Ok(bytes) => (
+    let mut attempts = 0;
+    let bytes = loop {
+        match tokio::fs::read(&path).await {
+            Ok(b) => break Some(b),
+            Err(_) => {
+                attempts += 1;
+                // 转码首帧期间轮询等待最多 10s (40 * 250ms)，避免播放器因分片尚未落盘报 404
+                if attempts < 40 {
+                    tokio::time::sleep(tokio::time::Duration::from_millis(250)).await;
+                    continue;
+                }
+                break None;
+            }
+        }
+    };
+
+    match bytes {
+        Some(bytes) => (
             StatusCode::OK,
             [
                 (header::CONTENT_TYPE, ctype.to_string()),
+                (header::ACCESS_CONTROL_ALLOW_ORIGIN, "*".to_string()),
+                (header::ACCESS_CONTROL_ALLOW_METHODS, "GET, HEAD, OPTIONS".to_string()),
                 (header::CACHE_CONTROL, "no-cache".to_string()),
             ],
             bytes,
         )
             .into_response(),
-        Err(_) => {
-            // ffmpeg 还没写出来。hls.js 会重试，这里返回 404 是协议内的行为。
+        None => {
             error_response(StatusCode::NOT_FOUND, "NOT_READY", "分片尚未生成")
         }
     }

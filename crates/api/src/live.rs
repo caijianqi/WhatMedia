@@ -65,12 +65,21 @@ pub struct LiveChannelView {
 #[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 pub struct LivePlayView {
     pub job_id: String,
-    /// master 播放列表，直接喂 hls.js
+    /// master 播放列表，直接喂 hls.js (或代理地址)
     pub playlist_url: String,
     pub live: bool,
     pub dvr_window_secs: i64,
     #[serde(default)]
     pub direct: bool,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub stream_url: Option<String>,
+}
+
+#[derive(Debug, Deserialize, Default)]
+#[cfg_attr(feature = "openapi", derive(utoipa::IntoParams))]
+pub struct LivePlayQuery {
+    pub client: Option<String>,
+    pub direct: Option<bool>,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -750,7 +759,10 @@ pub async fn list_channels(State(state): State<AppState>) -> Response {
     utoipa::path(
         post,
         path = "/api/v1/live/channels/{id}/play",
-        params(("id" = String, Path, description = "频道 id")),
+        params(
+            ("id" = String, Path, description = "频道 id"),
+            LivePlayQuery,
+        ),
         responses(
             (status = 200, description = "已在拉流", body = LivePlayView),
             (status = 404, description = "频道不存在", body = crate::ErrorBody),
@@ -759,7 +771,11 @@ pub async fn list_channels(State(state): State<AppState>) -> Response {
         tag = "live"
     )
 )]
-pub async fn play_channel(State(state): State<AppState>, AxumPath(id): AxumPath<Id>) -> Response {
+pub async fn play_channel(
+    State(state): State<AppState>,
+    AxumPath(id): AxumPath<Id>,
+    Query(query): Query<LivePlayQuery>,
+) -> Response {
     let Some(db) = state.db.clone() else {
         return error_response(
             StatusCode::SERVICE_UNAVAILABLE,
@@ -786,12 +802,26 @@ pub async fn play_channel(State(state): State<AppState>, AxumPath(id): AxumPath<
     let is_http_stream = stream_url.starts_with("http://") || stream_url.starts_with("https://");
     if is_http_stream {
         let proxy_url = encode_proxy_url(stream_url);
+        let prefer_direct = query.direct.unwrap_or(false)
+            || query
+                .client
+                .as_deref()
+                .map(|c| c == "tauri-media3" || c == "tauri-mpv" || c == "media3" || c == "mpv" || c == "native")
+                .unwrap_or(false);
+
+        let final_playlist_url = if prefer_direct {
+            stream_url.to_string()
+        } else {
+            proxy_url
+        };
+
         return Json(LivePlayView {
             job_id: id.to_string(),
-            playlist_url: proxy_url,
+            playlist_url: final_playlist_url,
             live: true,
             dvr_window_secs: 0,
             direct: true,
+            stream_url: Some(stream_url.to_string()),
         })
         .into_response();
     }
@@ -812,6 +842,7 @@ pub async fn play_channel(State(state): State<AppState>, AxumPath(id): AxumPath<
             live: true,
             dvr_window_secs: ch.dvr_window_secs,
             direct: false,
+            stream_url: None,
         })
         .into_response();
     }
@@ -986,6 +1017,7 @@ pub async fn play_channel(State(state): State<AppState>, AxumPath(id): AxumPath<
         live: true,
         dvr_window_secs: ch.dvr_window_secs,
         direct: false,
+        stream_url: None,
     })
     .into_response()
 }
@@ -1050,25 +1082,58 @@ pub fn encode_proxy_url(abs: &str) -> String {
         tag = "live"
     )
 )]
-pub async fn proxy_stream(Query(query): Query<LiveProxyQuery>) -> Response {
-    let raw_url = query.url.trim();
-    let Ok(target_url) = reqwest::Url::parse(raw_url) else {
+pub async fn proxy_stream(
+    Query(query): Query<LiveProxyQuery>,
+    client_headers: axum::http::HeaderMap,
+) -> Response {
+    let mut raw_url = query.url.trim().to_string();
+    if !raw_url.starts_with("http://") && !raw_url.starts_with("https://") {
+        let decoded = crate::aggregator::urldecode(&raw_url);
+        if decoded.starts_with("http://") || decoded.starts_with("https://") {
+            raw_url = decoded;
+        }
+    }
+
+    let Ok(target_url) = reqwest::Url::parse(&raw_url) else {
         return error_response(StatusCode::BAD_REQUEST, "BAD_URL", "非法代理目标 URL");
     };
 
     let client = reqwest::Client::builder()
         .danger_accept_invalid_certs(true)
+        .connect_timeout(std::time::Duration::from_secs(3))
+        .timeout(std::time::Duration::from_secs(10))
+        .redirect(reqwest::redirect::Policy::limited(10))
         .build()
         .unwrap_or_default();
 
-    let resp = match client
-        .get(target_url.as_str())
-        .header(reqwest::header::USER_AGENT, "WhatMedia/0.1 (LiveProxy)")
-        .send()
-        .await
-    {
+    let mut req = client.get(target_url.as_str());
+    if let Some(ua) = client_headers.get(axum::http::header::USER_AGENT) {
+        req = req.header(reqwest::header::USER_AGENT, ua);
+    } else {
+        req = req.header(
+            reqwest::header::USER_AGENT,
+            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+        );
+    }
+    if let Some(host) = target_url.host_str() {
+        req = req.header(
+            reqwest::header::REFERER,
+            format!("{}://{}/", target_url.scheme(), host),
+        );
+        req = req.header(
+            reqwest::header::ORIGIN,
+            format!("{}://{}", target_url.scheme(), host),
+        );
+    }
+    req = req.header(reqwest::header::ACCEPT, "*/*");
+    if let Some(range) = client_headers.get(axum::http::header::RANGE) {
+        req = req.header(reqwest::header::RANGE, range);
+    }
+
+    let resp = match req.send().await {
         Ok(r) => r,
         Err(e) => {
+            tracing::warn!(url = %raw_url, error = %e, "直播流代理上游拉流失败");
             return error_response(
                 StatusCode::BAD_GATEWAY,
                 "UPSTREAM_FAILED",
@@ -1087,7 +1152,8 @@ pub async fn proxy_stream(Query(query): Query<LiveProxyQuery>) -> Response {
 
     let is_m3u8 = raw_url.contains(".m3u8")
         || content_type.contains("mpegurl")
-        || content_type.contains("application/x-mpegurl");
+        || content_type.contains("application/x-mpegurl")
+        || content_type.contains("application/vnd.apple.mpegurl");
 
     if is_m3u8 {
         let text = match resp.text().await {
@@ -1111,6 +1177,11 @@ pub async fn proxy_stream(Query(query): Query<LiveProxyQuery>) -> Response {
                 ),
                 (axum::http::header::ACCESS_CONTROL_ALLOW_ORIGIN, "*"),
                 (
+                    axum::http::header::ACCESS_CONTROL_ALLOW_METHODS,
+                    "GET, HEAD, OPTIONS",
+                ),
+                (axum::http::header::ACCESS_CONTROL_ALLOW_HEADERS, "*"),
+                (
                     axum::http::header::CACHE_CONTROL,
                     "no-cache, no-store, must-revalidate",
                 ),
@@ -1126,6 +1197,7 @@ pub async fn proxy_stream(Query(query): Query<LiveProxyQuery>) -> Response {
         &content_type
     };
 
+    let resp_headers = resp.headers().clone();
     let bytes = match resp.bytes().await {
         Ok(b) => b,
         Err(e) => {
@@ -1137,16 +1209,66 @@ pub async fn proxy_stream(Query(query): Query<LiveProxyQuery>) -> Response {
         }
     };
 
+    let mut builder = Response::builder()
+        .status(status)
+        .header(axum::http::header::CONTENT_TYPE, out_ct)
+        .header(axum::http::header::ACCESS_CONTROL_ALLOW_ORIGIN, "*")
+        .header(
+            axum::http::header::ACCESS_CONTROL_ALLOW_METHODS,
+            "GET, HEAD, OPTIONS",
+        )
+        .header(axum::http::header::ACCESS_CONTROL_ALLOW_HEADERS, "*")
+        .header(axum::http::header::CACHE_CONTROL, "no-cache")
+        .header(axum::http::header::CONTENT_LENGTH, bytes.len().to_string());
+
+    if let Some(content_range) = resp_headers.get(reqwest::header::CONTENT_RANGE) {
+        builder = builder.header(axum::http::header::CONTENT_RANGE, content_range);
+    }
+    if let Some(accept_ranges) = resp_headers.get(reqwest::header::ACCEPT_RANGES) {
+        builder = builder.header(axum::http::header::ACCEPT_RANGES, accept_ranges);
+    }
+
+    builder
+        .body(axum::body::Body::from(bytes))
+        .unwrap_or_else(|_| StatusCode::INTERNAL_SERVER_ERROR.into_response())
+}
+
+/// `OPTIONS /api/v1/live/proxy` —— 预检请求放行端点
+pub async fn live_proxy_options() -> Response {
     (
-        status,
+        StatusCode::NO_CONTENT,
         [
-            (axum::http::header::CONTENT_TYPE, out_ct),
             (axum::http::header::ACCESS_CONTROL_ALLOW_ORIGIN, "*"),
-            (axum::http::header::CACHE_CONTROL, "no-cache"),
+            (
+                axum::http::header::ACCESS_CONTROL_ALLOW_METHODS,
+                "GET, HEAD, OPTIONS",
+            ),
+            (axum::http::header::ACCESS_CONTROL_ALLOW_HEADERS, "*"),
+            (axum::http::header::ACCESS_CONTROL_MAX_AGE, "86400"),
         ],
-        bytes,
     )
         .into_response()
+}
+
+fn rewrite_live_tag_uri(line: &str, base_url: &reqwest::Url) -> String {
+    let uri_pattern = "URI=\"";
+    if let Some(start) = line.find(uri_pattern) {
+        let after = &line[start + uri_pattern.len()..];
+        if let Some(end) = after.find('"') {
+            let orig_uri = &after[..end];
+            if let Ok(abs_url) = base_url.join(orig_uri) {
+                let proxy_uri = encode_proxy_url(abs_url.as_str());
+                return format!(
+                    "{}{}{}\"{}",
+                    &line[..start],
+                    uri_pattern,
+                    proxy_uri,
+                    &after[end + 1..]
+                );
+            }
+        }
+    }
+    line.to_string()
 }
 
 fn rewrite_m3u8(text: &str, base_url: &reqwest::Url) -> String {
@@ -1158,25 +1280,10 @@ fn rewrite_m3u8(text: &str, base_url: &reqwest::Url) -> String {
             continue;
         }
         if trimmed.starts_with('#') {
-            if trimmed.starts_with("#EXT-X-MAP:") && trimmed.contains("URI=\"") {
-                if let Some(start) = trimmed.find("URI=\"") {
-                    let after = &trimmed[start + 5..];
-                    if let Some(end) = after.find('"') {
-                        let orig_uri = &after[..end];
-                        if let Ok(abs_url) = base_url.join(orig_uri) {
-                            let proxy_uri = encode_proxy_url(abs_url.as_str());
-                            let new_line = format!(
-                                "{}URI=\"{}\"{}",
-                                &trimmed[..start],
-                                proxy_uri,
-                                &after[end + 1..]
-                            );
-                            out.push_str(&new_line);
-                            out.push('\n');
-                            continue;
-                        }
-                    }
-                }
+            if trimmed.contains("URI=\"") {
+                out.push_str(&rewrite_live_tag_uri(trimmed, base_url));
+                out.push('\n');
+                continue;
             }
             out.push_str(line);
             out.push('\n');

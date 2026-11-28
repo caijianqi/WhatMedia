@@ -33,7 +33,9 @@ useSessionStore()
 
 const showTvSearch = ref(false)
 
-const isStandalone = computed(() => route.name === 'play' || route.name === 'login')
+const isStandalone = computed(
+  () => route.name === 'play' || route.name === 'live' || route.name === 'login',
+)
 const tvFocusEnabled = computed(() => !isStandalone.value)
 const { resetFocus } = useTvFocus({
   enabled: tvFocusEnabled,

@@ -472,8 +472,15 @@ export function listLiveChannels(): Promise<LiveChannel[]> {
  * 返回的 `playlist_url` 直接喂 hls.js —— 分片的投递与点播是同一套端点，
  * 前端不需要为直播准备第二条播放路径。
  */
-export function playLiveChannel(id: string): Promise<LivePlay> {
-  return post<LivePlay>(`/live/channels/${id}/play`)
+export function playLiveChannel(
+  id: string,
+  opts: { client?: string; direct?: boolean } = {},
+): Promise<LivePlay> {
+  const params = new URLSearchParams()
+  if (opts.client) params.set('client', opts.client)
+  if (opts.direct) params.set('direct', 'true')
+  const qs = params.toString()
+  return post<LivePlay>(`/live/channels/${id}/play${qs ? `?${qs}` : ''}`)
 }
 
 /** 离开频道。引用计数归零后服务端才真正停掉 ffmpeg。 */

@@ -10,11 +10,13 @@
  * 5. 2.5 秒指针静止自动隐藏机制 (armHideTimer)。
  * 6. 左侧边缘感应自动滑出选台抽屉 (.tv-edge-sensor + .tv-channel-drawer)，选台即切。
  */
-import { computed, onBeforeUnmount, onMounted, ref, shallowRef } from 'vue'
+import { computed, onBeforeUnmount, onMounted, ref, shallowRef, watch } from 'vue'
 import { RouterLink, useRouter } from 'vue-router'
 import Hls from 'hls.js'
 import * as api from '../api/client'
 import type { LiveChannel } from '../api/client'
+import { resolveMediaUrl } from '../api/client'
+import { createPlayer, resolveBackend, type MediaPlayer } from '../player'
 import { parseRemoteKeyEvent } from '../lib/tv'
 
 const router = useRouter()
@@ -95,9 +97,25 @@ const current = computed<LiveChannel | null>(() => {
 })
 
 const shell = ref<HTMLElement | null>(null)
+const stageViewport = ref<HTMLElement | null>(null)
 const video = ref<HTMLVideoElement | null>(null)
 const hls = shallowRef<Hls | null>(null)
+const nativePlayer = shallowRef<MediaPlayer | null>(null)
+const useNativePlayer = ref(false)
+/** 仅在原生 mpv/media3 已经出画（playing / paused）且未失败时透明穿透，避免加载态透出桌面。 */
+const nativeSurfaceReady = ref(false)
+let unsubNativeState: (() => void) | null = null
+let unsubNativeEvent: (() => void) | null = null
+let playSeq = 0
 const starting = ref(false)
+
+watch(
+  nativeSurfaceReady,
+  (ready) => {
+    document.body.classList.toggle('in-player-mode', ready)
+  },
+  { immediate: true },
+)
 const streamNotice = ref<string | null>(null)
 const streamFailed = ref(false)
 const retryCount = ref(0)
@@ -288,6 +306,21 @@ function teardown(): void {
     hls.value.destroy()
     hls.value = null
   }
+  if (unsubNativeState) {
+    unsubNativeState()
+    unsubNativeState = null
+  }
+  if (unsubNativeEvent) {
+    unsubNativeEvent()
+    unsubNativeEvent = null
+  }
+  if (nativePlayer.value) {
+    const p = nativePlayer.value
+    nativePlayer.value = null
+    void p.destroy().catch(() => undefined)
+  }
+  useNativePlayer.value = false
+  nativeSurfaceReady.value = false
   if (video.value) video.value.removeAttribute('src')
 }
 
@@ -375,6 +408,17 @@ function goBack(): void {
 }
 
 function togglePlay(): void {
+  if (nativePlayer.value) {
+    if (isPaused.value) {
+      void nativePlayer.value.play()
+      isPaused.value = false
+    } else {
+      void nativePlayer.value.pause()
+      isPaused.value = true
+    }
+    armHideTimer()
+    return
+  }
   if (!video.value) return
   if (video.value.paused) {
     video.value.play().catch(() => undefined)
@@ -389,15 +433,28 @@ function togglePlay(): void {
 function onVolumeInput(e: Event): void {
   const v = Number((e.target as HTMLInputElement).value)
   volume.value = v
-  if (video.value) {
+  isMuted.value = v === 0
+  if (nativePlayer.value) {
+    void nativePlayer.value.setVolume(v)
+    void nativePlayer.value.setMuted(v === 0)
+  } else if (video.value) {
     video.value.volume = v
     video.value.muted = v === 0
-    isMuted.value = v === 0
   }
   armHideTimer()
 }
 
 function toggleMute(): void {
+  if (nativePlayer.value) {
+    isMuted.value = !isMuted.value
+    if (!isMuted.value && volume.value === 0) {
+      volume.value = 0.5
+      void nativePlayer.value.setVolume(0.5)
+    }
+    void nativePlayer.value.setMuted(isMuted.value)
+    armHideTimer()
+    return
+  }
   if (!video.value) return
   video.value.muted = !video.value.muted
   isMuted.value = video.value.muted
@@ -555,11 +612,102 @@ async function playChannel(ch: AggregatedChannel, routeIndex = 0): Promise<void>
     return
   }
   currentPlayingId.value = route.channelId
+  const seq = ++playSeq
 
   try {
-    const p = await api.playLiveChannel(route.channelId)
+    const backend = await resolveBackend().catch(() => 'web' as const)
+    if (seq !== playSeq) return
+    const isNative = backend === 'mpv' || backend === 'media3'
+
+    // 原生端 (PC MPV / Android TV Media3) 请求直连上游流地址并交由原生硬解播放；Web 浏览器端走安全代理透传
+    const p = isNative
+      ? await api.playLiveChannel(route.channelId, { client: backend, direct: true })
+      : await api.playLiveChannel(route.channelId)
+    if (seq !== playSeq) return
+
     isDirectStream.value = !!(p as any).direct
     await new Promise((r) => requestAnimationFrame(r))
+    if (seq !== playSeq) return
+
+    const rawDirectUrl = (p as any).stream_url || (isNative && (p as any).direct ? p.playlist_url : null)
+    const proxyUrl = resolveMediaUrl(p.playlist_url)
+    const playUrl = isNative && rawDirectUrl ? rawDirectUrl : proxyUrl
+
+    if (isNative) {
+      const container = stageViewport.value
+      if (!container) return
+      useNativePlayer.value = true
+      const mp = createPlayer({ backend })
+      nativePlayer.value = mp
+      await mp.initialize({ container })
+      if (seq !== playSeq) {
+        void mp.destroy().catch(() => undefined)
+        return
+      }
+
+      unsubNativeState = mp.subscribe((s) => {
+        if (seq !== playSeq) return
+        if (s.state === 'playing') {
+          starting.value = false
+          streamNotice.value = null
+          isPaused.value = false
+          nativeSurfaceReady.value = true
+        } else if (s.state === 'paused') {
+          isPaused.value = true
+          nativeSurfaceReady.value = true
+        } else if (s.state === 'error' || s.state === 'idle') {
+          nativeSurfaceReady.value = false
+        }
+      })
+
+      unsubNativeEvent = mp.on((e) => {
+        if (seq !== playSeq || e.type !== 'error') return
+        if (retryCount.value < 1 && isDirectStream.value) {
+          retryCount.value++
+          streamNotice.value = `直连信号受阻，正在尝试服务端代理拉流…`
+          void api
+            .playLiveChannel(route.channelId)
+            .then((fallbackResp) => {
+              if (seq !== playSeq || !nativePlayer.value) return
+              const fbUrl = resolveMediaUrl(fallbackResp.playlist_url)
+              isDirectStream.value = false
+              void nativePlayer.value.load({ kind: 'hls', url: fbUrl }, { autoplay: true })
+            })
+            .catch(() => {
+              if (seq !== playSeq) return
+              if (currentChannel.value && activeRouteIndex.value + 1 < currentChannel.value.routes.length) {
+                const nextIdx = activeRouteIndex.value + 1
+                const nextRoute = currentChannel.value.routes[nextIdx]
+                streamNotice.value = `线路 ${activeRouteIndex.value + 1} 信号受阻，已自动秒切至线路 ${nextRoute.routeIndex}…`
+                void playChannel(currentChannel.value, nextIdx)
+              } else {
+                streamFailed.value = true
+                error.value = e.error.message || '当前频道所有备用线路均无法连接，建议切换频道或刷新订阅'
+              }
+            })
+          return
+        }
+        if (currentChannel.value && activeRouteIndex.value + 1 < currentChannel.value.routes.length) {
+          const nextIdx = activeRouteIndex.value + 1
+          const nextRoute = currentChannel.value.routes[nextIdx]
+          streamNotice.value = `线路 ${activeRouteIndex.value + 1} 信号受阻，已自动秒切至线路 ${nextRoute.routeIndex}…`
+          void playChannel(currentChannel.value, nextIdx)
+        } else {
+          streamFailed.value = true
+          error.value = e.error.message || '当前频道所有备用线路均无法连接，建议切换频道或刷新订阅'
+        }
+      })
+
+      await mp.load({ kind: 'hls', url: playUrl }, { autoplay: true })
+      if (seq !== playSeq) return
+      void mp.setVolume(volume.value)
+      if (isMuted.value) void mp.setMuted(true)
+      isPaused.value = false
+      triggerOsd()
+      return
+    }
+
+    useNativePlayer.value = false
     const el = video.value
     if (!el) return
 
@@ -567,32 +715,53 @@ async function playChannel(ch: AggregatedChannel, routeIndex = 0): Promise<void>
       const h = new Hls({
         liveSyncDurationCount: 3,
         manifestLoadingRetryDelay: 600,
-        manifestLoadingMaxRetry: 4,
-        levelLoadingMaxRetry: 4,
+        manifestLoadingMaxRetry: 2,
+        levelLoadingMaxRetry: 2,
+        xhrSetup: (xhr, url) => {
+          try {
+            const token = localStorage.getItem('whatmedia.token')
+            if (token && (url.includes('/api/v1/') || url.includes('/hls/'))) {
+              xhr.setRequestHeader('Authorization', `Bearer ${token}`)
+            }
+          } catch {
+            // 忽略
+          }
+        },
       })
-      h.loadSource(p.playlist_url)
+      h.loadSource(playUrl)
       h.attachMedia(el)
       h.on(Hls.Events.ERROR, (_e, data) => {
         if (data.fatal) {
           switch (data.type) {
-            case Hls.ErrorTypes.NETWORK_ERROR:
-              // 当前线路网络波动：优先尝试本地自愈
-              if (retryCount.value < 2) {
-                retryCount.value++
-                streamNotice.value = `正在重新连接线路 ${activeRouteIndex.value + 1} (${retryCount.value}/2)…`
-                h.startLoad()
-              } else if (currentChannel.value && activeRouteIndex.value + 1 < currentChannel.value.routes.length) {
-                // 线路不可达！自动秒切下一条备用线路
+            case Hls.ErrorTypes.NETWORK_ERROR: {
+              const respCode = data.response?.code
+              const isUpstreamDead = respCode && (respCode >= 500 || respCode === 404)
+              // 上游明确死链 (502/504/404) 或重试耗尽：立即秒切下一条备用线路
+              if (
+                (isUpstreamDead || retryCount.value >= 1) &&
+                currentChannel.value &&
+                activeRouteIndex.value + 1 < currentChannel.value.routes.length
+              ) {
                 const nextIdx = activeRouteIndex.value + 1
                 const nextRoute = currentChannel.value.routes[nextIdx]
-                streamNotice.value = `线路 ${activeRouteIndex.value + 1} 信号受阻，已自动为您切至线路 ${nextRoute.routeIndex} (${nextRoute.routeIndex}/${currentChannel.value.routes.length})…`
+                streamNotice.value = `线路 ${activeRouteIndex.value + 1} 信号受阻${respCode ? ` (${respCode})` : ''}，已自动秒切至线路 ${nextRoute.routeIndex}…`
                 void playChannel(currentChannel.value, nextIdx)
+              } else if (!isUpstreamDead && retryCount.value < 1) {
+                retryCount.value++
+                streamNotice.value = `正在尝试重新连接线路 ${activeRouteIndex.value + 1}…`
+                // 若原生端直连失败（例如被特定上游拦截），尝试退回服务端代理拉流一次自愈
+                if (isNative && rawDirectUrl && playUrl !== proxyUrl) {
+                  h.loadSource(proxyUrl)
+                } else {
+                  h.startLoad()
+                }
               } else {
                 streamFailed.value = true
                 error.value = '当前频道所有备用线路均无法连接，建议切换频道或刷新订阅'
                 h.destroy()
               }
               break
+            }
             case Hls.ErrorTypes.MEDIA_ERROR:
               h.recoverMediaError()
               break
@@ -613,7 +782,7 @@ async function playChannel(ch: AggregatedChannel, routeIndex = 0): Promise<void>
       })
       hls.value = h
     } else if (el.canPlayType('application/vnd.apple.mpegurl')) {
-      el.src = p.playlist_url
+      el.src = playUrl
     } else {
       error.value = '当前浏览器不支持 HLS 直播协议'
       return
@@ -683,6 +852,7 @@ onMounted(() => {
 })
 
 onBeforeUnmount(async () => {
+  document.body.classList.remove('in-player-mode')
   teardown()
   window.removeEventListener('keydown', handleKeyDown)
   document.removeEventListener('fullscreenchange', onFullscreenChange)
@@ -703,7 +873,7 @@ onBeforeUnmount(async () => {
   <div
     ref="shell"
     class="player-shell live-player-shell"
-    :class="{ 'is-fullscreen': isFullscreen }"
+    :class="{ 'is-fullscreen': isFullscreen, 'is-mpv-transparent': nativeSurfaceReady }"
     @pointermove="onPointerMove"
     @pointerleave="onPointerLeave"
   >
@@ -852,11 +1022,14 @@ onBeforeUnmount(async () => {
     <template v-else>
       <!-- 视频视口 -->
       <div
+        ref="stageViewport"
         class="player-stage-viewport"
+        :class="{ 'is-native-mpv': nativeSurfaceReady }"
         data-test="player"
         @click="togglePlay"
       >
         <video
+          v-show="!useNativePlayer"
           ref="video"
           class="tv-video-el"
           playsinline
@@ -1249,6 +1422,10 @@ onBeforeUnmount(async () => {
   overflow: hidden;
 }
 
+.player-shell.is-mpv-transparent {
+  background: transparent;
+}
+
 .player-stage-viewport {
   position: relative;
   flex: 1;
@@ -1260,6 +1437,10 @@ onBeforeUnmount(async () => {
   align-items: center;
   justify-content: center;
   background: #000;
+}
+
+.player-stage-viewport.is-native-mpv {
+  background: transparent;
 }
 
 .tv-video-el {

@@ -52,7 +52,8 @@ pub fn version_ok(version: &str) -> bool {
 fn parse_version(raw: &str) -> Option<(u32, u32)> {
     // 只取第一个看起来像 `x.y` 的 token，后面的补丁号与 git 尾巴一律忽略。
     let token = raw.split_whitespace().find(|t| t.contains('.'))?;
-    let mut parts = token.split('.');
+    let clean = token.trim_start_matches(|c: char| !c.is_ascii_digit());
+    let mut parts = clean.split('.');
     let maj = parts.next()?.parse::<u32>().ok()?;
     let min = parts.next()?.parse::<u32>().ok()?;
     Some((maj, min))
@@ -61,6 +62,15 @@ fn parse_version(raw: &str) -> Option<(u32, u32)> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn version_is_parsed_from_modern_v_prefixed_output() {
+        assert_eq!(
+            parse_version("mpv v0.42.0-38-gbcde6b93c Copyright © 2000-2026 mpv/MPlayer/mplayer2 projects"),
+            Some((0, 42))
+        );
+        assert!(version_ok("mpv v0.42.0-38-gbcde6b93c"));
+    }
 
     #[test]
     fn version_is_parsed_from_real_mpv_output() {

@@ -112,6 +112,14 @@ describe('MpvPlayer · load', () => {
     expect(b.last('mpv_start')?.args?.args).toMatchObject({ url: 'D:\\media\\a.mkv' })
   })
 
+  it('相对 HTTP 路径会自动补全为带 origin 的绝对 URL，避免 mpv 当成本地路径', async () => {
+    const { p, b } = await makePlayer()
+    await p.load({ kind: 'progressive', url: '/api/v1/stream/abc?exp=1&sig=2' })
+    expect(b.last('mpv_start')?.args?.args).toMatchObject({
+      url: `${window.location.origin}/api/v1/stream/abc?exp=1&sig=2`,
+    })
+  })
+
   it('启动失败进错误态，错误信息要能看懂', async () => {
     const { p, b } = await makePlayer()
     b.failing.add('mpv_start')

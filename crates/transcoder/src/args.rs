@@ -288,9 +288,9 @@ pub fn build_args(req: &StreamRequest) -> Vec<String> {
             a.push("hls".into());
             a.push("-hls_time".into());
             a.push(seg_seconds.to_string());
-            // VOD：播放列表一次性列出所有分片，不做滑动窗口。
+            // HLS 实时转码：使用 event 类型，首个切片完成后立即产出 index.m3u8 供客户端秒播，并在全片转码完成时自动追加 EXT-X-ENDLIST
             a.push("-hls_playlist_type".into());
-            a.push("vod".into());
+            a.push("event".into());
             a.push("-hls_flags".into());
             a.push("independent_segments".into());
             a.push("-hls_segment_filename".into());

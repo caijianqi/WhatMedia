@@ -109,6 +109,27 @@ function skip(deltaSeconds: number): void {
 }
 
 const isPlaying = computed(() => store.snapshot.state === 'playing')
+/**
+ * 仅在 mpv 原生渲染表面已经真正开始出画（playing / paused / ended）且未出错时，
+ * 才把窗口背景切换为透明穿透，避免加载起播或出错阶段透出背后的桌面与其他软件。
+ */
+const isMpvSurfaceReady = computed(
+  () =>
+    store.player?.capabilities.clientId === 'tauri-mpv' &&
+    !store.busy &&
+    !store.error &&
+    (store.snapshot.state === 'playing' ||
+      store.snapshot.state === 'paused' ||
+      store.snapshot.state === 'ended'),
+)
+
+watch(
+  isMpvSurfaceReady,
+  (ready) => {
+    document.body.classList.toggle('in-player-mode', ready)
+  },
+  { immediate: true },
+)
 
 const mediaTitle = ref('')
 const isCloudVodItem = ref(false)
@@ -211,6 +232,59 @@ async function switchEpisode(ep: PlayableEpisode) {
     )
   }
   armHideTimer()
+}
+
+async function retryCurrentPlay(): Promise<void> {
+  if (isVod.value) {
+    const rawVodUrl = (route.query.vod_url as string) || currentEpisodeId.value
+    if (rawVodUrl && stage.value) {
+      await store.openVodUrl(
+        { container: stage.value, fullscreenTarget: shell.value ?? undefined },
+        rawVodUrl,
+        {
+          startMs: position.value * 1000,
+          autoplay: true,
+        },
+      )
+    }
+  } else if (itemId.value && stage.value) {
+    await store.open(
+      { container: stage.value, fullscreenTarget: shell.value ?? undefined },
+      itemId.value,
+      {
+        startMs: position.value * 1000,
+        autoplay: true,
+      },
+    )
+  }
+}
+
+async function fallbackToWebPlay(): Promise<void> {
+  if (isVod.value) {
+    const rawVodUrl = (route.query.vod_url as string) || currentEpisodeId.value
+    if (rawVodUrl && stage.value) {
+      await store.openVodUrl(
+        { container: stage.value, fullscreenTarget: shell.value ?? undefined },
+        rawVodUrl,
+        {
+          startMs: position.value * 1000,
+          autoplay: true,
+          backend: 'web',
+        },
+      )
+    }
+  } else if (itemId.value && stage.value) {
+    await store.open(
+      { container: stage.value, fullscreenTarget: shell.value ?? undefined },
+      itemId.value,
+      {
+        startMs: position.value * 1000,
+        autoplay: true,
+        backend: 'web',
+        client: 'web',
+      },
+    )
+  }
 }
 
 async function loadEpisodes(): Promise<void> {
@@ -368,6 +442,7 @@ onMounted(async () => {
 })
 
 onBeforeUnmount(() => {
+  document.body.classList.remove('in-player-mode')
   cancelAutoPlay()
   window.removeEventListener('keydown', onKeyDown)
   window.removeEventListener('pagehide', onPageHide)
@@ -781,6 +856,7 @@ const bufferedPct = computed(() => {
   <div
     ref="shell"
     class="player-shell"
+    :class="{ 'is-mpv-transparent': isMpvSurfaceReady }"
     @pointermove="onPointerMove"
     @touchstart.passive="onTouchStart"
     @touchmove.passive="onTouchMove"
@@ -872,17 +948,42 @@ const bufferedPct = computed(() => {
       <p v-if="store.reasons.length" class="error-reasons">
         {{ store.reasons.map((r) => r.message).join('；') }}
       </p>
-      <RouterLink
-        :to="isVod ? { name: 'home' } : { name: 'item', params: { id: itemId } }"
-        class="btn btn-secondary"
-      >
-        {{ isVod ? '返回首页' : '返回详情' }}
-      </RouterLink>
+      <div class="player-error-actions">
+        <button
+          v-if="isVod && episodeList.length > 1"
+          type="button"
+          class="btn btn-primary"
+          @click="toggleEpisodeDrawer"
+        >
+          切换其他线路 / 选集
+        </button>
+        <button
+          type="button"
+          class="btn btn-secondary"
+          @click="retryCurrentPlay"
+        >
+          重试播放
+        </button>
+        <button
+          v-if="store.player?.capabilities.clientId === 'tauri-mpv'"
+          type="button"
+          class="btn btn-secondary"
+          @click="fallbackToWebPlay"
+        >
+          切到 Web 播放
+        </button>
+        <RouterLink
+          :to="isVod ? { name: 'home' } : { name: 'item', params: { id: itemId } }"
+          class="btn btn-secondary"
+        >
+          {{ isVod ? '返回首页' : '返回详情' }}
+        </RouterLink>
+      </div>
     </div>
 
-    <!-- 缓冲动画指示器 -->
+    <!-- 缓冲/加载动画指示器 -->
     <div
-      v-else-if="store.snapshot.state === 'buffering'"
+      v-else-if="store.busy || store.snapshot.state === 'loading' || store.snapshot.state === 'buffering'"
       class="player-buffering-layer"
     >
       <div class="player-spinner" />
@@ -890,7 +991,7 @@ const bufferedPct = computed(() => {
 
     <!-- 居中暂停发光大播放圆钮（ui.html 规范） -->
     <div
-      v-if="!isPlaying && !store.error && !store.recovering && store.snapshot.state !== 'buffering'"
+      v-if="!isPlaying && !store.busy && !store.error && !store.recovering && store.snapshot.state !== 'loading' && store.snapshot.state !== 'buffering'"
       class="player-center-play"
       :class="{ 'is-hidden': !controlsVisible }"
     >
@@ -1184,6 +1285,10 @@ const bufferedPct = computed(() => {
   user-select: none;
 }
 
+.player-shell.is-mpv-transparent {
+  background: transparent;
+}
+
 .player-stage-viewport {
   position: relative;
   flex: 1;
@@ -1333,6 +1438,14 @@ const bufferedPct = computed(() => {
   line-height: 1.7;
   color: var(--muted);
   margin: 0;
+}
+.player-error-actions {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  margin-top: 16px;
+  flex-wrap: wrap;
 }
 
 /* 缓冲旋转 */

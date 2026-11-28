@@ -1226,7 +1226,10 @@ fn guarded_routes(state: AppState) -> Router {
         .route("/api/v1/live/channels", get(live::list_channels))
         .route("/api/v1/live/channels/{id}/play", post(live::play_channel))
         .route("/api/v1/live/channels/{id}/stop", post(live::stop_channel))
-        .route("/api/v1/live/proxy", get(live::proxy_stream))
+        .route(
+            "/api/v1/live/proxy",
+            get(live::proxy_stream).options(live::live_proxy_options),
+        )
         // ── 收藏 ──────────────────────────────────────────────
         .route("/api/v1/me/favorites", get(social::list_my_favorites))
         .route("/api/v1/items/{id}/favorite", get(social::get_favorite))
@@ -1259,7 +1262,7 @@ fn guarded_routes(state: AppState) -> Router {
         )
         .route(
             "/api/v1/proxy/vod_stream",
-            get(aggregator::proxy_vod_stream),
+            get(aggregator::proxy_vod_stream).options(aggregator::vod_stream_options),
         )
         .route(
             "/api/v1/settings/vod_sources",

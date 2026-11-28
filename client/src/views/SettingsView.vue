@@ -993,38 +993,93 @@ async function deleteSingleLiveSource(id: string, name: string): Promise<void> {
 }
 
 // ── 多源影视聚合 (Phase 3) ─────────────────────────────────
-const DEFAULT_VOD_SOURCES_CONFIG = {
-  api_site: {
-    lz: {
-      name: '量子资源',
-      api: 'https://cj.lziapi.com/api.php/provide/vod/',
-      active: true,
-    },
-    ff: {
-      name: '非凡资源',
-      api: 'https://cj.ffzyapi.com/api.php/provide/vod/',
-      active: true,
-    },
+const DEFAULT_VOD_SOURCES = [
+  {
+    name: '量子资源',
+    api_url: 'https://cj.lziapi.com/api.php/provide/vod/',
   },
-}
-
-const DEFAULT_VOD_SOURCES_JSON = JSON.stringify(DEFAULT_VOD_SOURCES_CONFIG, null, 2)
+  {
+    name: '非凡资源',
+    api_url: 'https://cj.ffzyapi.com/api.php/provide/vod/',
+  },
+]
 
 const vodSources = ref<api.VodSourceConfig[]>([])
 const loadingVodSources = ref(false)
 const vodSourcesError = ref<string | null>(null)
-const showAddVodModal = ref(false)
-const vodImportJson = ref(DEFAULT_VOD_SOURCES_JSON)
-const vodImportResult = ref<string | null>(null)
+const vodBusy = ref(false)
+const vodNotice = ref<string | null>(null)
 
-function fillDefaultVodJson(): void {
-  vodImportJson.value = DEFAULT_VOD_SOURCES_JSON
+// 单个采集源表单
+const newVodName = ref('')
+const newVodUrl = ref('')
+const newVodTimeout = ref(2500)
+
+function fillDefaultVodSource(): void {
+  const first = DEFAULT_VOD_SOURCES[0]
+  newVodName.value = first.name
+  newVodUrl.value = first.api_url
+  newVodTimeout.value = 2500
 }
 
-async function importDefaultVodSources(): Promise<void> {
-  fillDefaultVodJson()
-  showAddVodModal.value = true
-  await importVodSourcesFromText()
+async function addSingleVodSource(): Promise<void> {
+  const name = newVodName.value.trim()
+  const api_url = newVodUrl.value.trim()
+  if (!name || !api_url) {
+    vodNotice.value = '请填写采集源名称和有效的 API 地址'
+    return
+  }
+  vodBusy.value = true
+  vodNotice.value = null
+  try {
+    const id = `vod_${Date.now()}`
+    const payload = {
+      id,
+      name,
+      api_url,
+      is_active: true,
+      weight: 100,
+      timeout_ms: newVodTimeout.value || 2500,
+    }
+    await api.importVodSources(payload)
+    newVodName.value = ''
+    newVodUrl.value = ''
+    newVodTimeout.value = 2500
+    vodNotice.value = `✓ 成功添加采集源「${name}」！`
+    await loadVodSources()
+    setTimeout(() => {
+      vodNotice.value = null
+    }, 3500)
+  } catch (e) {
+    vodNotice.value = `添加失败：${e instanceof Error ? e.message : String(e)}`
+  } finally {
+    vodBusy.value = false
+  }
+}
+
+async function addDefaultVodSources(): Promise<void> {
+  vodBusy.value = true
+  vodNotice.value = null
+  try {
+    const sources = DEFAULT_VOD_SOURCES.map((s, idx) => ({
+      id: `vod_default_${idx + 1}`,
+      name: s.name,
+      api_url: s.api_url,
+      is_active: true,
+      weight: 100,
+      timeout_ms: 2500,
+    }))
+    const res = await api.importVodSources(sources)
+    vodNotice.value = `✓ 成功载入 ${res.imported} 个官方推荐采集源！`
+    await loadVodSources()
+    setTimeout(() => {
+      vodNotice.value = null
+    }, 3500)
+  } catch (e) {
+    vodNotice.value = `载入失败：${e instanceof Error ? e.message : String(e)}`
+  } finally {
+    vodBusy.value = false
+  }
 }
 
 async function loadVodSources(): Promise<void> {
@@ -1055,23 +1110,6 @@ async function deleteVodSource(id: string, name: string): Promise<void> {
     await loadVodSources()
   } catch (e) {
     alert(e instanceof Error ? e.message : String(e))
-  }
-}
-
-async function importVodSourcesFromText(): Promise<void> {
-  const raw = vodImportJson.value.trim()
-  if (!raw) return
-  try {
-    const parsed = JSON.parse(raw)
-    const res = await api.importVodSources(parsed)
-    vodImportResult.value = `✓ 成功导入 ${res.imported} 个采集源！`
-    vodImportJson.value = ''
-    await loadVodSources()
-    setTimeout(() => {
-      vodImportResult.value = null
-    }, 3500)
-  } catch {
-    vodImportResult.value = '导入失败：JSON 格式不合法或后端异常'
   }
 }
 
@@ -2306,121 +2344,168 @@ async function deleteUserAccount(u: api.UserAccount): Promise<void> {
           <p v-if="vodSourcesError" class="error-box">
             加载采集源失败：{{ vodSourcesError }}
           </p>
-          <p v-if="vodImportResult" class="ok-box">
-            {{ vodImportResult }}
-          </p>
 
-          <!-- 采集源操作控制台 -->
+          <!-- 采集源添加表单与控制台 -->
           <div class="web-scan-card live-console-card">
             <div class="web-scan-head">
               <div>
-                <h3 class="web-scan-title">采集源管理</h3>
+                <h3 class="web-scan-title">添加在线视频采集源</h3>
                 <p class="web-scan-sub">
-                  支持快速导入兼容 MoonTV / TVBox 的标准 <code>config.json</code>，实现全网并发秒播。
+                  支持 MacCMS (苹果CMS V10) 等标准接口，输入采集站名称与 API 接口地址即可即时接入。
                 </p>
               </div>
               <div class="btn-group-right">
                 <button
                   type="button"
-                  class="btn-add-storage"
-                  @click="showAddVodModal = !showAddVodModal"
-                >
-                  <span>{{ showAddVodModal ? '收起导入' : '＋ 批量导入 MoonTV 配置' }}</span>
-                </button>
-                <button
-                  type="button"
                   class="refresh-stats-btn"
+                  title="刷新已配置的采集源"
                   :disabled="loadingVodSources"
                   @click="loadVodSources"
                 >
-                  🔄 刷新
+                  🔄 刷新列表
                 </button>
               </div>
             </div>
 
-            <!-- 批量导入与添加抽屉 -->
-            <div v-if="showAddVodModal" class="vod-import-box">
-              <div class="vod-import-tabs">
-                <strong>快速导入 MoonTV config.json 格式：</strong>
+            <!-- 单个添加表单 -->
+            <form class="scan-form" @submit.prevent="addSingleVodSource">
+              <div class="scan-input-group">
+                <label class="scan-label" for="vod-source-name">采集源名称</label>
+                <input
+                  id="vod-source-name"
+                  v-model="newVodName"
+                  type="text"
+                  class="scan-input"
+                  placeholder="例如：量子资源 / 非凡资源 / 红牛资源"
+                  :disabled="vodBusy"
+                />
               </div>
-              <textarea
-                v-model="vodImportJson"
-                class="scan-input json-textarea"
-                rows="6"
-                placeholder='可直接粘贴 MoonTV config.json，例如：
-{
-  "api_site": {
-    "lz": { "name": "量子资源", "api": "https://cj.lziapi.com/api.php/provide/vod/", "active": true },
-    "ff": { "name": "非凡资源", "api": "https://cj.ffzyapi.com/api.php/provide/vod/", "active": true }
-  }
-}'
-              ></textarea>
-              <div class="import-actions">
-                <button
-                  type="button"
-                  class="btn btn-primary"
-                  :disabled="!vodImportJson.trim()"
-                  @click="importVodSourcesFromText"
-                >
-                  立即解析并导入
-                </button>
-                <button
-                  type="button"
-                  class="btn btn-ghost"
-                  @click="fillDefaultVodJson"
-                >
-                  重置为推荐配置
-                </button>
+
+              <div class="scan-input-group">
+                <label class="scan-label" for="vod-source-url">API 接口地址 (MacCMS V10)</label>
+                <input
+                  id="vod-source-url"
+                  v-model="newVodUrl"
+                  type="url"
+                  class="scan-input font-mono"
+                  placeholder="https://example.com/api.php/provide/vod/"
+                  :disabled="vodBusy"
+                />
               </div>
-            </div>
+
+              <div class="scan-input-group">
+                <label class="scan-label" for="vod-source-timeout">超时阈值 (毫秒)</label>
+                <input
+                  id="vod-source-timeout"
+                  v-model.number="newVodTimeout"
+                  type="number"
+                  min="500"
+                  max="30000"
+                  step="500"
+                  class="scan-input font-mono"
+                  placeholder="2500"
+                  :disabled="vodBusy"
+                />
+              </div>
+
+              <div class="scan-options-row">
+                <div class="scan-btn-group">
+                  <button
+                    type="submit"
+                    class="btn-start-scan"
+                    :disabled="vodBusy || !newVodName.trim() || !newVodUrl.trim()"
+                  >
+                    <span>{{ vodBusy ? '正在处理...' : '➕ 添加采集源' }}</span>
+                  </button>
+                  <button
+                    type="button"
+                    class="btn btn-ghost"
+                    :disabled="vodBusy"
+                    @click="fillDefaultVodSource"
+                  >
+                    ⚡ 填入推荐采集源
+                  </button>
+                </div>
+              </div>
+
+              <div
+                v-if="vodNotice"
+                class="scan-feedback"
+                :class="vodNotice.includes('失败') ? 'err' : 'ok'"
+              >
+                <span>{{ vodNotice.includes('失败') ? '⚠️' : '✓' }}</span>
+                <span>{{ vodNotice }}</span>
+              </div>
+            </form>
 
             <!-- 采集源列表 -->
-            <div class="live-sources-list">
-              <div v-if="loadingVodSources" class="live-sources-empty">
-                加载采集源中…
+            <div class="vod-sources-block">
+              <div class="vod-sources-header">
+                <h4 class="live-block-title">已配置的采集源 ({{ vodSources.length }})</h4>
+                <span class="vod-sources-subtitle">支持 MacCMS V10 标准接口，全局搜索时跨源并发检索</span>
               </div>
-              <div v-else-if="!vodSources.length" class="live-sources-empty">
-                <div>暂无配置任何在线采集源。点击上方「批量导入」添加您的第一个采集站。</div>
-                <button
-                  type="button"
-                  class="btn btn-primary"
-                  style="margin-top: 10px;"
-                  @click="importDefaultVodSources"
-                >
-                  ⚡ 一键载入推荐采集源 (量子/非凡)
-                </button>
-              </div>
-              <div
-                v-for="src in vodSources"
-                :key="src.id"
-                class="live-source-card"
-              >
-                <div class="live-source-info">
-                  <div class="live-source-name-row">
-                    <strong class="live-source-name">{{ src.name }}</strong>
-                    <span :class="['chip', src.is_active ? 'chip-ok' : 'chip-warn']">
-                      {{ src.is_active ? '已启用' : '已禁用' }}
-                    </span>
-                    <span class="chip font-mono">超时: {{ src.timeout_ms }}ms</span>
-                  </div>
-                  <span class="live-source-url font-mono">{{ src.api_url }}</span>
-                </div>
 
-                <div class="live-source-actions">
+              <div v-if="loadingVodSources" class="live-loading-state">
+                正在加载采集源列表…
+              </div>
+              <div v-else-if="!vodSources.length" class="empty-live-box">
+                <span class="empty-live-ico">🌐</span>
+                <div class="empty-live-text">
+                  <span>暂未配置任何在线采集源。请在上方输入采集源信息添加。</span>
                   <button
                     type="button"
-                    class="action-btn"
-                    @click="toggleVodSource(src.id)"
+                    class="btn btn-primary btn-sm"
+                    style="margin-top: 8px;"
+                    :disabled="vodBusy"
+                    @click="addDefaultVodSources"
                   >
-                    {{ src.is_active ? '禁用' : '启用' }}
+                    ⚡ 一键载入官方推荐源 (量子/非凡)
                   </button>
-                  <button
-                    type="button"
-                    class="action-btn btn-danger"
-                    @click="deleteVodSource(src.id, src.name)"
-                  >
-                    删除
-                  </button>
+                </div>
+              </div>
+              <div v-else class="vod-sources-grid">
+                <div
+                  v-for="src in vodSources"
+                  :key="src.id"
+                  class="vod-source-card"
+                  :class="{ 'vod-source-disabled': !src.is_active }"
+                >
+                  <div class="vod-source-main">
+                    <div class="vod-source-header">
+                      <div class="vod-source-title-row">
+                        <span class="vod-source-dot" :class="src.is_active ? 'dot-active' : 'dot-disabled'"></span>
+                        <strong class="vod-source-name">{{ src.name }}</strong>
+                        <span class="vod-status-pill" :class="src.is_active ? 'pill-active' : 'pill-disabled'">
+                          {{ src.is_active ? '已启用' : '已禁用' }}
+                        </span>
+                        <span class="vod-timeout-tag font-mono">
+                          ⏱️ {{ src.timeout_ms }}ms
+                        </span>
+                      </div>
+                    </div>
+                    <div class="vod-source-url font-mono" :title="src.api_url">
+                      <span class="vod-url-tag">API</span>
+                      {{ src.api_url }}
+                    </div>
+                  </div>
+
+                  <div class="vod-source-actions">
+                    <button
+                      type="button"
+                      class="btn-vod-toggle"
+                      :class="src.is_active ? 'btn-vod-disable' : 'btn-vod-enable'"
+                      @click="toggleVodSource(src.id)"
+                    >
+                      {{ src.is_active ? '⏸️ 禁用' : '▶️ 启用' }}
+                    </button>
+                    <button
+                      type="button"
+                      class="btn-vod-delete"
+                      @click="deleteVodSource(src.id, src.name)"
+                    >
+                      🗑️ 删除
+                    </button>
+                  </div>
                 </div>
               </div>
             </div>
@@ -4482,6 +4567,229 @@ async function deleteUserAccount(u: api.UserAccount): Promise<void> {
     align-items: flex-start;
   }
   .live-source-actions {
+    width: 100%;
+    justify-content: flex-end;
+  }
+}
+
+/* ──────────────── 多源影视聚合 (MoonTV VOD Sources) ──────────────── */
+.vod-sources-block {
+  margin-top: 24px;
+}
+
+.vod-sources-header {
+  display: flex;
+  align-items: baseline;
+  gap: 12px;
+  margin-bottom: 14px;
+  flex-wrap: wrap;
+}
+
+.vod-sources-header .live-block-title {
+  margin: 0;
+}
+
+.vod-sources-subtitle {
+  font-size: 12px;
+  color: var(--muted);
+}
+
+.vod-sources-grid {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.vod-source-card {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 20px;
+  padding: 16px 20px;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.15);
+}
+
+.vod-source-card:hover {
+  border-color: rgba(121, 91, 255, 0.35);
+  background: rgba(255, 255, 255, 0.03);
+  transform: translateY(-1px);
+  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.25);
+}
+
+.vod-source-card.vod-source-disabled {
+  opacity: 0.65;
+  border-style: dashed;
+  background: rgba(15, 23, 42, 0.4);
+}
+
+.vod-source-main {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.vod-source-header {
+  display: flex;
+  align-items: center;
+}
+
+.vod-source-title-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.vod-source-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+.vod-source-dot.dot-active {
+  background: #34d399;
+  box-shadow: 0 0 8px rgba(52, 211, 153, 0.6);
+}
+
+.vod-source-dot.dot-disabled {
+  background: #94a3b8;
+}
+
+.vod-source-name {
+  font-size: 16px;
+  font-weight: 600;
+  color: #f1f5f9;
+  letter-spacing: -0.01em;
+}
+
+.vod-status-pill {
+  display: inline-flex;
+  align-items: center;
+  padding: 2px 8px;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+}
+
+.vod-status-pill.pill-active {
+  background: rgba(52, 211, 153, 0.12);
+  color: #34d399;
+  border: 1px solid rgba(52, 211, 153, 0.3);
+}
+
+.vod-status-pill.pill-disabled {
+  background: rgba(148, 163, 184, 0.12);
+  color: #94a3b8;
+  border: 1px solid rgba(148, 163, 184, 0.25);
+}
+
+.vod-timeout-tag {
+  display: inline-flex;
+  align-items: center;
+  font-size: 11px;
+  color: #94a3b8;
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  padding: 2px 7px;
+  border-radius: 6px;
+}
+
+.vod-source-url {
+  font-size: 12px;
+  color: #94a3b8;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.vod-url-tag {
+  display: inline-block;
+  padding: 1px 5px;
+  border-radius: 4px;
+  font-size: 10px;
+  font-weight: 700;
+  background: rgba(56, 189, 248, 0.15);
+  color: #38bdf8;
+  border: 1px solid rgba(56, 189, 248, 0.3);
+  letter-spacing: 0.04em;
+  flex-shrink: 0;
+}
+
+.vod-source-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-shrink: 0;
+}
+
+.btn-vod-toggle {
+  padding: 7px 15px;
+  border-radius: 8px;
+  font-size: 12px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.btn-vod-toggle.btn-vod-disable {
+  background: rgba(245, 158, 11, 0.12);
+  border: 1px solid rgba(245, 158, 11, 0.3);
+  color: #fbbf24;
+}
+
+.btn-vod-toggle.btn-vod-disable:hover {
+  background: rgba(245, 158, 11, 0.22);
+  border-color: rgba(245, 158, 11, 0.5);
+  color: #fef3c7;
+}
+
+.btn-vod-toggle.btn-vod-enable {
+  background: rgba(52, 211, 153, 0.12);
+  border: 1px solid rgba(52, 211, 153, 0.3);
+  color: #34d399;
+}
+
+.btn-vod-toggle.btn-vod-enable:hover {
+  background: rgba(52, 211, 153, 0.22);
+  border-color: rgba(52, 211, 153, 0.5);
+  color: #d1fae5;
+}
+
+.btn-vod-delete {
+  padding: 7px 15px;
+  border-radius: 8px;
+  background: rgba(248, 113, 113, 0.1);
+  border: 1px solid rgba(248, 113, 113, 0.25);
+  color: #f87171;
+  font-size: 12px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.btn-vod-delete:hover {
+  background: rgba(248, 113, 113, 0.22);
+  border-color: rgba(248, 113, 113, 0.45);
+  color: #fecaca;
+}
+
+@media (max-width: 768px) {
+  .vod-source-card {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+  .vod-source-actions {
     width: 100%;
     justify-content: flex-end;
   }

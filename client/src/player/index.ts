@@ -24,7 +24,7 @@ export { MpvPlayer, probeMpv } from './mpv'
 export type { MpvBridge, MpvEventPayload, MpvPlayerOptions, MpvStatus } from './mpv'
 export { Media3Player, MEDIA3_EVENT_CHANNEL, media3Available } from './media3'
 export type { Media3Bridge, Media3PlayerOptions, Media3WireEvent } from './media3'
-export { CLIENT_CAPABILITIES, capabilitiesFor, defaultBackend } from './capabilities'
+export { CLIENT_CAPABILITIES, capabilitiesFor, defaultBackend, type PlayerBackend } from './capabilities'
 export type { HlsConstructor, HlsLike, WebPlayerOptions } from './web'
 export { RecoveryCoordinator, delayForAttempt, resumePosition } from './reconnect'
 export type { ReconnectPolicy } from './reconnect'
@@ -51,10 +51,13 @@ export async function resolveBackend(): Promise<PlayerBackend> {
 
   try {
     const status = await probeMpv()
-    return status?.available ? 'mpv' : 'web'
+    if (status?.available) return 'mpv'
   } catch {
-    return 'web'
+    // 忽略异常
   }
+
+  // 桌面端（Windows / macOS / Linux）：坚守原生播放器通道，杜绝静默回落 Web 导致 HEVC/DTS 误报转码
+  return 'mpv'
 }
 
 /**

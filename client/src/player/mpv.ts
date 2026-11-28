@@ -213,14 +213,9 @@ export class MpvPlayer implements MediaPlayer {
    */
   private renderPlaceholder(container: HTMLElement): void {
     const el = document.createElement('div')
-    el.className =
-      'flex h-full w-full flex-col items-center justify-center gap-2 bg-black text-center text-sm text-wm-muted'
-    const line1 = document.createElement('p')
-    line1.textContent = '正在用 mpv 播放（独立窗口）'
-    const line2 = document.createElement('p')
-    line2.className = 'text-xs text-wm-muted'
-    line2.textContent = '画面在 mpv 窗口里，下面的控制条仍然可用'
-    el.append(line1, line2)
+    el.className = 'w-full h-full bg-transparent flex items-center justify-center text-xs text-wm-muted pointer-events-none'
+    el.style.opacity = '0'
+    el.textContent = 'mpv 原生硬件直出渲染中'
     container.appendChild(el)
     this.placeholder = el
   }
@@ -235,7 +230,20 @@ export class MpvPlayer implements MediaPlayer {
     this.core.resetForLoad()
     await this.stopSession()
 
-    const url = source.kind === 'local-file' ? source.path : source.url
+    let url = source.kind === 'local-file' ? source.path : source.url
+    if (source.kind !== 'local-file' && url.startsWith('/')) {
+      const origin = typeof window !== 'undefined' ? window.location?.origin : ''
+      if (origin && /^https?:\/\//i.test(origin) && !/^https?:\/\/tauri\.localhost$/i.test(origin)) {
+        url = new URL(url, origin).href
+      }
+    }
+    const headers: string[] = []
+    try {
+      const token = localStorage.getItem('whatmedia.token')
+      if (token && (url.includes('/api/v1/') || url.includes('/hls/'))) {
+        headers.push(`Authorization: Bearer ${token}`)
+      }
+    } catch {}
 
     try {
       await bridge.invoke<string>('mpv_start', {
@@ -245,6 +253,7 @@ export class MpvPlayer implements MediaPlayer {
           title: null,
           hwdec: this.options.hwdec ?? 'auto-safe',
           mpv_path: this.options.mpvPath ?? null,
+          headers,
         },
       })
       this.started = true

@@ -19,7 +19,7 @@ use whatmedia_aggregator::{
 use whatmedia_database::repo::{self, ItemQuery, ItemSummary};
 use whatmedia_database::Db;
 
-use crate::auth::Current;
+use crate::auth::{Current, MaybeCurrent};
 use crate::{bad_request, error_response, internal, AppState};
 
 /// 聚合搜索查询参数
@@ -254,16 +254,18 @@ fn build_aggregate_sse_stream(
     )
 )]
 pub async fn proxy_vod_stream(
-    Current(principal): Current,
+    MaybeCurrent(principal): MaybeCurrent,
     Query(query): Query<VodProxyQuery>,
-    _client_headers: axum::http::HeaderMap,
+    client_headers: axum::http::HeaderMap,
 ) -> Response {
-    if principal.is_child() {
-        return error_response(
-            StatusCode::FORBIDDEN,
-            "CHILD_RESTRICTED",
-            "儿童模式禁止拉取未分级三方在线流",
-        );
+    if let Some(p) = principal {
+        if p.is_child() {
+            return error_response(
+                StatusCode::FORBIDDEN,
+                "CHILD_RESTRICTED",
+                "儿童模式禁止拉取未分级三方在线流",
+            );
+        }
     }
 
     let mut raw_url = query.url.trim().to_string();
@@ -278,11 +280,162 @@ pub async fn proxy_vod_stream(
         return bad_request("非法代理目标 URL");
     };
 
-    // 云服务器零带宽设计：不再中继拉流、不解析切片，直接 302 临时重定向给客户端直连，绝不占用云服务器带宽
-    axum::response::Redirect::temporary(target_url.as_str()).into_response()
+    let client = reqwest::Client::builder()
+        .danger_accept_invalid_certs(true)
+        .connect_timeout(std::time::Duration::from_secs(8))
+        .timeout(std::time::Duration::from_secs(20))
+        .redirect(reqwest::redirect::Policy::limited(10))
+        .build()
+        .unwrap_or_default();
+
+    let mut req = client.get(target_url.as_str());
+    if let Some(ua) = client_headers.get(axum::http::header::USER_AGENT) {
+        req = req.header(reqwest::header::USER_AGENT, ua);
+    } else {
+        req = req.header(
+            reqwest::header::USER_AGENT,
+            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+        );
+    }
+    if let Some(host) = target_url.host_str() {
+        req = req.header(
+            reqwest::header::REFERER,
+            format!("{}://{}/", target_url.scheme(), host),
+        );
+        req = req.header(
+            reqwest::header::ORIGIN,
+            format!("{}://{}", target_url.scheme(), host),
+        );
+    }
+    req = req.header(reqwest::header::ACCEPT, "*/*");
+    if let Some(range) = client_headers.get(axum::http::header::RANGE) {
+        req = req.header(reqwest::header::RANGE, range);
+    }
+
+    let resp = match req.send().await {
+        Ok(r) => r,
+        Err(e) => {
+            tracing::warn!(url = %raw_url, error = %e, "在线流代理上游拉流失败");
+            return error_response(
+                StatusCode::BAD_GATEWAY,
+                "UPSTREAM_FAILED",
+                format!("上游拉流失败：{e}"),
+            );
+        }
+    };
+
+    let status = resp.status();
+    if !status.is_success() && status != StatusCode::PARTIAL_CONTENT {
+        tracing::warn!(status = %status, url = %raw_url, "上游视频流返回非2xx状态码");
+    }
+    let content_type = resp
+        .headers()
+        .get(reqwest::header::CONTENT_TYPE)
+        .and_then(|v| v.to_str().ok())
+        .unwrap_or("")
+        .to_string();
+
+    let is_m3u8 = target_url.path().ends_with(".m3u8")
+        || raw_url.contains(".m3u8")
+        || content_type.contains("mpegurl")
+        || content_type.contains("application/x-mpegurl")
+        || content_type.contains("application/vnd.apple.mpegurl");
+
+    if is_m3u8 {
+        let text = match resp.text().await {
+            Ok(t) => t,
+            Err(e) => {
+                return error_response(
+                    StatusCode::BAD_GATEWAY,
+                    "UPSTREAM_READ_ERROR",
+                    format!("读取上游播放列表失败：{e}"),
+                );
+            }
+        };
+
+        let rewritten = rewrite_vod_m3u8(&text, &target_url);
+        return (
+            status,
+            [
+                (
+                    axum::http::header::CONTENT_TYPE,
+                    "application/vnd.apple.mpegurl",
+                ),
+                (axum::http::header::ACCESS_CONTROL_ALLOW_ORIGIN, "*"),
+                (
+                    axum::http::header::ACCESS_CONTROL_ALLOW_METHODS,
+                    "GET, HEAD, OPTIONS",
+                ),
+                (axum::http::header::ACCESS_CONTROL_ALLOW_HEADERS, "*"),
+                (
+                    axum::http::header::CACHE_CONTROL,
+                    "no-cache, no-store, must-revalidate",
+                ),
+            ],
+            rewritten,
+        )
+            .into_response();
+    }
+
+    let out_ct = if content_type.is_empty() {
+        "video/MP2T"
+    } else {
+        &content_type
+    };
+
+    let resp_headers = resp.headers().clone();
+    let bytes = match resp.bytes().await {
+        Ok(b) => b,
+        Err(e) => {
+            return error_response(
+                StatusCode::BAD_GATEWAY,
+                "UPSTREAM_READ_ERROR",
+                format!("读取上游数据失败：{e}"),
+            );
+        }
+    };
+
+    let mut builder = Response::builder()
+        .status(status)
+        .header(axum::http::header::CONTENT_TYPE, out_ct)
+        .header(axum::http::header::ACCESS_CONTROL_ALLOW_ORIGIN, "*")
+        .header(
+            axum::http::header::ACCESS_CONTROL_ALLOW_METHODS,
+            "GET, HEAD, OPTIONS",
+        )
+        .header(axum::http::header::ACCESS_CONTROL_ALLOW_HEADERS, "*")
+        .header(axum::http::header::CACHE_CONTROL, "public, max-age=86400");
+
+    builder = builder.header(axum::http::header::CONTENT_LENGTH, bytes.len().to_string());
+    if let Some(content_range) = resp_headers.get(reqwest::header::CONTENT_RANGE) {
+        builder = builder.header(axum::http::header::CONTENT_RANGE, content_range);
+    }
+    if let Some(accept_ranges) = resp_headers.get(reqwest::header::ACCEPT_RANGES) {
+        builder = builder.header(axum::http::header::ACCEPT_RANGES, accept_ranges);
+    }
+
+    builder
+        .body(axum::body::Body::from(bytes))
+        .unwrap_or_else(|_| StatusCode::INTERNAL_SERVER_ERROR.into_response())
 }
 
-#[allow(dead_code)]
+/// `OPTIONS /api/v1/proxy/vod_stream` —— 预检请求放行端点
+pub async fn vod_stream_options() -> Response {
+    (
+        StatusCode::NO_CONTENT,
+        [
+            (axum::http::header::ACCESS_CONTROL_ALLOW_ORIGIN, "*"),
+            (
+                axum::http::header::ACCESS_CONTROL_ALLOW_METHODS,
+                "GET, HEAD, OPTIONS",
+            ),
+            (axum::http::header::ACCESS_CONTROL_ALLOW_HEADERS, "*"),
+            (axum::http::header::ACCESS_CONTROL_MAX_AGE, "86400"),
+        ],
+    )
+        .into_response()
+}
+
 fn rewrite_tag_uri(line: &str, base_url: &reqwest::Url) -> String {
     let uri_pattern = "URI=\"";
     if let Some(start) = line.find(uri_pattern) {
@@ -313,7 +466,6 @@ fn rewrite_tag_uri(line: &str, base_url: &reqwest::Url) -> String {
     line.to_string()
 }
 
-#[allow(dead_code)]
 fn rewrite_vod_m3u8(text: &str, base_url: &reqwest::Url) -> String {
     let mut out = String::with_capacity(text.len() + 1024);
     for line in text.lines() {
@@ -350,7 +502,6 @@ fn rewrite_vod_m3u8(text: &str, base_url: &reqwest::Url) -> String {
     out
 }
 
-#[allow(dead_code)]
 fn encode_vod_proxy_url(url: &str) -> String {
     format!("/api/v1/proxy/vod_stream?url={}", urlencoding(url))
 }

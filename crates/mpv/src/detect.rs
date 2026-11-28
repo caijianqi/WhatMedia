@@ -116,7 +116,21 @@ fn probe(env: &dyn MpvEnv, bin: &str) -> Option<MpvBinary> {
 fn candidates(env: &dyn MpvEnv) -> Vec<String> {
     let os = env.os();
     let exe = "mpv".to_string() + os.exe_suffix();
-    let mut out = vec![exe.clone()];
+    let mut out = vec![];
+
+    // 0. 应用自身捆绑目录与开发目录（最高优先级，开箱即用，免配置）：
+    if let Ok(curr_exe) = std::env::current_exe() {
+        if let Some(parent) = curr_exe.parent() {
+            out.push(parent.join("bin").join(&exe).to_string_lossy().to_string());
+            out.push(parent.join(&exe).to_string_lossy().to_string());
+        }
+    }
+    if let Ok(cwd) = std::env::current_dir() {
+        out.push(cwd.join("client").join("src-tauri").join("bin").join(&exe).to_string_lossy().to_string());
+        out.push(cwd.join("bin").join(&exe).to_string_lossy().to_string());
+    }
+
+    out.push(exe.clone());
 
     // PATH 里的每一项。这比"直接跑 mpv"可靠：
     // 某些 GUI 启动方式下 PATH 不完整，靠 Command::new 会失败。

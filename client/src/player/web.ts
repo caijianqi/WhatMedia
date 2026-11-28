@@ -16,6 +16,7 @@
 
 import { PlayerCore } from './core'
 import { capabilitiesFor } from './capabilities'
+import { getVodStreamProxyUrl } from '../api/client'
 import type {
   LoadOptions,
   MediaPlayer,
@@ -78,6 +79,8 @@ export class WebPlayer implements MediaPlayer {
   /** 卸载标志：异步回调回来时实例可能已经销毁了。 */
   private disposed = false
 
+  private currentHlsUrl = ''
+  private hasFallenBackToProxy = false
   private mediaErrorRecoverCount = 0
 
   private onHlsError: ((...args: unknown[]) => void) | null = null
@@ -156,6 +159,7 @@ export class WebPlayer implements MediaPlayer {
   }
 
   private async loadHls(video: HTMLVideoElement, url: string): Promise<void> {
+    this.currentHlsUrl = url
     if (this.options.preferNativeHls && this.nativeHlsSupported(video)) {
       video.src = url
       return
@@ -179,6 +183,14 @@ export class WebPlayer implements MediaPlayer {
       backBufferLength: 30,
       maxBufferLength: 30,
       maxMaxBufferLength: 60,
+      xhrSetup: (xhr: XMLHttpRequest, url: string) => {
+        try {
+          const token = localStorage.getItem('whatmedia.session.token')
+          if (token && (url.includes('/api/v1/') || url.includes('/hls/'))) {
+            xhr.setRequestHeader('Authorization', `Bearer ${token}`)
+          }
+        } catch {}
+      },
     })
     this.hls = hls
 
@@ -218,6 +230,20 @@ export class WebPlayer implements MediaPlayer {
     ) {
       this.mediaErrorRecoverCount++
       this.hls.recoverMediaError()
+      return
+    }
+
+    // 2. 直连跨域或网络中断时，自动降级切换至服务端流代理中继播放（避免直接报错打断用户）
+    if (
+      data.type === 'networkError' &&
+      !this.hasFallenBackToProxy &&
+      (this.currentHlsUrl.startsWith('http://') || this.currentHlsUrl.startsWith('https://')) &&
+      !this.currentHlsUrl.includes('/proxy/vod_stream') &&
+      !this.currentHlsUrl.includes('/live/proxy')
+    ) {
+      this.hasFallenBackToProxy = true
+      const fallbackUrl = getVodStreamProxyUrl(this.currentHlsUrl)
+      this.hls?.loadSource(fallbackUrl)
       return
     }
 
@@ -446,6 +472,8 @@ export class WebPlayer implements MediaPlayer {
     this.onHlsError = null
     this.onHlsManifestParsed = null
     this.onHlsLevelSwitched = null
+    this.hasFallenBackToProxy = false
+    this.currentHlsUrl = ''
     this.mediaErrorRecoverCount = 0
   }
 

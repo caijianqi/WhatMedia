@@ -102,4 +102,22 @@ describe('App.vue 独立页面隔离', () => {
     expect(wrapper.findComponent(AppSidebar).exists()).toBe(false)
     expect(wrapper.findComponent(TopBar).exists()).toBe(false)
   })
+
+  it('处于 live 路由时为沉浸直播模式：隐藏侧栏与顶栏', () => {
+    currentRoute.value = { name: 'live', fullPath: '/live', query: {} }
+    const wrapper = mount(App, {
+      global: {
+        stubs: {
+          RouterView: { template: '<div id="test-live-view">直播视图</div>' },
+          RouterLink: true,
+          AppSidebar: true,
+          TopBar: true,
+          GlobalToast: true,
+        },
+      },
+    })
+
+    expect(wrapper.findComponent(AppSidebar).exists()).toBe(false)
+    expect(wrapper.findComponent(TopBar).exists()).toBe(false)
+  })
 })

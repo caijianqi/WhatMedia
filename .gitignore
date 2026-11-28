@@ -8,6 +8,10 @@
 # 只忽略 Tauri 自动生成的 schema 目录与机器特定/密钥文件。
 /client/src-tauri/gen/schemas
 plugins/**/permissions/schemas
+client/src-tauri/bin/
+client/src-tauri/include/
+*.dll
+
 
 # Android 构建产物与机器特定配置/密钥
 *.apk

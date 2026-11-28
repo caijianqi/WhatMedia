@@ -47,6 +47,12 @@ body {
   min-height: 100vh;
 }
 
+/* 播放态透明穿透层：让底层的 Direct3D 11 / MPV 原生硬件画面无缝透出，上层保留暗黑控制 UI */
+body.in-player-mode,
+body.in-player-mode #app {
+  background: transparent !important;
+}
+
 button, input, select, textarea {
   font: inherit;
 }
